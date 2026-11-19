@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { layoutGraph, type GraphRow } from '../../shared/graphLayout';
 import type { CommitDetails, CommitStatFile, CompareResult, FriendlyError, GraphCommit, HistoryQuery, HistoryScope, RepoStatus } from '../../shared/types';
 import { ChangesPage } from './ChangesPage';
@@ -19,6 +19,7 @@ import { authorColor, initials } from './history/graphStyle';
 import { RefActionsContext, RefChip, type RefActions } from './history/RefChip';
 import { Modal } from '../components/Modal';
 import { SwitchBranchDialog } from '../dialogs/BranchDialogs';
+import { onCompareRequest } from '../services/compareRequest';
 
 const ROW_H = 58;
 const LANE_W = 20;
@@ -223,6 +224,8 @@ interface Props {
     reload: () => Promise<void>;
     error: FriendlyError | null;
     focus: GraphFocus | null;
+    /** Brings the hidden sidebar back (shown at the start of the toolbar). */
+    railToggle?: ReactNode;
   };
 }
 
@@ -271,6 +274,8 @@ export function GitHistoryPage({ workspace }: Props = {}) {
   const [slots, setSlots] = useState<[string | null, string | null]>([null, null]);
   const [dragging, setDragging] = useState<string | null>(null);
   const [studio, setStudio] = useState(false);
+  // The tab bar's Compare button opens the Compare window here.
+  const openStudio = useRef<() => void>(() => undefined);
   const [dropOn, setDropOn] = useState<string | null>(null);
   const pair = slots.filter((h): h is string => !!h);
   const [comparison, setComparison] = useState<CompareResult | null>(null);
@@ -563,6 +568,11 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     setSlots([null, null]);
     setComparison(null);
   };
+  openStudio.current = () => {
+    if (compareMode) exitCompare();
+    setStudio(true);
+  };
+  useEffect(() => onCompareRequest(() => openStudio.current()), []);
   const compareFromMenu = (k: CompareKind, c: GraphCommit) => {
     if (k === 'A' || k === 'B') return dropToSlot(k, c.hash);
     const other = k === 'selected' ? selected : k === 'head' ? head.oid : c.parents[0];
@@ -852,6 +862,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     <RefActionsContext.Provider value={refActions}>
     <div className="content flush" style={{ flexDirection: 'column' }}>
       <div className={`history-toolbar ${ws ? 'ws-toolbar' : ''}`}>
+        {ws?.railToggle}
         {ws && (
           <button className={`ws-wip-pill ${wip ? 'on' : ''} ${head.dirty ? 'dirty' : ''}`} onClick={openWip} title="Your working changes: stage, review and commit (W)">
             <span>✎</span> Working changes
@@ -911,6 +922,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           <option value="365">Last year</option>
         </Select>
         <span className="grow" />
+        {!ws && (
         <button
           className={`btn sm ${compareMode || studio ? 'primary' : ''}`}
           onClick={() => {
@@ -921,6 +933,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
         >
           ⇄ Compare
         </button>
+        )}
         <div className="seg" title="Where commit details open">
           {(
             [
@@ -991,7 +1004,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           ) : (
             <div className="empty">No commits match these filters.</div>
           ))}
-          {head.dirty > 0 && (commits[0]?.hash === head.oid || !!ws) && (
+          {!ws && head.dirty > 0 && commits[0]?.hash === head.oid && (
             <div
               className={`commit-row wip-row ${ws && wip ? 'selected' : ''}`}
               style={{ height: ROW_H }}
@@ -1052,7 +1065,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               onMouseEnter={() => c.branch && setHoverBranch(c.branch)}
               onMouseLeave={() => setHoverBranch(null)}
             >
-              <GraphCell row={rows[i]} width={graphWidth} commit={c} isHead={c.hash === head.oid} wipAbove={i === 0 && head.dirty > 0 && c.hash === head.oid} hot={!!hoverBranch && c.branch === hoverBranch} />
+              <GraphCell row={rows[i]} width={graphWidth} commit={c} isHead={c.hash === head.oid} wipAbove={!ws && i === 0 && head.dirty > 0 && c.hash === head.oid} hot={!!hoverBranch && c.branch === hoverBranch} />
               <div className="commit-text">
                 <div className="commit-subject ellipsis">
                   {compareMode && (slots[0] === c.hash || slots[1] === c.hash) && <span className={`cmp-letter sm ${slots[0] === c.hash ? 'A' : 'B'}`}>{slots[0] === c.hash ? 'A' : 'B'}</span>}

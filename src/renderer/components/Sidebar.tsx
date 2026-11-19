@@ -3,7 +3,9 @@ import type { RepoSummary } from '../../shared/types';
 import { CloneDialog } from '../dialogs/CloneDialog';
 import { CreateRepoWizard } from '../dialogs/CreateRepoWizard';
 import { ContributorsDialog, DuplicateRepoDialog, hueOf, LastCommitDialog, RemoveRepoDialog } from '../dialogs/RepoActionDialogs';
-import { call } from '../services/api';
+import { call, onNotify } from '../services/api';
+import { setSidebarHidden, useSidebarHidden } from '../services/sidebarState';
+import { PaneIcon } from './PaneIcon';
 import { useApp } from '../state/AppState';
 import { fitMenu, markScroll } from './menuFit';
 import { WorktreeTwig } from './WorktreeTwig';
@@ -51,14 +53,6 @@ function groupRepos(list: RepoSummary[]): Group[] {
   return [...groups.values()].sort((a, b) => rank[a.kind] - rank[b.kind] || a.label.localeCompare(b.label));
 }
 
-const RAIL_KEY = 'gitbaba.sidebar.rail';
-function loadRail(): boolean {
-  try {
-    return localStorage.getItem(RAIL_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 const COLLAPSE_KEY = 'gitbaba.sidebar.collapsed';
 function loadCollapsed(): Set<string> {
@@ -75,9 +69,8 @@ type RepoDialog = { kind: 'duplicate' | 'contributors' | 'lastCommit' | 'remove'
 
 /** Repositories grouped by owner (favourites pinned on top), with a right-click menu of repository actions. */
 export function Sidebar() {
-  const { repos, activeRepoId, selectRepo, view, showError, bump, toast, requestAppSetup } = useApp();
+  const { repos, activeRepoId, selectRepo, view, showError, bump, toast } = useApp();
   const [dialog, setDialog] = useState<'create' | 'clone' | null>(null);
-  const [menu, setMenu] = useState(false);
   const [query, setQuery] = useState('');
   // Per repository, whether its worktree list was unfolded or folded by hand. Without a choice the list
   // follows the selection: unfolded while the repository or one of its worktrees is open.
@@ -102,7 +95,6 @@ export function Sidebar() {
   const [ctxMenu, setCtxMenu] = useState<{ repo: RepoSummary; x: number; y: number } | null>(null);
   const [repoDialog, setRepoDialog] = useState<RepoDialog | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
-  const menuRef = useRef<HTMLDivElement>(null);
   // Worktrees opened in the app fold under their main repository instead of being listed as repositories.
   const { mainRepos, worktreesOf } = useMemo(() => {
     const ids = new Set(repos.map((r) => r.id));
@@ -120,27 +112,17 @@ export function Sidebar() {
     return a?.worktreeOf && worktreesOf.has(a.worktreeOf) ? a.worktreeOf : (a?.id ?? null);
   }, [repos, activeRepoId, worktreesOf]);
   const ctxRef = useRef<HTMLDivElement>(null);
-  // Minimised to an icon rail (one avatar per repository); remembered between sessions.
-  const [rail, setRail] = useState(loadRail);
-  const toggleRail = useCallback(() => {
-    setRail((r) => {
-      const next = !r;
-      try {
-        localStorage.setItem(RAIL_KEY, next ? '1' : '0');
-      } catch {
-        // per-viewer convenience only
-      }
-      return next;
-    });
-  }, []);
+  // Hidden completely (Ctrl+B, or the panel icon); the title bar shows the icon to bring it back.
+  const hidden = useSidebarHidden();
+  const toggleRail = useCallback(() => setSidebarHidden((h) => !h), []);
 
   // The shell grid reads the sidebar width from this variable, so the page animates with it.
   useEffect(() => {
-    document.documentElement.style.setProperty('--sidebar-w', rail ? '68px' : '290px');
+    document.documentElement.style.setProperty('--sidebar-w', hidden ? '0px' : '290px');
     return () => {
       document.documentElement.style.removeProperty('--sidebar-w');
     };
-  }, [rail]);
+  }, [hidden]);
 
   // Ctrl/Cmd + B toggles the sidebar (ignored while typing).
   useEffect(() => {
@@ -157,7 +139,6 @@ export function Sidebar() {
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(false);
       if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null);
     };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setCtxMenu(null);
@@ -205,8 +186,20 @@ export function Sidebar() {
     return [...out, ...groupRepos(filtered.filter((r) => !r.favorite))];
   }, [filtered]);
 
+  // File → Add repository (the native menu) opens these.
+  useEffect(
+    () =>
+      onNotify((e) => {
+        if (e.type !== 'menu') return;
+        if (e.id === 'repo-open') void openExistingRef.current();
+        else if (e.id === 'repo-create') setDialog('create');
+        else if (e.id === 'repo-clone') setDialog('clone');
+      }),
+    [],
+  );
+  const openExistingRef = useRef<() => Promise<void>>(async () => undefined);
+
   const openExisting = async () => {
-    setMenu(false);
     try {
       const pick = await call('dialog:pickDirectory', { purpose: 'open' });
       if (!pick) return;
@@ -214,11 +207,11 @@ export function Sidebar() {
       bump();
       selectRepo(repo.id);
       toast(`Added ${repo.name}`);
-      if (repo.github && !repo.settings.githubApp) requestAppSetup(repo.id);
     } catch (err) {
       showError(err);
     }
   };
+  openExistingRef.current = openExisting;
 
   const onCreated = (repo: RepoSummary) => {
     bump();
@@ -261,98 +254,16 @@ export function Sidebar() {
   };
 
   return (
-    <aside className={`sidebar ${rail ? 'rail' : ''}`}>
-      {rail ? (
-        <div className="rail-body">
-          <button className="rail-toggle" onClick={toggleRail} title="Expand sidebar (Ctrl+B)" aria-label="Expand sidebar">
-            »
-          </button>
-          <div style={{ position: 'relative' }} ref={menuRef}>
-            <button className="rail-add" onClick={() => setMenu((m) => !m)} title="Add repository" aria-label="Add repository">
-              +
-            </button>
-            {menu && (
-              <div className="dropdown" style={{ left: 0, top: 'calc(100% + 4px)', width: 230 }}>
-                <div className="dropdown-item" onClick={openExisting}>
-                  📂 Open existing repository
-                </div>
-                <div className="dropdown-item" onClick={() => { setMenu(false); setDialog('create'); }}>
-                  ✨ Create repository
-                </div>
-                <div className="dropdown-item" onClick={() => { setMenu(false); setDialog('clone'); }}>
-                  ⬇ Clone repository
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="rail-list">
-            {[...filtered]
-              .sort((a, b) => Number(b.favorite) - Number(a.favorite) || a.name.localeCompare(b.name))
-              .map((r) => {
-                const hue = hueOf(r.github?.owner ?? r.name);
-                const active = r.id === activeFamily && view === 'repo';
-                const wts = worktreesOf.get(r.id)?.length ?? 0;
-                return (
-                  <button
-                    key={r.id}
-                    className={`rail-item ${active ? 'active' : ''} ${ctxMenu?.repo.id === r.id ? 'ctx' : ''}`}
-                    onClick={() => selectRepo(r.id)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setCtxMenu({ repo: r, x: e.clientX, y: e.clientY });
-                    }}
-                    title={`${r.name}${r.branch ? `\n⎇ ${r.branch}` : ''}\n${repoSubtitle(r)}${r.changeCount ? `\n${r.changeCount} uncommitted change(s)` : ''}`}
-                  >
-                    <span className="rail-avatar" style={{ background: `hsl(${hue} 50% 26%)`, color: `hsl(${hue} 90% 88%)` }}>
-                      {r.name[0]?.toUpperCase()}
-                    </span>
-                    {r.favorite && <span className="rail-fav">★</span>}
-                    {wts > 0 && <span className="rail-wt" title={`${wts} worktree(s) open`}>🗂</span>}
-                    {r.hasConflicts ? <span className="rail-dot danger" /> : r.changeCount > 0 ? <span className="rail-dot warn" /> : null}
-                  </button>
-                );
-              })}
-          </div>
-        </div>
-      ) : (
+    <aside className={`sidebar ${hidden ? 'hidden' : ''}`} aria-hidden={hidden} inert={hidden ? true : undefined}>
+      {!hidden && (
         <>
       <div className="sidebar-title" style={{ paddingLeft: 18, paddingRight: 14 }}>
         <span className="row" style={{ gap: 8 }}>
-          <button className="rail-toggle inline" onClick={toggleRail} title="Minimise sidebar (Ctrl+B)" aria-label="Minimise sidebar">
-            «
-          </button>
           Repositories ({mainRepos.length})
         </span>
-        <div style={{ position: 'relative' }} ref={menuRef}>
-          <button className="btn sm" onClick={() => setMenu((m) => !m)}>
-            + Add
-          </button>
-          {menu && (
-            <div className="dropdown" style={{ right: 0, left: 'auto', width: 230 }}>
-              <div className="dropdown-item" onClick={openExisting}>
-                📂 Open existing repository
-              </div>
-              <div
-                className="dropdown-item"
-                onClick={() => {
-                  setMenu(false);
-                  setDialog('create');
-                }}
-              >
-                ✨ Create repository
-              </div>
-              <div
-                className="dropdown-item"
-                onClick={() => {
-                  setMenu(false);
-                  setDialog('clone');
-                }}
-              >
-                ⬇ Clone repository
-              </div>
-            </div>
-          )}
-        </div>
+        <button className="sb-hide" onClick={toggleRail} title="Hide sidebar (Ctrl+B)" aria-label="Hide sidebar">
+          <PaneIcon />
+        </button>
       </div>
       {mainRepos.length > 5 && (
         <div style={{ padding: '0 12px 8px' }}>
@@ -372,8 +283,6 @@ export function Sidebar() {
                 <span className={`chev ${isCollapsed ? '' : 'open'}`}>▸</span>
                 {groupIcon(g)}
                 <span className="ellipsis grow">{g.label}</span>
-                {g.kind === 'personal' && <span className="group-tag">personal</span>}
-                {g.kind === 'org' && <span className="group-tag">org</span>}
                 <span className="badge">{g.repos.length}</span>
               </button>
               {!isCollapsed && (
@@ -403,7 +312,19 @@ export function Sidebar() {
                         {r.changeCount > 0 && <span className="repo-changes" title={`${r.changeCount} uncommitted change(s)`}>{r.changeCount}</span>}
                         {r.hasConflicts && <span className="dot danger" title="Merge conflicts" />}
                         {!r.exists && <span className="dot danger" title="Folder missing" />}
-                        {r.favorite && <span className="repo-star" title="Favorite">★</span>}
+                        <button
+                          className={`repo-fav ${r.favorite ? 'on' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void toggleFavorite(r);
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          title={r.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                          aria-label={r.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                          aria-pressed={r.favorite}
+                        >
+                          {r.favorite ? '★' : '☆'}
+                        </button>
                         {wts.length > 0 && (
                           <button
                             className={`repo-wt-count ${unfolded ? 'on' : ''}`}
@@ -422,10 +343,11 @@ export function Sidebar() {
                           </button>
                         )}
                       </div>
-                      <div className="meta">
-                        {r.branch && <span className="repo-branch">⎇ {r.branch}</span>}
-                        {repoSubtitle(r)}
-                      </div>
+                      {r.branch && (
+                        <div className="meta">
+                          <span className="repo-branch">⎇ {r.branch}</span>
+                        </div>
+                      )}
                     </div>
                     {unfolded && (
                       <WorktreeTwig
@@ -462,6 +384,17 @@ export function Sidebar() {
           <div className={`dropdown-item ${ctxMenu.repo.github ? '' : 'disabled'}`} onClick={ctxMenu.repo.github ? act(() => openOnGitHub(ctxMenu.repo)) : undefined} title={ctxMenu.repo.github ? undefined : 'This repository has no GitHub remote'}>
             <span className="ctx-ico">↗</span> View on GitHub
           </div>
+          <div className={`dropdown-item ${ctxMenu.repo.exists ? '' : 'disabled'}`} onClick={ctxMenu.repo.exists ? act(() => void call('graph:reveal', { repoId: ctxMenu.repo.id, path: '.' }).catch(showError)) : undefined} title={ctxMenu.repo.path}>
+            <span className="ctx-ico">📂</span> Open in File Explorer
+          </div>
+          <div className="dropdown-item" onClick={act(() => void call('app:copyText', { text: ctxMenu.repo.path }).then(() => toast('Folder path copied'), showError))}>
+            <span className="ctx-ico">⧉</span> Copy folder path
+          </div>
+          {(ctxMenu.repo.remoteUrl ?? ctxMenu.repo.identity) && (
+            <div className="dropdown-item" onClick={act(() => void call('app:copyText', { text: (ctxMenu.repo.remoteUrl ?? ctxMenu.repo.identity)! }).then(() => toast('Remote URL copied'), showError))}>
+              <span className="ctx-ico">🔗</span> Copy remote URL
+            </div>
+          )}
           <div className="dropdown-sep" />
           <div className={`dropdown-item ${ctxMenu.repo.exists ? '' : 'disabled'}`} onClick={ctxMenu.repo.exists ? act(() => setRepoDialog({ kind: 'lastCommit', repo: ctxMenu.repo })) : undefined}>
             <span className="ctx-ico">◉</span> Last commit &amp; tag

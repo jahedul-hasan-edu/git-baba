@@ -60,6 +60,9 @@ import type {
   CreateRepoInput,
   CreateRepoState,
   FileAtCommit,
+  BlameInfo,
+  FileCommit,
+  FileBytes,
   GraphCommit,
   HistoryQuery,
   VerifiedAccount,
@@ -69,6 +72,7 @@ import type {
   BranchMergeResult,
   BranchPublishPreview,
   BranchPublishResult,
+  NewBranchChanges,
   SshKeyType,
   SshLocalKey,
   SshTestResult,
@@ -228,7 +232,7 @@ export interface ApiMap {
   'git:branches': { req: R; res: BranchInfo[] };
   'git:branchOrigins': { req: R; res: Record<string, BranchOrigin> };
   'git:renameBranch': { req: R & { name: string; newName: string }; res: void };
-  'git:createBranch': { req: R & { name: string; startPoint?: string; switchTo: boolean }; res: void };
+  'git:createBranch': { req: R & { name: string; startPoint?: string; switchTo: boolean; changes?: NewBranchChanges }; res: { stashed: string | null } };
   'git:switchBranch': { req: R & { name: string }; res: void };
   'git:deleteBranch': { req: R & { name: string; force: boolean; confirmed: true }; res: void };
   'git:switchPreview': { req: R & { target: string; kind: 'local' | 'remote' }; res: BranchSwitchPreview };
@@ -258,7 +262,7 @@ export interface ApiMap {
   /** Local-only fix: move a branch forward to its remote-tracking branch when that is a pure fast-forward. */
   'git:fastForwardBranch': { req: R & { branch: string }; res: { from: string; to: string } };
   'git:publishPreview': { req: R & { name: string; base?: string }; res: BranchPublishPreview };
-  'git:publishExecute': { req: R & { confirmationId: string; auth: AuthInput; switchTo: boolean; commitMessage?: string }; res: BranchPublishResult };
+  'git:publishExecute': { req: R & { confirmationId: string; auth: AuthInput; switchTo: boolean; commitMessage?: string; changes?: NewBranchChanges }; res: BranchPublishResult };
   'git:deletePreview': { req: R & { branch: string; kind: 'local' | 'remote' }; res: BranchDeletePreview };
   'git:deleteExecute': { req: R & { confirmationId: string; auth: AuthInput; deleteLocal: boolean; deleteRemote: boolean; force: boolean; confirmed: true }; res: BranchDeleteResult };
   'git:log': { req: R & { limit?: number }; res: CommitInfo[] };
@@ -423,11 +427,13 @@ export interface ApiMap {
   'graph:commit': { req: R & { hash: string }; res: CommitDetails };
   'graph:compare': { req: R & { from: string; to: string }; res: CompareResult };
   'graph:fileAt': { req: R & { hash: string; path: string }; res: FileAtCommit };
+  'graph:blame': { req: R & { rev: string; path: string }; res: BlameInfo };
+  'code:fileHistory': { req: R & { ref: string | null; path: string }; res: FileCommit[] };
   'graph:reveal': { req: R & { path: string }; res: void };
   'app:copyText': { req: { text: string }; res: void };
   'app:quit': { req: void; res: void };
   /** Opens a title-bar menu as a native pop-up at (x, y) in window coordinates; resolves when it closes. */
-  'app:menuPopup': { req: { menu: AppMenuId; x: number; y: number }; res: void };
+  'app:menuPopup': { req: { menu: AppMenuId; x: number; y: number; theme?: string }; res: void };
   /** Paints the window-button area of the title bar to match the theme (Windows / Linux). */
   'app:titleBar': { req: { color: string; symbolColor: string }; res: void };
   'app:menus': { req: void; res: AppMenuId[] };
@@ -438,6 +444,8 @@ export interface ApiMap {
   'code:tree': { req: R & { ref: string; path: string }; res: CodeEntry[] };
   'code:lastCommits': { req: R & { ref: string; paths: string[] }; res: Record<string, CodeLastCommit | null> };
   'code:file': { req: R & { ref: string; path: string }; res: FileAtCommit };
+  /** Raw bytes of a file (images, PDFs, other binaries); `ref` null reads the working copy. */
+  'code:bytes': { req: R & { ref: string | null; path: string }; res: FileBytes };
   'code:search': { req: R & { ref: string; query: string }; res: { files: string[]; hits: CodeSearchHit[]; truncated: boolean } };
   /** Writes a file in the working copy (current branch only) and stages it. */
   'code:writeFile': { req: R & { path: string; content: string; create: boolean }; res: void };

@@ -8,7 +8,7 @@ import { authenticateAccount, describeScopes, verifyToken } from '../accounts/ac
 import type { AppContext } from '../context';
 import { AppError } from '../git/errors';
 import { DEFAULT_API_BASE, validateApiBaseUrl } from '../github/GitHubService';
-import { resolveInsideRepo } from '../util/paths';
+import { resolveInsideRepo, revealTarget } from '../util/paths';
 import {
   asBoolean,
   asEnum,
@@ -61,6 +61,8 @@ export type ExtraChannels =
   | 'graph:commit'
   | 'graph:compare'
   | 'graph:fileAt'
+  | 'graph:blame'
+  | 'code:fileHistory'
   | 'graph:reveal'
   | 'graph:branchChanges'
   | 'graph:mergeForecast'
@@ -68,6 +70,7 @@ export type ExtraChannels =
   | 'code:tree'
   | 'code:lastCommits'
   | 'code:file'
+  | 'code:bytes'
   | 'code:search'
   | 'code:writeFile'
   | 'code:deleteFile'
@@ -340,12 +343,28 @@ export function createExtraHandlers(
       const p = asObject(payload);
       return graphGit(p).fileAtCommit(asHash(p.hash, 'commit'), asString(p.path, 'path', { trim: false }));
     },
+    'code:bytes': async (payload) => {
+      const p = asObject(payload);
+      const ref = p.ref === null ? null : asString(p.ref, 'ref', { max: 255 });
+      return graphGit(p).fileBytes(ref, asString(p.path, 'path', { trim: false }));
+    },
+    'graph:blame': async (payload) => {
+      const p = asObject(payload);
+      return graphGit(p).blame(asString(p.rev, 'revision', { max: 255 }), asString(p.path, 'path', { trim: false }));
+    },
+    'code:fileHistory': async (payload) => {
+      const p = asObject(payload);
+      return graphGit(p).fileHistory(p.ref ? asRef(p.ref, 'branch') : null, asString(p.path, 'path', { trim: false }));
+    },
     'graph:reveal': async (payload) => {
       const p = asObject(payload);
       const { repo } = ctx.git(p.repoId);
-      // Reveal only (never "open"): opening could execute a script from the repository.
-      const full = resolveInsideRepo(repo.path, asString(p.path, 'path', { trim: false }));
-      shell.showItemInFolder(full);
+      // Files are revealed, never "opened" (that could run a script from the repository). The repository
+      // root is a folder, so opening it just shows it in the file manager.
+      const target = revealTarget(repo.path, asString(p.path, 'path', { min: 0, trim: false }));
+      if (target.kind === 'item') return shell.showItemInFolder(target.full);
+      const err = await shell.openPath(target.full);
+      if (err) throw new AppError({ code: 'reveal-failed', title: 'Could Not Open the Folder', message: err });
     },
 
     // ---------------- Code browser ----------------

@@ -110,7 +110,7 @@ interface CommitReview {
 }
 
 export interface WindowChrome {
-  popupMenu: (id: AppMenuId, x: number, y: number) => Promise<void>;
+  popupMenu: (id: AppMenuId, x: number, y: number, theme?: string) => Promise<void>;
   devMenus: boolean;
 }
 
@@ -940,8 +940,10 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       const name = asBranchName(p.name);
       const startPoint = p.startPoint ? asBranchName(p.startPoint, 'start point') : null;
       const switchTo = asBoolean(p.switchTo, 'switchTo');
-      await ctx.withLock(repo.id, () => git.createBranch(name, startPoint, switchTo));
-      ctx.recordOperation(repo, 'Create branch', 'SUCCESS', `${name}${startPoint ? ` from ${startPoint}` : ''}`);
+      const changes = p.changes === undefined ? (switchTo ? 'carry' : 'leave') : asEnum(p.changes, 'changes', ['carry', 'stash', 'leave'] as const);
+      const stashed = await ctx.withLock(repo.id, async () => git.createBranchWithChanges(name, startPoint, changes, (await git.status()).branch ?? 'HEAD'));
+      ctx.recordOperation(repo, 'Create branch', 'SUCCESS', `${name}${startPoint ? ` from ${startPoint}` : ''}${stashed ? `; changes stashed ("${stashed}")` : ''}`);
+      return { stashed };
     },
 
     'git:switchBranch': async (payload) => {
@@ -1876,7 +1878,8 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       const p = asObject(payload);
       const menu = asEnum(p.menu, 'menu', ['file', 'view', 'help'] as const);
       const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 100_000 ? v : 0);
-      await chrome?.popupMenu(menu, num(p.x), num(p.y));
+      const theme = p.theme === undefined ? undefined : asEnum(p.theme, 'theme', ['system', 'light', 'default', 'dark'] as const);
+      await chrome?.popupMenu(menu, num(p.x), num(p.y), theme);
     },
 
     'app:titleBar': async (payload) => {

@@ -198,10 +198,30 @@ function showDesktop(items: AppNotification[]): void {
 }
 
 /** The File / Help (and, in development, View) menus. The title bar drawn by the app opens them as native pop-ups. */
-function appMenus(): Record<AppMenuId, Electron.MenuItemConstructorOptions[]> {
+function appMenus(theme?: string): Record<AppMenuId, Electron.MenuItemConstructorOptions[]> {
   const send = (id: string) => () => mainWindow?.webContents.send('gg:notify', { type: 'menu', id });
   return {
     file: [
+      {
+        label: 'Add repository',
+        submenu: [
+          { label: 'Open existing repository…', click: send('repo-open') },
+          { label: 'Create repository…', click: send('repo-create') },
+          { label: 'Clone repository…', click: send('repo-clone') },
+        ],
+      },
+      {
+        label: 'Theme',
+        submenu: (
+          [
+            ['system', 'Auto'],
+            ['light', 'Light'],
+            ['default', 'Dusk'],
+            ['dark', 'Midnight'],
+          ] as const
+        ).map(([id, label]) => ({ label, type: 'radio' as const, checked: theme === id, click: send(`theme:${id}`) })),
+      },
+      { type: 'separator' },
       { label: 'Create GitHub App Token', click: send('token') },
       { type: 'separator' },
       { label: 'Keyboard Shortcuts', accelerator: 'CmdOrCtrl+/', registerAccelerator: false, click: send('shortcuts') },
@@ -232,10 +252,10 @@ function buildAppMenu(): Menu {
 }
 
 /** Opens one menu under its title in the app's title bar; resolves when it closes. */
-function popupAppMenu(id: AppMenuId, x: number, y: number): Promise<void> {
+function popupAppMenu(id: AppMenuId, x: number, y: number, theme?: string): Promise<void> {
   return new Promise((resolve) => {
     if (!mainWindow || (id === 'view' && !isDev)) return resolve();
-    Menu.buildFromTemplate(appMenus()[id]).popup({ window: mainWindow, x: Math.round(x), y: Math.round(y), callback: () => resolve() });
+    Menu.buildFromTemplate(appMenus(theme)[id]).popup({ window: mainWindow, x: Math.round(x), y: Math.round(y), callback: () => resolve() });
   });
 }
 

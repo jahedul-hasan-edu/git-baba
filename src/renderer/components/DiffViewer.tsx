@@ -1,5 +1,9 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import type { DiffHunk, DiffLine, FileDiff } from '../../shared/types';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import type { BlameInfo, DiffHunk, DiffLine, FileDiff } from '../../shared/types';
+import { initials } from '../pages/history/graphStyle';
+import { call } from '../services/api';
+import { relative } from './FileDiffList';
 
 const RENDER_LIMIT = 3000;
 
@@ -63,11 +67,103 @@ function highlightText(text: string, term?: string): ReactNode {
   return out.length ? out : text || ' ';
 }
 
-export function DiffViewer({ diff, emptyText = 'Select a file to see its changes.', highlight, hideHeader, forceMode }: { diff: FileDiff | null; emptyText?: string; highlight?: string; hideHeader?: boolean; /** Controlled layout (the caller shows its own toggle). */ forceMode?: 'unified' | 'split' }) {
+/** Where each side of the diff comes from, so lines can show who last changed them. */
+export interface DiffBlameSource {
+  repoId: string;
+  /** Revision of the left/old side (null: no history to show, e.g. working tree). */
+  oldRev?: string | null;
+  newRev?: string | null;
+}
+
+const blameCache = new Map<string, Promise<BlameInfo | null>>();
+export function loadBlame(repoId: string, rev: string, path: string): Promise<BlameInfo | null> {
+  const key = `${repoId}\u0000${rev}\u0000${path}`;
+  let p = blameCache.get(key);
+  if (!p) {
+    p = call('graph:blame', { repoId, rev, path }).catch(() => null);
+    blameCache.set(key, p);
+    if (blameCache.size > 60) blameCache.delete(blameCache.keys().next().value as string);
+  }
+  return p;
+}
+
+/** "3 days ago · Nov 16, 2026" for recent changes; just the date once relative time would repeat it. */
+export function whenText(iso: string): string {
+  const abs = new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const rel = relative(iso);
+  return /ago|now|today|yesterday/i.test(rel) ? `${rel} · ${abs}` : abs;
+}
+
+type Hover = { x: number; y: number; side: 'old' | 'new'; hash: string };
+
+export function DiffViewer({ diff, emptyText = 'Select a file to see its changes.', highlight, hideHeader, forceMode, blame }: { diff: FileDiff | null; emptyText?: string; highlight?: string; hideHeader?: boolean; /** Controlled layout (the caller shows its own toggle). */ forceMode?: 'unified' | 'split'; /** Show who changed each line (hover a line). */ blame?: DiffBlameSource }) {
   const [ownMode, setMode] = useState<'unified' | 'split'>('unified');
   const mode = forceMode ?? ownMode;
   const [showAll, setShowAll] = useState(false);
   const totalLines = useMemo(() => diff?.hunks.reduce((n, h) => n + h.lines.length, 0) ?? 0, [diff]);
+  const [oldB, setOldB] = useState<BlameInfo | null>(null);
+  const [newB, setNewB] = useState<BlameInfo | null>(null);
+  const [hover, setHover] = useState<Hover | null>(null);
+  const hoverTimer = useRef<number | undefined>(undefined);
+  const card = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setOldB(null);
+    setNewB(null);
+    setHover(null);
+    if (!blame || !diff || diff.binary) return;
+    let live = true;
+    if (blame.oldRev && diff.status !== 'added') void loadBlame(blame.repoId, blame.oldRev, diff.oldPath).then((b) => live && setOldB(b));
+    if (blame.newRev && diff.status !== 'deleted') void loadBlame(blame.repoId, blame.newRev, diff.newPath).then((b) => live && setNewB(b));
+    return () => {
+      live = false;
+    };
+  }, [diff, blame?.repoId, blame?.oldRev, blame?.newRev]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the card inside the window.
+  useLayoutEffect(() => {
+    const el = card.current;
+    if (!el || !hover) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    el.style.left = `${Math.max(8, Math.min(hover.x + 14, window.innerWidth - w - 8))}px`;
+    el.style.top = `${hover.y + 18 + h > window.innerHeight - 8 ? Math.max(8, hover.y - h - 12) : hover.y + 18}px`;
+  }, [hover]);
+
+  /** Line-number cell props: a strip in the side's colour (before red, after green) and the commit id for the hover card. */
+  const who = (side: 'old' | 'new', n: number | undefined) => {
+    const b = side === 'old' ? oldB : newB;
+    const hash = n && b ? b.lines[n - 1] : undefined;
+    const c = hash ? b!.commits[hash] : undefined;
+    return c ? { 'data-h': hash, 'data-s': side, style: { ['--bl' as string]: side === 'old' ? 'var(--danger)' : 'var(--ok)' } } : {};
+  };
+  const onMove = (e: React.MouseEvent) => {
+    const td = (e.target as HTMLElement).closest('td');
+    const tr = td?.closest('tr');
+    // Side-by-side: the half under the pointer (its own line-number cell); unified: the row's line.
+    const prev = td?.previousElementSibling as HTMLElement | null | undefined;
+    const own = td?.dataset.h ? td : prev?.dataset.h && td?.classList.contains('half') ? prev : !td?.classList.contains('half') ? (tr?.querySelector('[data-h]') as HTMLElement | null) : null;
+    const hash = own?.dataset.h;
+    const side = own?.dataset.s as 'old' | 'new' | undefined;
+    window.clearTimeout(hoverTimer.current);
+    if (!hash || !side) {
+      hoverTimer.current = window.setTimeout(() => setHover(null), 80);
+      return;
+    }
+    const { clientX: x, clientY: y } = e;
+    if (hover && hover.hash === hash && hover.side === side) {
+      setHover({ ...hover, x, y });
+      return;
+    }
+    hoverTimer.current = window.setTimeout(() => setHover({ x, y, side, hash }), hover ? 0 : 220);
+  };
+  const leave = () => {
+    window.clearTimeout(hoverTimer.current);
+    setHover(null);
+  };
+  const hb = hover ? (hover.side === 'old' ? oldB : newB) : null;
+  const hc = hover && hb ? hb.commits[hover.hash] : null;
+  const hCount = hover && hb ? hb.lines.filter((x) => x === hover.hash).length : 0;
 
   if (!diff) return <div className="empty">{emptyText}</div>;
   const path = diff.status === 'deleted' ? diff.oldPath : diff.newPath;
@@ -94,7 +190,7 @@ export function DiffViewer({ diff, emptyText = 'Select a file to see its changes
       {diff.binary && <div className="empty">Binary file — contents cannot be shown as text.</div>}
       {!diff.binary && diff.hunks.length === 0 && <div className="empty">{diff.truncated ? 'File is too large to display.' : modeChange ? 'Only the file mode changed.' : 'No content changes.'}</div>}
       {diff.truncated && diff.hunks.length > 0 && <div className="banner warn" style={{ margin: 10 }}>This diff is very large and was truncated.</div>}
-      <table className="diff">
+      <table className={`diff ${oldB || newB ? 'blamed' : ''}`} onMouseMove={oldB || newB ? onMove : undefined} onMouseLeave={leave}>
         {mode === 'split' ? (
           <colgroup>
             <col style={{ width: 52 }} />
@@ -125,8 +221,8 @@ export function DiffViewer({ diff, emptyText = 'Select a file to see its changes
                 header,
                 ...lines.map((l, li) => (
                   <tr key={`${hi}-${li}`} className={l.type}>
-                    <td className="ln">{l.oldLine ?? ''}</td>
-                    <td className="ln">{l.newLine ?? ''}</td>
+                    <td className="ln" {...(l.type === 'del' ? who('old', l.oldLine) : {})}>{l.oldLine ?? ''}</td>
+                    <td className="ln" {...(l.type !== 'del' ? who('new', l.newLine) : {})}>{l.newLine ?? ''}</td>
                     <td className="sign">{l.type === 'add' ? '+' : l.type === 'del' ? '−' : ''}</td>
                     <td>{highlightText(l.content, highlight)}</td>
                   </tr>
@@ -142,9 +238,9 @@ export function DiffViewer({ diff, emptyText = 'Select a file to see its changes
                 const rt = r.right?.type === 'add' ? 'add' : r.right ? '' : 'empty';
                 return (
                   <tr key={`${hi}-s${ri}`} className={r.left?.type === 'meta' ? 'meta' : ''}>
-                    <td className={`ln ${lt}`}>{r.left?.oldLine ?? ''}</td>
+                    <td className={`ln ${lt}`} {...(r.left ? who('old', r.left.oldLine) : {})}>{r.left?.oldLine ?? ''}</td>
                     <td className={`half ${lt}`}>{r.left ? highlightText(r.left.content, highlight) : ''}</td>
-                    <td className={`ln ${rt}`}>{r.right?.newLine ?? ''}</td>
+                    <td className={`ln ${rt}`} {...(r.right ? who('new', r.right.newLine) : {})}>{r.right?.newLine ?? ''}</td>
                     <td className={`half ${rt}`}>{r.right ? highlightText(r.right.content, highlight) : ''}</td>
                   </tr>
                 );
@@ -153,6 +249,32 @@ export function DiffViewer({ diff, emptyText = 'Select a file to see its changes
           })}
         </tbody>
       </table>
+      {hover &&
+        hc &&
+        createPortal(
+          <div ref={card} className={`bl-card ${hover.side === 'old' ? 'before' : 'after'}`} role="tooltip">
+            <div className="bl-card-head">
+              <span className="bl-avatar">{initials(hc.author)}</span>
+              <div className="grow" style={{ minWidth: 0 }}>
+                <div className="bl-author">
+                  <span className="ellipsis">{hc.author}</span>
+                  <span className="bl-side">{hover.side === 'old' ? 'Before' : 'After'}</span>
+                </div>
+                <div className="bl-when" title={hc.date ? new Date(hc.date).toLocaleString() : ''}>
+                  {hc.date ? whenText(hc.date) : 'date unknown'}
+                </div>
+              </div>
+            </div>
+            <div className="bl-summary">{hc.summary || '(no message)'}</div>
+            <div className="bl-foot">
+              <span className="mono">{hover.hash.slice(0, 7)}</span>
+              <span>
+                {hCount} line{hCount === 1 ? '' : 's'} in this file
+              </span>
+            </div>
+          </div>,
+          document.body,
+        )}
       {!showAll && totalLines > RENDER_LIMIT && (
         <div className="empty">
           Showing the first {RENDER_LIMIT} of {totalLines} lines.{' '}

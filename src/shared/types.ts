@@ -157,6 +157,20 @@ export interface DiffLine {
   newLine?: number;
 }
 
+/** Who last changed each line of a file at a revision (git blame). */
+export interface BlameCommit {
+  author: string;
+  email: string;
+  /** ISO date the change was authored. */
+  date: string;
+  summary: string;
+}
+export interface BlameInfo {
+  /** Commit id per line: index 0 is line 1. */
+  lines: string[];
+  commits: Record<string, BlameCommit>;
+}
+
 export interface DiffHunk {
   header: string;
   oldStart: number;
@@ -596,9 +610,16 @@ export interface BranchPublishResult {
   remote: string;
   verifiedRemoteOid: string;
   committed: CommitInfo | null;
+  /** Name of the stash that holds the changes left behind, when they were stashed. */
+  stashed: string | null;
+  /** Whether the working folder is now on the new branch. */
+  switched: boolean;
   authDescription: string;
   summary: string;
 }
+
+/** What happens to uncommitted changes when a new branch is created: come along, stashed on the old branch, or left where they are (no switch). */
+export type NewBranchChanges = 'carry' | 'stash' | 'leave';
 
 export interface BranchDeletePreview extends AuthContext {
   confirmationId: string;
@@ -1236,6 +1257,16 @@ export interface BranchChanges {
 }
 
 // ---- Code tab ----
+/** A file's raw bytes, for showing images, PDFs and other binary files. */
+export interface FileBytes {
+  path: string;
+  /** Size of the whole file in bytes. */
+  size: number;
+  /** Base64 of the bytes (empty when the file is larger than the limit). */
+  base64: string;
+  tooLarge: boolean;
+}
+
 export interface CodeEntry {
   name: string;
   path: string;
@@ -1465,4 +1496,13 @@ export interface WorktreeSyncResult {
   /** Conflicts were left in the worktree to resolve there (otherwise everything was rolled back). */
   kept: boolean;
   message: string;
+}
+
+/** One commit that changed a file (for "who changed this file"). */
+export interface FileCommit {
+  hash: string;
+  author: string;
+  email: string;
+  date: string;
+  subject: string;
 }

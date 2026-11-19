@@ -36,7 +36,8 @@ export default defineConfig({
       output: {
         // Third-party code (React and friends) in its own chunk, apart from the app's start-up code.
         codeSplitting: {
-          groups: [{ name: 'vendor', test: /[\\/]node_modules[\\/]/ }],
+          // PDF.js stays in its own chunk, loaded only when a PDF is opened.
+          groups: [{ name: 'vendor', test: /[\\/]node_modules[\\/](?!pdfjs-dist[\\/])/ }],
         },
       },
     },

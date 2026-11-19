@@ -1,4 +1,8 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { HEADER_REPO_SLOT } from '../components/AppHeader';
+import { NotificationBell } from '../components/NotificationBell';
+import { requestCompare } from '../services/compareRequest';
 import { Spinner } from '../components/Modal';
 import type { PullResult } from '../../shared/types';
 import { RepoSyncBar } from '../components/RepoSyncBar';
@@ -25,23 +29,6 @@ import { FILTER_EVENT, requestClearFilter } from '../services/jump';
 const SearchPalette = lazy(() => import('../components/search/SearchPalette').then((m) => ({ default: m.SearchPalette })));
 const RepoSettingsShell = lazy(() => import('./repoSettings/RepoSettingsShell').then((m) => ({ default: m.RepoSettingsShell })));
 
-// "Not now" for the GitHub App banner is a per-viewer convenience; storage may be unavailable.
-function readDismissed(repoId: string | undefined): boolean {
-  try {
-    return !!repoId && localStorage.getItem(`gg-app-setup-dismissed:${repoId}`) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeDismissed(repoId: string): void {
-  try {
-    localStorage.setItem(`gg-app-setup-dismissed:${repoId}`, '1');
-  } catch {
-    // ignore
-  }
-}
-
 export function RepoView() {
   const { activeRepo, repoTab, setRepoTab, revision, bump, appSetupRepoId, requestAppSetup, activeAccount, accounts, setAccounts, refreshSession, refreshRepos, toast, setView } = useApp();
   const otherAccount = activeRepo?.account && activeRepo.account.id !== activeAccount?.id ? activeRepo.account : null;
@@ -53,7 +40,6 @@ export function RepoView() {
     void refreshRepos().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRepo?.id]);
-  const [setupDismissed, setSetupDismissed] = useState(() => readDismissed(activeRepo?.id));
   const [dialog, setDialog] = useState<'fetch' | 'pull' | 'push' | null>(null);
   const lockedRef = useRef(false);
   lockedRef.current = !!otherAccount;
@@ -104,6 +90,10 @@ export function RepoView() {
   // A branch switch whose re-applied changes still need conflict resolution.
   const switchSession = useAsync(() => (repoId && activeRepo?.exists ? call('git:switchSession', { repoId }) : Promise.resolve(null)), [repoId, revision, activeRepo?.exists]);
 
+  // The repository's name, branch, Fetch and Push live in the app header (next to the account).
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => setHeaderSlot(document.getElementById(HEADER_REPO_SLOT)), []);
+
   if (!activeRepo) return null;
   const st = status.data;
   const conflictCount = st?.conflicted.length ?? 0;
@@ -146,9 +136,12 @@ export function RepoView() {
 
   return (
     <>
-      <div className="topbar deck">
+      {headerSlot &&
+        createPortal(
+      <div className="ah-deck">
         <RepoIdentity />
         {st?.operation && <span className="badge danger">{st.operation} in progress</span>}
+        <NotificationBell />
         <RepoSyncBar
           repoId={repoId}
           isGitHub={!!activeRepo.github}
@@ -162,7 +155,9 @@ export function RepoView() {
           onPull={() => setDialog('pull')}
           onPush={() => setDialog('push')}
         />
-      </div>
+      </div>,
+          headerSlot,
+        )}
 
       {!activeRepo.exists && activeRepo.worktreeOf ? (
         <MissingWorktree key={activeRepo.id} repo={activeRepo} />
@@ -192,27 +187,6 @@ export function RepoView() {
                 onClick={() => void switchToOwner()}
               >
                 Switch to {otherAccount.login}
-              </button>
-            </div>
-          )}
-          {activeRepo.github && !activeRepo.settings.githubApp && !setupDismissed && !locked && (
-            <div className="banner info">
-              <span className="icon">🔑</span>
-              <div className="grow">
-                <strong>GitHub repository: {activeRepo.github.owner}/{activeRepo.github.repo}.</strong> Link your GitHub App once so push and PR dialogs don't ask for the App ID, owner and repository
-                again.
-              </div>
-              <button className="btn sm primary" onClick={() => requestAppSetup(activeRepo.id)}>
-                Set up GitHub App
-              </button>
-              <button
-                className="btn sm ghost"
-                onClick={() => {
-                  writeDismissed(activeRepo.id);
-                  setSetupDismissed(true);
-                }}
-              >
-                Not now
               </button>
             </div>
           )}
@@ -359,7 +333,7 @@ function Ic({ d, fill }: { d: string; fill?: boolean }) {
 }
 
 function RepoIdentity() {
-  const { activeRepo, repos, selectRepo, toast, showError, ghKey } = useApp();
+  const { activeRepo, repos, selectRepo, ghKey } = useApp();
   const [vis, setVis] = useState<'private' | 'public' | null>(null);
   const repoId = activeRepo?.id;
   const isGh = !!activeRepo?.github;
@@ -389,11 +363,6 @@ function RepoIdentity() {
   if (!activeRepo) return null;
   const mainRepo = activeRepo.worktreeOf ? repos.find((r) => r.id === activeRepo.worktreeOf) : undefined;
   const c = deckColor(activeRepo.identity ?? activeRepo.name);
-  const copy = (text: string, what: string) =>
-    call('app:copyText', { text })
-      .then(() => toast(`${what} copied`))
-      .catch(showError);
-  const web = activeRepo.github ? `https://github.com/${activeRepo.github.owner}/${activeRepo.github.repo}` : null;
   const remote = activeRepo.remoteUrl ?? activeRepo.identity;
   return (
     <div className="deck-id">
@@ -425,27 +394,6 @@ function RepoIdentity() {
               <span className="deck-chip-go">↩</span>
             </button>
           )}
-          {web && (
-            <button className="deck-act" title={`Open on GitHub\n${web}`} onClick={() => void call('shell:openExternal', { url: web }).catch(showError)}>
-              <Ic d={ICONS.github} fill />
-              <span>GitHub</span>
-            </button>
-          )}
-          {remote && (
-            <button className="deck-act" title={`Copy remote URL\n${remote}`} onClick={() => copy(remote, 'Remote URL')}>
-              <Ic d={web ? ICONS.copy : ICONS.cloud} />
-              <span>{web ? 'Copy URL' : 'Remote'}</span>
-            </button>
-          )}
-          {activeRepo.exists && (
-            <button className="deck-act" title={`Show in folder\n${activeRepo.path}`} onClick={() => void call('graph:reveal', { repoId: activeRepo.id, path: '.' }).catch(showError)}>
-              <Ic d={ICONS.folder} />
-              <span>Folder</span>
-            </button>
-          )}
-          <button className="deck-act icon-only" title={`Copy folder path\n${activeRepo.path}`} aria-label="Copy folder path" onClick={() => copy(activeRepo.path, 'Folder path')}>
-            <Ic d={ICONS.copy} />
-          </button>
         </div>
       </div>
     </div>
@@ -496,12 +444,12 @@ function TabDock({ tabs, active, onPick: pick, locked }: { tabs: [RepoTab, strin
     const on = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setSearching(true);
+        if (!locked) setSearching(true);
       }
     };
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
-  }, []);
+  }, [locked]);
   return (
     <div className="tabs dock" ref={ref} role="tablist">
       {tabs.map(([id, label, count, icon], i) => (
@@ -522,12 +470,23 @@ function TabDock({ tabs, active, onPick: pick, locked }: { tabs: [RepoTab, strin
         </div>
       ))}
       {ink && <span className="tab-ink" style={{ transform: `translateX(${ink.left}px)`, width: ink.width }} />}
+      <button
+        className="tab-compare"
+        disabled={!!locked}
+        onClick={() => {
+          if (active !== 'changes') pick('changes');
+          requestCompare();
+        }}
+        title={locked ? 'Switch to the account this repository belongs to first' : 'Compare branches, tags or commits'}
+      >
+        ⇄ Compare
+      </button>
       {filtered && (
         <button className="tab-clear" onClick={requestClearFilter} title="Show all commits again">
           ✕ Clear search
         </button>
       )}
-      <button className={`tab-search ${filtered ? 'after-clear' : ''}`} onClick={() => setSearching(true)} title="Search commits, code and tags (Ctrl+K)" aria-label="Search">
+      <button className={`tab-search ${filtered ? 'after-clear' : ''}`} disabled={!!locked} onClick={() => setSearching(true)} title={locked ? 'Switch to the account this repository belongs to first' : 'Search commits, code and tags (Ctrl+K)'} aria-label="Search">
         <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <circle cx="10.5" cy="10.5" r="6.5" />
           <path d="M15.5 15.5 21 21" />

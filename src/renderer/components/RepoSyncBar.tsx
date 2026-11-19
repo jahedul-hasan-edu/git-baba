@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { BranchInfo, RepoStatus } from '../../shared/types';
+import type { BranchInfo, RepoStatus, StashEntry } from '../../shared/types';
 import { SwitchBranchDialog } from '../dialogs/BranchDialogs';
 import { call } from '../services/api';
 import { useApp } from '../state/AppState';
 import { requestQuickMerge } from '../services/quickMerge';
 import { isPublished } from '../../shared/publish';
+import { requestRailAction, type RailAction } from '../services/railActions';
+import { BranchPickerPanel, toPickerItems } from './BranchPicker';
 
 const REMOTE_CHECK_MS = 3 * 60 * 1000;
 
@@ -23,12 +25,16 @@ interface Props {
   onPush: () => void;
 }
 
+/** A right-click menu is showing (it sits above popovers and handles Escape itself). */
+const menuOpen = () => !!document.querySelector('.ctx-menu');
+
 /** Closes a popover on outside click / Escape. */
 function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, close: () => void) {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && close();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    // Escape with a right-click menu open closes only that menu.
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !menuOpen() && close();
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey);
     return () => {
@@ -44,13 +50,19 @@ function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, clo
  * checked against the remote in the background), and a Push button that shows what is waiting to go out.
  */
 export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, inOperation, disabled, onRefresh, onFetch, onPull, onPush }: Props) {
-  const { revision, setRepoTab, bump, refreshRepos } = useApp();
+  const { revision, repoTab, setRepoTab, bump, refreshRepos } = useApp();
   const [incoming, setIncoming] = useState<number | null>(null);
   const [lastCheck, setLastCheck] = useState<Date | null>(null);
   const [branchOpen, setBranchOpen] = useState(false);
   const [syncMenu, setSyncMenu] = useState(false);
   const [branches, setBranches] = useState<BranchInfo[] | null>(null);
-  const [filter, setFilter] = useState('');
+  /** The dropdown shows branches, or the stash list behind the Stash button. */
+  const [view, setView] = useState<'branches' | 'stashes'>('branches');
+  const [stashes, setStashes] = useState<StashEntry[] | null>(null);
+  const loadStashes = () =>
+    call('git:stashList', { repoId })
+      .then(setStashes)
+      .catch(() => setStashes([]));
   const [switching, setSwitching] = useState<{ target: string; kind: 'local' | 'remote' } | null>(null);
   const branchRef = useRef<HTMLDivElement>(null);
   const syncRef = useRef<HTMLDivElement>(null);
@@ -86,10 +98,12 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
 
   useEffect(() => {
     if (!branchOpen) return;
-    setFilter('');
+    setView('branches');
     call('git:branches', { repoId })
       .then(setBranches)
       .catch(() => setBranches([]));
+    void loadStashes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchOpen, repoId]);
 
   const branch = st?.branch ?? (st?.detached ? 'detached HEAD' : '—');
@@ -99,11 +113,15 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
   const canSync = !disabled && !inOperation;
   const canPush = canSync && !!st?.branch && !!st.headOid && (!hasUpstream || ahead > 0);
 
-  const q = filter.trim().toLowerCase();
-  const local = (branches ?? []).filter((b) => !b.remote);
-  const localNames = new Set(local.map((b) => b.name));
-  const remoteOnly = (branches ?? []).filter((b) => b.remote && !b.name.endsWith('/HEAD') && !localNames.has(b.name.split('/').slice(1).join('/')));
-  const match = (b: BranchInfo) => !q || b.name.toLowerCase().includes(q);
+  const localNames = new Set((branches ?? []).filter((b) => !b.remote).map((b) => b.name));
+
+  const dirty = st ? st.staged.length + st.unstaged.length + st.untracked.length : 0;
+  /** New Branch and Stash live in the branch rail of the Changes tab: open them there. */
+  const rail = (a: RailAction) => {
+    setBranchOpen(false);
+    if (repoTab !== 'changes') setRepoTab('changes');
+    requestRailAction(a);
+  };
 
   const pickBranch = (target: string, kind: 'local' | 'remote') => {
     setBranchOpen(false);
@@ -123,52 +141,75 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
       <div className="row sync-bar">
         {/* Branch picker */}
         <div className="pop-anchor" ref={branchRef}>
-          <button className={`pill pill-btn ${branchOpen ? 'open' : ''}`} onClick={() => setBranchOpen((o) => !o)} disabled={disabled} title="Switch branch">
-            <span className="sb-dot" />⎇ <strong className="ellipsis">{branch}</strong> <span className="caret">▾</span>
+          <button className={`pill pill-btn hb-trigger ${branchOpen ? 'open' : ''}`} onClick={() => setBranchOpen((o) => !o)} disabled={disabled} title={`${branch}
+Switch branch`}>
+            <span className="sb-dot" />
+            <span className="hb-trig-ico">⎇</span>
+            <span className="hb-trig-name">
+              {branch.includes('/') && <span className="hb-trig-pre">{branch.slice(0, branch.lastIndexOf('/') + 1)}</span>}
+              <strong className="hb-trig-leaf">{branch.slice(branch.lastIndexOf('/') + 1)}</strong>
+            </span>
+            <span className="caret">▾</span>
           </button>
-          {branchOpen && (
-            <div className="branch-pop pop-in">
-              <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Find a branch…" spellCheck={false} />
-              <div className="branch-pop-list">
-                {!branches ? (
-                  <div className="small muted pad">Loading…</div>
-                ) : (
-                  <>
-                    <div className="dropdown-title">Local</div>
-                    {local.filter(match).map((b) => (
-                      <div key={b.name} className={`dropdown-item ${b.current ? 'active' : ''}`} onClick={() => !b.current && pickBranch(b.name, 'local')} title={b.subject}>
-                        <span className="ctx-ico">{b.current ? '✓' : '⎇'}</span>
-                        <span className="grow ellipsis mono">{b.name}</span>
-                        {(b.ahead || b.behind) && (
-                          <span className="small muted">
-                            {b.ahead ? `↑${b.ahead}` : ''} {b.behind ? `↓${b.behind}` : ''}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                    {remoteOnly.filter(match).length > 0 && <div className="dropdown-title">Remote only</div>}
-                    {remoteOnly.filter(match).map((b) => (
-                      <div key={b.name} className="dropdown-item" onClick={() => pickBranch(b.name, 'remote')} title={`Check out ${b.name} locally`}>
-                        <span className="ctx-ico">☁</span>
-                        <span className="grow ellipsis mono">{b.name}</span>
-                      </div>
-                    ))}
-                    {local.filter(match).length + remoteOnly.filter(match).length === 0 && <div className="small muted pad">No branches match.</div>}
-                  </>
-                )}
-              </div>
-              <div className="dropdown-sep" />
-              <div
-                className="dropdown-item"
-                onClick={() => {
-                  setBranchOpen(false);
-                  requestQuickMerge({ source: st?.branch ?? undefined });
-                }}
-                title="Merge one branch into another — or open a pull request"
-              >
-                <span className="ctx-ico">⤵</span> Merge…
-              </div>
-            </div>
+          {branchOpen && view === 'stashes' && (
+            <StashPanel
+              repoId={repoId}
+              stashes={stashes ?? []}
+              dirty={dirty}
+              onBack={() => setView('branches')}
+              onStash={() => rail('stash')}
+              onChanged={() => {
+                bump();
+                void loadStashes();
+              }}
+            />
+          )}
+          {branchOpen && view === 'branches' && (
+            <BranchPickerPanel
+              className="hb-pop pop-in"
+              value={st?.branch ?? ''}
+              items={branches ? toPickerItems(branches) : []}
+              recentKey="header-switch"
+              hideSubject
+              tree
+              onRowContextMenu={(it, e) => {
+                // The dropdown stays open behind the menu.
+                if (repoTab !== 'changes') setRepoTab('changes');
+                requestRailAction({ kind: 'branch-menu', name: it.name, x: e.clientX, y: e.clientY });
+              }}
+              onClose={() => !menuOpen() && setBranchOpen(false)}
+              onPick={(it) => {
+                if (it.current) return setBranchOpen(false);
+                if (!it.remote) return pickBranch(it.name, 'local');
+                // A remote branch that already has a local copy: switch to the local one.
+                const short = it.name.split('/').slice(1).join('/');
+                if (localNames.has(short)) pickBranch(short, 'local');
+                else pickBranch(it.name, 'remote');
+              }}
+              footer={
+                <div className="hb-acts">
+                  <button onClick={() => rail('new-branch')} title="New branch from here">
+                    ＋ Branch
+                  </button>
+                  <button
+                    onClick={() => {
+                      setBranchOpen(false);
+                      requestQuickMerge({ source: st?.branch ?? undefined });
+                    }}
+                    title="Merge this branch into another — or open a pull request"
+                  >
+                    ⤵ Merge
+                  </button>
+                  <button
+                    disabled={dirty === 0 && !stashes?.length}
+                    onClick={() => (stashes?.length ? setView('stashes') : rail('stash'))}
+                    title={stashes?.length ? 'Your stashes' : dirty ? 'Shelve your uncommitted changes' : 'Nothing to stash'}
+                  >
+                    📦 Stash{stashes?.length ? <span className="hb-n">{stashes.length}</span> : null}
+                  </button>
+                </div>
+              }
+            />
           )}
         </div>
 
@@ -290,5 +331,84 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
         />
       )}
     </>
+  );
+}
+
+/** "On main: half-done login" → branch "main", text "half-done login". */
+function splitStash(message: string): { on: string | null; text: string } {
+  const m = /^(?:WIP on|On) ([^:]+):\s*(.*)$/.exec(message);
+  return m ? { on: m[1], text: m[2] || '(no message)' } : { on: null, text: message };
+}
+
+/** The stash list behind the dropdown's Stash button: apply, pop or drop each one. */
+function StashPanel({ repoId, stashes, dirty, onBack, onStash, onChanged }: { repoId: string; stashes: StashEntry[]; dirty: number; onBack: () => void; onStash: () => void; onChanged: () => void }) {
+  const { toast, showError } = useApp();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [dropping, setDropping] = useState<number | null>(null);
+  const act = async (key: string, fn: () => Promise<unknown>, ok: string) => {
+    setBusy(key);
+    try {
+      await fn();
+      toast(ok);
+    } catch (err) {
+      showError(err);
+    } finally {
+      setBusy(null);
+      setDropping(null);
+      onChanged();
+    }
+  };
+  return (
+    <div className="bp-pop hb-pop hs pop-in">
+      <div className="hs-head">
+        <button className="hs-back" onClick={onBack} title="Back to branches">
+          ←
+        </button>
+        <strong>Stashes</strong>
+        <span className="hb-n">{stashes.length}</span>
+        <span className="grow" />
+        {dirty > 0 && (
+          <button className="btn sm" onClick={onStash} title="Stash your uncommitted changes">
+            ＋ Stash {dirty}
+          </button>
+        )}
+      </div>
+      <div className="hs-list">
+        {stashes.length === 0 && <div className="bp-none">No stashes</div>}
+        {stashes.map((st) => {
+          const { on, text } = splitStash(st.message);
+          const k = st.ref;
+          return (
+            <div key={k} className={`hs-row ${dropping === st.index ? 'ask' : ''}`} title={st.message}>
+              <span className="hs-ico">📦</span>
+              <span className="hs-main">
+                <span className="hs-text ellipsis">{text}</span>
+                <span className="hs-on ellipsis">{on ? `on ${on}` : st.ref}</span>
+              </span>
+              {dropping === st.index ? (
+                <span className="hs-acts on">
+                  <button className="hs-yes" disabled={!!busy} onClick={() => void act(k, () => call('git:stashDrop', { repoId, index: st.index, confirmed: true }), 'Stash dropped')}>
+                    Drop
+                  </button>
+                  <button onClick={() => setDropping(null)}>Keep</button>
+                </span>
+              ) : (
+                <span className="hs-acts">
+                  <button disabled={!!busy} onClick={() => void act(k, () => call('git:stashApply', { repoId, index: st.index, pop: false }), 'Stash applied — it is kept')} title="Apply and keep the stash">
+                    Apply
+                  </button>
+                  <button disabled={!!busy} onClick={() => void act(k, () => call('git:stashApply', { repoId, index: st.index, pop: true }), 'Stash applied and removed')} title="Apply and remove the stash">
+                    Pop
+                  </button>
+                  <button className="hs-x" disabled={!!busy} onClick={() => setDropping(st.index)} title="Drop this stash">
+                    ✕
+                  </button>
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

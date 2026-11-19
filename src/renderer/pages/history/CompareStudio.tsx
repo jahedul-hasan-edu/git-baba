@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { PaneIcon } from '../../components/PaneIcon';
 import { createPortal } from 'react-dom';
 import type { BranchChanges, CommitStatFile, CompareResult, FileDiff, FriendlyError } from '../../../shared/types';
 import { BranchPicker, type PickerItem } from '../../components/BranchPicker';
-import { DiffViewer } from '../../components/DiffViewer';
+import { DiffViewer, type DiffBlameSource } from '../../components/DiffViewer';
 import { call, toFriendly } from '../../services/api';
 
 const COLORS = ['#5b8cff', '#3ecf8e', '#f5b84a', '#ff6b6b', '#b18cff', '#6cc4ff', '#ff9f6b', '#9fd36b'];
@@ -13,6 +14,7 @@ const colorOf = (name: string) => {
 };
 const isSha = (s: string) => /^[0-9a-f]{7,40}$/i.test(s);
 const label = (s: string) => (isSha(s) ? s.slice(0, 8) : s);
+type CommitInfo = { subject: string; body: string; author: string };
 
 type Res<T> = { status: 'loading' } | { status: 'ok'; data: T } | { status: 'error'; error: FriendlyError };
 type Lens = 'adds' | 'direct';
@@ -64,8 +66,19 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
     }
   });
   const [sha, setSha] = useState('');
+  // Commit sources are shown by their message, not their id.
+  const [commitInfo, setCommitInfo] = useState<Record<string, CommitInfo | null>>({});
   const [hotFile, setHotFile] = useState<string | null>(null);
   const [split, setSplit] = useState(() => readNum('gb.compare.split', 26, 16, 60));
+  // The sources pane can be folded to a thin rail to give the diff the whole width (remembered).
+  const [mini, setMini] = useState(() => {
+    try {
+      return localStorage.getItem('gb.compare.mini') === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => save('gb.compare.mini', mini ? '1' : '0'), [mini]);
   const [dragging, setDragging] = useState(false);
   const body = useRef<HTMLDivElement>(null);
 
@@ -101,6 +114,34 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources, target, repoId]);
+
+  useEffect(() => {
+    for (const s of sources) {
+      if (!isSha(s) || s in commitInfo) continue;
+      setCommitInfo((m) => ({ ...m, [s]: null }));
+      call('graph:commit', { repoId, hash: s })
+        .then((c) => setCommitInfo((m) => ({ ...m, [s]: { subject: c.subject, body: c.body, author: c.author } })))
+        .catch(() => undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sources, repoId]);
+
+  /** Title text: the full message for a commit, the name otherwise. */
+  const tip = (s: string) => {
+    const c = commitInfo[s];
+    return c ? `${c.subject}${c.body ? `\n\n${c.body.trim()}` : ''}\n\n${s.slice(0, 8)} · ${c.author}` : s;
+  };
+  /** A source's name: a commit's message (one line, cut with …) and its short id, or the ref name. */
+  const nameOf = (s: string) => {
+    const c = commitInfo[s];
+    if (!isSha(s)) return <span className="cx-name-ref mono ellipsis">{s}</span>;
+    return (
+      <span className="cx-name-commit">
+        <span className={`cx-name-subj ellipsis ${c ? '' : 'mono'}`}>{c ? c.subject || '(no message)' : label(s)}</span>
+        <span className="cx-name-sha mono">{s.slice(0, 7)}</span>
+      </span>
+    );
+  };
 
   const focused = focus && sources.includes(focus) ? focus : (sources[0] ?? null);
 
@@ -226,12 +267,19 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
           </button>
         </header>
 
-        <div className="cx-body" ref={body} style={{ gridTemplateColumns: `${split}% 10px minmax(0, 1fr)` }}>
-          {/* ---------------- Sources ---------------- */}
-          <section className="cx-pane cx-sources">
+        <div
+          className={`cx-body ${mini ? 'mini' : ''} ${dragging ? 'dragging' : ''}`}
+          ref={body}
+          style={{ gridTemplateColumns: mini ? '0px 0px minmax(0, 1fr)' : `${split}% 10px minmax(0, 1fr)` }}
+        >
+          {/* ---------------- Sources (hidden entirely when folded) ---------------- */}
+          <section className="cx-pane cx-sources" aria-hidden={mini} inert={mini ? true : undefined}>
             <div className="cx-pane-head">
               <span className="cx-pill src">Sources</span>
-              <span className="cx-hint">{sources.length || 'none yet'}</span>
+              <span className="cx-hint grow">{sources.length || 'none yet'}</span>
+              <button className="cx-icon cx-fold" onClick={() => setMini(true)} title="Hide sources">
+                <PaneIcon />
+              </button>
             </div>
             <div className="cx-add">
               <BranchPicker value="" onChange={add} items={items.filter((x) => x.name !== target && !sources.includes(x.name))} placeholder="＋ Add a branch or tag…" recentKey="compare-source" />
@@ -274,9 +322,8 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
                   >
                     <span className="cx-dot" />
                     <div className="cx-src-main">
-                      <div className="cx-src-name mono" title={s}>
-                        {isSha(s) ? '◉ ' : ''}
-                        {label(s)}
+                      <div className="cx-src-name" title={tip(s)}>
+                        {nameOf(s)}
                       </div>
                       <div className="cx-src-meta">
                         {!target && <span className="muted">choose a target</span>}
@@ -350,11 +397,17 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
 
           {/* ---------------- Comparison ---------------- */}
           <section className="cx-pane cx-main">
-            <div className="cx-route" style={{ ['--c' as string]: focused ? colorOf(focused) : 'var(--accent)' }}>
+            <div className={`cx-route ${mini ? 'with-toggle' : ''}`} style={{ ['--c' as string]: focused ? colorOf(focused) : 'var(--accent)' }}>
+              {mini && (
+                <button className="cx-icon cx-unfold" onClick={() => setMini(false)} title={`Show sources (${sources.length})`}>
+                  <PaneIcon />
+                  {sources.length > 1 && <span className="cx-unfold-n">{sources.length}</span>}
+                </button>
+              )}
               <div className="cx-end src">
                 <span className="cx-pill src">Source</span>
-                <span className="mono ellipsis" title={focused ?? ''}>
-                  {focused ? label(focused) : 'add a source'}
+                <span className="cx-end-name" title={focused ? tip(focused) : ''}>
+                  {focused ? nameOf(focused) : <span className="muted">add a source</span>}
                 </span>
               </div>
               <span className="cx-route-line">
@@ -437,6 +490,7 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
                         leftIsTarget={lens === 'direct'}
                         hot={new Set(hotspots.filter(([, by]) => by.includes(focused)).map(([f]) => f))}
                         emptyText={lens === 'adds' ? `${label(focused)} adds nothing that ${label(target)} lacks.` : `${label(target)} and ${label(focused)} are identical.`}
+                        blame={{ repoId, oldRev: lens === 'adds' ? (fa?.status === 'ok' ? fa.data.mergeBase : null) : target, newRev: focused }}
                       />
                     )}
                   </>
@@ -471,7 +525,7 @@ const STATUS: Record<CommitStatFile['status'], { l: string; c: string; t: string
 };
 
 /** File rail + one large diff with both sides labelled; ↑/↓ (or j/k) move between files. */
-function ChangesView({ files, diffs, left, right, leftIsTarget, hot, emptyText }: { files: CommitStatFile[]; diffs: FileDiff[]; left: string; right: string; leftIsTarget: boolean; hot: Set<string>; emptyText: string }) {
+function ChangesView({ files, diffs, left, right, leftIsTarget, hot, emptyText, blame }: { files: CommitStatFile[]; diffs: FileDiff[]; left: string; right: string; leftIsTarget: boolean; hot: Set<string>; emptyText: string; blame?: DiffBlameSource }) {
   const [q, setQ] = useState('');
   const [mode, setMode] = useState<'split' | 'unified'>(() => {
     try {
@@ -663,7 +717,7 @@ ${leftIsTarget ? st.t : f.status}`}>
           </div>
         )}
         <div className="cx-diff-body">
-          {current && current.binary ? <div className="cx-empty">Binary file: no text to compare.</div> : <DiffViewer diff={diff} hideHeader forceMode={mode} emptyText="No line changes for this file." />}
+          {current && current.binary ? <div className="cx-empty">Binary file: no text to compare.</div> : <DiffViewer diff={diff} hideHeader forceMode={mode} emptyText="No line changes for this file." blame={blame} />}
         </div>
       </div>
     </div>

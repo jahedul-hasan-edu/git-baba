@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { FileAtCommit } from '../../../shared/types';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import type { BlameInfo, FileAtCommit } from '../../../shared/types';
+import { loadBlame, whenText } from '../../components/DiffViewer';
+import { authorColor, initials } from '../history/graphStyle';
 import { Markdown } from '../../components/Markdown';
+import { BinaryView, ImageStage, isViewablePath } from './BinaryView';
 import { langFor, tokenize } from './syntax';
 
 export const isMarkdown = (p: string) => /\.(md|markdown|mdx)$/i.test(p);
@@ -45,8 +49,11 @@ function indentUnit(lines: string[]): number {
  * gutter, indent guides, the caret line, search marks on the scrollbar and a status bar. It scrolls on its
  * own, inside the page. Markdown files can be previewed.
  */
-export function FileView({ file, line, term, onLink, toolbar }: { file: FileAtCommit; line: number | null; term: string; onLink: (href: string) => void; toolbar: ReactNode }) {
-  const md = isMarkdown(file.path);
+export function FileView({ file, line, term, onLink, toolbar, menu, blame, source }: { file: FileAtCommit; line: number | null; term: string; onLink: (href: string) => void; toolbar: ReactNode; /** Extra entries for the "⋯" menu. */ menu?: FileMenuItem[]; /** Where to read line history from; hover a line to see who changed it and when. */ blame?: { repoId: string; rev: string }; /** Where to load the bytes of images, PDFs and other binary files from (ref null: working copy). */ source?: { repoId: string; ref: string | null } }) {
+  const svg = /\.svg$/i.test(file.path);
+  const md = isMarkdown(file.path) || svg;
+  // Images, PDFs and other binary files open in a viewer instead of as text.
+  const viewer = (file.binary || isViewablePath(file.path)) && !!source;
   const [mode, setMode] = useState<'preview' | 'code'>(md ? 'preview' : 'code');
   const [active, setActive] = useState<number | null>(line);
   const [wrap, setWrap] = useState(false);
@@ -60,6 +67,54 @@ export function FileView({ file, line, term, onLink, toolbar }: { file: FileAtCo
   const toks = useMemo(() => (file.binary ? [] : tokenize(lines, lang.key)), [lines, lang.key, file.binary]);
   const unit = useMemo(() => indentUnit(lines), [lines]);
   const crlf = file.content.includes('\r\n');
+
+  // ---- line history (git blame): a strip per author, a card on hover, the caret line's author inline ----
+  const [bl, setBl] = useState<BlameInfo | null>(null);
+  const [hover, setHover] = useState<{ x: number; y: number; n: number } | null>(null);
+  const hoverTimer = useRef<number | undefined>(undefined);
+  const card = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setBl(null);
+    setHover(null);
+    if (!blame || file.binary || viewer) return;
+    let live = true;
+    void loadBlame(blame.repoId, blame.rev, file.path).then((b) => live && setBl(b));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blame?.repoId, blame?.rev, file.path, file.hash, file.binary]);
+  useLayoutEffect(() => {
+    const el = card.current;
+    if (!el || !hover) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    el.style.left = `${Math.max(8, Math.min(hover.x + 14, window.innerWidth - w - 8))}px`;
+    el.style.top = `${hover.y + 18 + h > window.innerHeight - 8 ? Math.max(8, hover.y - h - 12) : hover.y + 18}px`;
+  }, [hover]);
+  const commitAt = (n: number) => {
+    const h = bl?.lines[n - 1];
+    return h ? { hash: h, c: bl!.commits[h] } : null;
+  };
+  const onMove = (e: React.MouseEvent) => {
+    const tr = (e.target as HTMLElement).closest('tr');
+    const n = Number(tr?.dataset.ln);
+    window.clearTimeout(hoverTimer.current);
+    if (!n || !commitAt(n)) {
+      hoverTimer.current = window.setTimeout(() => setHover(null), 80);
+      return;
+    }
+    const { clientX: x, clientY: y } = e;
+    const same = hover && commitAt(hover.n)?.hash === commitAt(n)?.hash;
+    if (same) {
+      setHover({ x, y, n });
+      return;
+    }
+    hoverTimer.current = window.setTimeout(() => setHover({ x, y, n }), hover ? 0 : 260);
+  };
+  const hv = hover ? commitAt(hover.n) : null;
+  const hvCount = hv && bl ? bl.lines.filter((x) => x === hv.hash).length : 0;
+  const lens = active ? commitAt(active) : null;
 
   useEffect(() => {
     setMode(md && !line ? 'preview' : 'code');
@@ -132,13 +187,13 @@ export function FileView({ file, line, term, onLink, toolbar }: { file: FileAtCo
   };
 
   return (
-    <div className={`file-panel cv fade-in ${mode === 'code' && !file.binary ? 'is-code' : ''}`}>
+    <div className={`file-panel cv fade-in ${mode === 'code' && !file.binary && !viewer ? 'is-code' : ''} ${viewer || (svg && mode === 'preview') ? 'is-viewer' : ''}`}>
       <div className="cv-tabs">
         <span className="cv-tab" title={file.path}>
           <span className={`cv-dot lang-${lang.key}`} aria-hidden />
           {name}
         </span>
-        {md && (
+        {md && !viewer && (
           <div className="segmented cv-mode">
             <button className={mode === 'preview' ? 'on' : ''} onClick={() => setMode('preview')}>
               Preview
@@ -149,28 +204,48 @@ export function FileView({ file, line, term, onLink, toolbar }: { file: FileAtCo
           </div>
         )}
         <span className="spacer" />
-        {mode === 'code' && !file.binary && (
-          <button className={`cv-tool ${wrap ? 'on' : ''}`} onClick={() => setWrap((w) => !w)} title="Soft-wrap long lines">
-            ↩ Wrap
-          </button>
-        )}
-        <div className="cv-actions">{toolbar}</div>
+        <div className="cv-actions">
+          {toolbar}
+          <MoreMenu
+            items={[
+              mode === 'code' && !file.binary && !viewer && { icon: '↩', label: 'Wrap lines', checked: wrap, run: () => setWrap((w) => !w) },
+              ...(menu ?? []),
+            ]}
+          />
+        </div>
       </div>
-      {file.binary ? (
+      {viewer ? (
+        <BinaryView repoId={source!.repoId} gitRef={source!.ref} path={file.path} />
+      ) : file.binary ? (
         <div className="empty">This is a binary file and cannot be displayed.</div>
+      ) : mode === 'preview' && svg ? (
+        <ImageStage src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(file.content)}`} size={new Blob([file.content]).size} name={file.path} />
       ) : mode === 'preview' ? (
         <div className="file-panel-md cv-scroll">
           <Markdown source={file.content} onLink={onLink} />
         </div>
       ) : (
         <div className="cv-frame">
-          <div className={`code-lines cv-scroll ${wrap ? 'wrap' : ''}`} ref={body} tabIndex={0} onKeyDown={onKey}>
+          <div
+            className={`code-lines cv-scroll ${wrap ? 'wrap' : ''} ${bl ? 'blamed' : ''}`}
+            ref={body}
+            tabIndex={0}
+            onKeyDown={onKey}
+            onMouseMove={bl ? onMove : undefined}
+            onMouseLeave={() => {
+              window.clearTimeout(hoverTimer.current);
+              setHover(null);
+            }}
+            onScroll={() => hover && setHover(null)}
+          >
             <table>
               <tbody>
                 {lines.map((l, i) => (
                   <tr key={i} data-ln={i + 1} className={active === i + 1 ? 'active' : t && hits.includes(i + 1) ? 'hit' : undefined} onClick={() => setActive(i + 1)}>
                     <td
                       className="ln"
+                      style={bl && commitAt(i + 1) ? { ['--bl' as string]: authorColor(commitAt(i + 1)!.c.email || commitAt(i + 1)!.c.author) } : undefined}
+                      data-b={bl && commitAt(i + 1) ? '' : undefined}
                       onClick={(e) => {
                         e.stopPropagation();
                         setActive(active === i + 1 ? null : i + 1);
@@ -178,7 +253,14 @@ export function FileView({ file, line, term, onLink, toolbar }: { file: FileAtCo
                     >
                       {i + 1}
                     </td>
-                    <td className="lc">{renderLine(l, i)}</td>
+                    <td className="lc">
+                      {renderLine(l, i)}
+                      {lens && active === i + 1 && (
+                        <span className="cv-lens" aria-hidden>
+                          {lens.c.author}, {lens.c.date ? whenText(lens.c.date).split(' · ')[0] : ''} · {lens.c.summary}
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -193,11 +275,37 @@ export function FileView({ file, line, term, onLink, toolbar }: { file: FileAtCo
           </div>
         </div>
       )}
+      {hover &&
+        hv &&
+        createPortal(
+          <div ref={card} className="bl-card" role="tooltip" style={{ ['--bl' as string]: authorColor(hv.c.email || hv.c.author) }}>
+            <div className="bl-card-head">
+              <span className="bl-avatar">{initials(hv.c.author)}</span>
+              <div className="grow" style={{ minWidth: 0 }}>
+                <div className="bl-author">
+                  <span className="ellipsis">{hv.c.author}</span>
+                </div>
+                <div className="bl-when" title={hv.c.date ? new Date(hv.c.date).toLocaleString() : ''}>
+                  {hv.c.date ? whenText(hv.c.date) : 'date unknown'}
+                </div>
+              </div>
+            </div>
+            <div className="bl-summary">{hv.c.summary || '(no message)'}</div>
+            <div className="bl-foot">
+              <span className="mono">{hv.hash.slice(0, 7)}</span>
+              <span>
+                {hvCount} line{hvCount === 1 ? '' : 's'} in this file
+              </span>
+            </div>
+          </div>,
+          document.body,
+        )}
       <div className="cv-status">
-        {mode === 'code' && !file.binary && <span>{active ? `Ln ${active}` : `${lines.length} lines`}</span>}
+        {mode === 'code' && !file.binary && !viewer && <span>{active ? `Ln ${active}` : `${lines.length} lines`}</span>}
+        {bl && mode === 'code' && <span className="cv-blame-on" title="Hover a line to see who changed it and when">👤 {Object.keys(bl.commits).length} commit{Object.keys(bl.commits).length === 1 ? '' : 's'} · {new Set(Object.values(bl.commits).map((c) => c.email || c.author)).size} author{new Set(Object.values(bl.commits).map((c) => c.email || c.author)).size === 1 ? '' : 's'}</span>}
         {t && <span className="cv-found">{hits.length ? `${hits.length} match${hits.length === 1 ? '' : 'es'}` : 'no matches'}</span>}
         <span className="spacer" />
-        {!file.binary && (
+        {!file.binary && !viewer && (
           <>
             <span>{formatBytes(new Blob([file.content]).size)}</span>
             <span>{crlf ? 'CRLF' : 'LF'}</span>
@@ -205,7 +313,7 @@ export function FileView({ file, line, term, onLink, toolbar }: { file: FileAtCo
             <span>{lines.some((x) => x.startsWith('\t')) ? 'Tab' : `${unit} spaces`}</span>
           </>
         )}
-        <span className="cv-lang">{file.binary ? 'Binary' : lang.name}</span>
+        <span className="cv-lang">{viewer ? (/\.pdf$/i.test(file.path) ? 'PDF' : /\.(png|jpe?g|gif|webp|bmp|ico|avif|heic|heif|tiff?|icns)$/i.test(file.path) ? 'Image' : 'Binary') : file.binary ? 'Binary' : lang.name}</span>
         {file.truncated && <span className="cv-warn">first 1 MB shown</span>}
       </div>
     </div>
@@ -254,6 +362,57 @@ export function CodeEditor({ value, onChange, onSave }: { value: string; onChang
           }
         }}
       />
+    </div>
+  );
+}
+
+export type FileMenuItem = { icon: string; label: string; run: () => void; danger?: boolean; disabled?: boolean; title?: string; checked?: boolean } | false;
+
+/** The "⋯" menu of a file: wrap, copy and delete, out of the way of reading. */
+function MoreMenu({ items }: { items: FileMenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  const list = items.filter((i): i is Exclude<FileMenuItem, false> => !!i);
+  if (!list.length) return null;
+  return (
+    <div className="pop-anchor cv-more" ref={ref}>
+      <button className={`btn sm ghost cv-more-btn ${open ? 'on' : ''}`} onClick={() => setOpen((o) => !o)} title="More" aria-label="More actions" aria-expanded={open}>
+        ⋯
+      </button>
+      {open && (
+        <div className="dropdown cv-more-pop pop-in" role="menu">
+          {list.map((it, i) => (
+            <div key={it.label}>
+              {it.danger && i > 0 && <div className="dropdown-sep" />}
+              <div
+                role="menuitem"
+                className={`dropdown-item ${it.danger ? 'danger' : ''} ${it.disabled ? 'disabled' : ''}`}
+                title={it.title}
+                onClick={() => {
+                  if (it.disabled) return;
+                  setOpen(false);
+                  it.run();
+                }}
+              >
+                <span className="ctx-ico">{it.icon}</span>
+                <span className="grow">{it.label}</span>
+                {it.checked && <span className="cv-check">✓</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

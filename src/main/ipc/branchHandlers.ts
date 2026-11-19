@@ -23,7 +23,7 @@ import type {
 } from '../../shared/types';
 import type { AppContext } from '../context';
 import { AppError, toFriendlyError } from '../git/errors';
-import { GitService } from '../git/GitService';
+import { branchClashError, GitService } from '../git/GitService';
 import { Worktrees } from '../git/worktrees';
 import { assertRepoAccountActive } from '../accounts/repoAccount';
 import { parseRemoteUrl as parseRemoteForAccount } from '../git/remoteUrl';
@@ -761,13 +761,18 @@ export function createBranchHandlers(ctx: AppContext, h: BranchHelpers): Handler
         if (!baseOid) throw new AppError({ code: 'no-commits', title: 'No Commits Yet', message: 'Create a first commit before creating branches.' });
       }
       const localOid = await git.tryRevParse(`refs/heads/${name}`);
+      if (!localOid) {
+        const clash = await git.branchNameClash(name);
+        if (clash) throw branchClashError(name, clash);
+      }
       if (localOid && !(await git.isAncestor(baseOid, localOid))) {
         throw new AppError({ code: 'already-exists', title: 'Branch Already Exists', message: `A different branch named "${name}" already exists locally. Choose another name.` });
       }
       const remote = await h.primaryRemote(git, null);
       if (!remote) throw new AppError({ code: 'no-remote', title: 'No Remote Configured', message: 'Publishing needs a remote. Add one in Settings, or use "Create locally".', actions: ['open-settings'] });
       const pending = [...new Set([...st.staged, ...st.unstaged, ...st.untracked].map((f) => f.path))].sort();
-      const canCommitPending = pending.length > 0 && baseOid === st.headOid;
+      // The changes come along on a switch (Git refuses if they would collide), so they can be committed there.
+      const canCommitPending = pending.length > 0;
       const baseParent = await git.parentOf(baseOid);
       const [baseCommit] = baseParent ? await git.log({ range: `${baseParent}..${baseOid}`, limit: 1 }).catch(() => [] as CommitInfo[]) : [];
       const review: PublishReview = { name, baseRef, baseOid, localOid, currentBranch: st.branch, headOid: st.headOid, pending, canCommitPending, remote };
@@ -796,6 +801,10 @@ export function createBranchHandlers(ctx: AppContext, h: BranchHelpers): Handler
       const auth = parseAuthInput(p.auth);
       const switchTo = asBoolean(p.switchTo, 'switchTo');
       const commitMessage = p.commitMessage ? asString(p.commitMessage, 'Commit message', { max: 20_000 }) : null;
+      const changes = p.changes === undefined ? null : asEnum(p.changes, 'changes', ['carry', 'stash', 'leave'] as const);
+      if (commitMessage && changes && changes !== 'carry') {
+        throw new AppError({ code: 'cannot-commit-pending', title: 'Nothing To Commit There', message: 'Your changes only reach the new branch when they come along with it. Choose "Bring them along" to commit them there.' });
+      }
       return ctx.withLock(repo.id, async (): Promise<BranchPublishResult> => {
         const r = ctx.confirmations.consume<PublishReview>(asId(p.confirmationId, 'confirmationId'), 'branch-publish', repo.id);
         const st = await git.status();
@@ -813,9 +822,23 @@ export function createBranchHandlers(ctx: AppContext, h: BranchHelpers): Handler
 
         const resolved = await resolveFor(repo, r.remote, auth);
         try {
-          const checkout = switchTo || !!commitMessage;
-          if (!r.localOid) await git.createBranch(r.name, r.baseOid, checkout);
-          else if (checkout && st.branch !== r.name) await git.switchBranch(r.name);
+          const checkout = changes ? changes !== 'leave' : switchTo || !!commitMessage;
+          let stashed: string | null = null;
+          if (!r.localOid) {
+            stashed = await git.createBranchWithChanges(r.name, r.baseOid, changes ?? (checkout ? 'carry' : 'leave'), st.branch ?? 'HEAD');
+          } else if (checkout && st.branch !== r.name) {
+            if (changes === 'stash' && r.pending.length) {
+              stashed = `Git Baba: changes left on ${st.branch ?? 'HEAD'} when switching to ${r.name}`;
+              const stashOid = await git.stashAll(stashed);
+              try {
+                await git.switchBranch(r.name);
+              } catch (err) {
+                if (!(await git.stashApplyCommit(stashOid))) await git.stashDropCommit(stashOid);
+                throw err;
+              }
+            } else await git.switchBranch(r.name);
+          }
+          if (stashed) ctx.recordOperation(repo, 'Stash', 'SUCCESS', `Changes on ${st.branch ?? 'HEAD'} stashed before switching to ${r.name} ("${stashed}")`);
 
           // The branch must contain exactly the reviewed base state (or build on it, when reused).
           let oid = await git.revParse(`refs/heads/${r.name}`);
@@ -833,7 +856,7 @@ export function createBranchHandlers(ctx: AppContext, h: BranchHelpers): Handler
           const verifiedRemoteOid = await verifyPublished(git, r.remote, r.name, oid, resolved);
           const summary = `${r.name} created from ${r.baseOid.slice(0, 8)} and published to ${r.remote.name}/${r.name} using ${resolved.description}`;
           ctx.recordOperation(repo, 'Create & publish branch', 'SUCCESS', summary);
-          return { branch: r.name, oid, remote: r.remote.name, verifiedRemoteOid, committed, authDescription: resolved.description, summary: redactSecrets(out, resolved.secrets) || summary };
+          return { branch: r.name, oid, remote: r.remote.name, verifiedRemoteOid, committed, stashed, switched: checkout || st.branch === r.name, authDescription: resolved.description, summary: redactSecrets(out, resolved.secrets) || summary };
         } catch (err) {
           ctx.recordOperation(repo, 'Create & publish branch', 'FAILED', `${r.name} using ${resolved.description}`);
           const f = toFriendlyError(err, 'Publish branch', resolved.secrets);

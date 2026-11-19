@@ -20,13 +20,15 @@ export function AppFooter() {
         <img src={logoUrl} alt="" width={14} height={14} draggable={false} />
         Git Baba <span className="ft-ver">v{info?.version ?? '…'}</span>
       </button>
-      <span className="ft-sep" />
-      <span className="ft-item static" title={info?.gitVersion ? `Using ${info.gitVersion}` : 'Git was not found'}>
-        <span className={`ft-led ${info?.gitVersion ? 'ok' : 'bad'}`} /> {info?.gitVersion ? info.gitVersion.replace(/^git version /, 'git ') : 'git not found'}
-      </span>
-      {info && (
-        <span className="ft-item static" title={info.encryptionAvailable ? 'Tokens are stored encrypted by the operating system' : 'Operating-system encryption is not available; tokens are not remembered'}>
-          {info.encryptionAvailable ? '🔒 secure storage' : '🔓 no secure storage'}
+      {/* Only problems show here: Git missing, or no OS encryption for remembered tokens (both in About). */}
+      {info && !info.gitVersion && (
+        <span className="ft-item static ft-warn" title="Git was not found on this computer">
+          <span className="ft-led bad" /> git not found
+        </span>
+      )}
+      {info && !info.encryptionAvailable && (
+        <span className="ft-item static ft-warn" title="Operating-system encryption is not available; tokens are not remembered">
+          🔓 no secure storage
         </span>
       )}
       <span className="spacer" />

@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FilePeople } from './FilePeople';
+import { isViewablePath } from './BinaryView';
+import { CodeTree } from './CodeTree';
 import type { CodeEntry, CodeInfo, CodeLastCommit, CodeSearchHit, FileAtCommit, FriendlyError, RepoStatus } from '../../../shared/types';
 import { isPublished } from '../../../shared/publish';
 import { ErrorPanel } from '../../components/ErrorPanel';
@@ -71,8 +74,26 @@ export function CodePage() {
   const [pickerTab, setPickerTab] = useState<'branches' | 'tags' | null>(null);
   // On narrow windows the About column becomes a drawer.
   const [aboutOpen, setAboutOpen] = useState(false);
+  /** File whose people (who changed it) are shown. */
+  const [people, setPeople] = useState<{ path: string; ref: string | null } | null>(null);
   const [dialog, setDialog] = useState<null | { kind: 'commit'; message: string } | { kind: 'push' } | { kind: 'switch'; target: string; remote: boolean } | { kind: 'delete'; path: string }>(null);
   const [saving, setSaving] = useState(false);
+  // The explorer tree beside the content (shown unless hidden; remembered).
+  const [treeOpen, setTreeOpen] = useState(() => {
+    try {
+      return localStorage.getItem('gb.code.tree') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const showTree = (on: boolean) => {
+    setTreeOpen(on);
+    try {
+      localStorage.setItem('gb.code.tree', on ? '1' : '0');
+    } catch {
+      // per-viewer convenience only
+    }
+  };
   const searchBox = useRef<HTMLInputElement>(null);
 
   const viewRef = ref ?? info?.ref ?? null;
@@ -180,6 +201,8 @@ export function CodePage() {
     async (path: string): Promise<FileAtCommit> => {
       const mark = changes.get(path);
       if (isCurrent && (mark === 'added' || mark === 'modified' || mark === 'renamed')) {
+        // Images, PDFs and other binaries are read as bytes by the viewer, not as text.
+        if (isViewablePath(path)) return { path, hash: 'WORKTREE', content: '', binary: true, truncated: false };
         const local = await call('gh:readLocalFile', { repoId, path });
         return { path, hash: 'WORKTREE', content: local.content, binary: false, truncated: local.truncated };
       }
@@ -515,6 +538,26 @@ export function CodePage() {
         )}
 
         {/* body: scrolls on its own (a file's code scrolls inside the viewer) */}
+        <div className={`code-explore ${treeOpen && viewRef ? 'with-tree' : ''}`}>
+        {treeOpen && viewRef && (
+          <CodeTree
+            repoId={repoId}
+            viewRef={viewRef}
+            activePath={view.kind === 'file' || view.kind === 'edit' ? view.path : null}
+            changes={changes}
+            onOpen={(p) => openFile(p)}
+            onDir={(d) => view.kind === 'tree' && goDir(d)}
+            onHide={() => showTree(false)}
+          />
+        )}
+        {!treeOpen && viewRef && (
+          <button className="ct-show" onClick={() => showTree(true)} title="Show the explorer">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+              <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2.5" />
+              <line x1="6" y1="2.5" x2="6" y2="13.5" />
+            </svg>
+          </button>
+        )}
         <div className="code-body">
         {view.kind === 'search' ? (
           <div className="card code-card fade-in">
@@ -618,34 +661,33 @@ export function CodePage() {
                 )}
                 <FileView
                   file={file}
+                  blame={file.hash === 'WORKTREE' ? undefined : { repoId, rev: viewRef! }}
+                  source={{ repoId, ref: file.hash === 'WORKTREE' ? null : viewRef! }}
                   line={view.line}
                   term={search?.query ?? ''}
                   onLink={onLink(parentOf(file.path))}
                   toolbar={
-                    <>
-                      <button
-                        className="btn sm ghost"
-                        title="Copy file contents"
-                        onClick={() =>
-                          navigator.clipboard
-                            .writeText(file.content)
-                            .then(() => toast('File contents copied'))
-                            .catch(showError)
-                        }
-                      >
-                        ⧉ Copy
-                      </button>
-                      <button className="btn sm ghost" title="Copy path" onClick={() => void call('app:copyText', { text: file.path }).then(() => toast('Path copied'), showError)}>
-                        Path
-                      </button>
-                      <button className="btn sm" disabled={!isCurrent || file.binary || changes.get(file.path) === 'deleted'} title={isCurrent ? 'Edit this file' : `Switch to ${viewRef} to edit`} onClick={() => void startEdit(file.path)}>
-                        ✎ Edit
-                      </button>
-                      <button className="btn sm danger" disabled={!isCurrent || changes.get(file.path) === 'deleted'} title={isCurrent ? 'Delete this file' : `Switch to ${viewRef} to delete files`} onClick={() => setDialog({ kind: 'delete', path: file.path })}>
-                        🗑
-                      </button>
-                    </>
+                    <button className="btn sm" disabled={!isCurrent || file.binary || isViewablePath(file.path) || changes.get(file.path) === 'deleted'} title={isCurrent ? 'Edit this file' : `Switch to ${viewRef} to edit`} onClick={() => void startEdit(file.path)}>
+                      ✎ Edit
+                    </button>
                   }
+                  menu={[
+                    { icon: '👥', label: 'People who changed it', run: () => setPeople({ path: file.path, ref: file.hash === 'WORKTREE' ? null : viewRef! }) },
+                    !file.binary && !isViewablePath(file.path) && {
+                      icon: '⧉',
+                      label: 'Copy contents',
+                      run: () => void navigator.clipboard.writeText(file.content).then(() => toast('File contents copied'), showError),
+                    },
+                    { icon: '⎘', label: 'Copy path', run: () => void call('app:copyText', { text: file.path }).then(() => toast('Path copied'), showError) },
+                    {
+                      icon: '🗑',
+                      label: 'Delete file',
+                      danger: true,
+                      disabled: !isCurrent || changes.get(file.path) === 'deleted',
+                      title: isCurrent ? undefined : `Switch to ${viewRef} to delete files`,
+                      run: () => setDialog({ kind: 'delete', path: file.path }),
+                    },
+                  ]}
                 />
               </>
             )}
@@ -739,6 +781,7 @@ export function CodePage() {
           </div>
         )}
         </div>
+        </div>
       </div>
 
       {aboutOpen && <div className="about-scrim" onClick={() => setAboutOpen(false)} />}
@@ -782,6 +825,7 @@ export function CodePage() {
           }}
         />
       )}
+      {people && <FilePeople repoId={repoId} gitRef={people.ref} path={people.path} onClose={() => setPeople(null)} />}
       {dialog?.kind === 'delete' && (
         <ConfirmDialog
           title="Delete File"
