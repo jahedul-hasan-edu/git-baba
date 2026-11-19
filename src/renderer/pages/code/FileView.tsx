@@ -49,7 +49,7 @@ function indentUnit(lines: string[]): number {
  * gutter, indent guides, the caret line, search marks on the scrollbar and a status bar. It scrolls on its
  * own, inside the page. Markdown files can be previewed.
  */
-export function FileView({ file, line, term, onLink, toolbar, blame, source }: { file: FileAtCommit; line: number | null; term: string; onLink: (href: string) => void; toolbar: ReactNode; /** Where to read line history from; hover a line to see who changed it and when. */ blame?: { repoId: string; rev: string }; /** Where to load the bytes of images, PDFs and other binary files from (ref null: working copy). */ source?: { repoId: string; ref: string | null } }) {
+export function FileView({ file, line, term, onLink, toolbar, menu, blame, source }: { file: FileAtCommit; line: number | null; term: string; onLink: (href: string) => void; toolbar: ReactNode; /** Extra entries for the "⋯" menu. */ menu?: FileMenuItem[]; /** Where to read line history from; hover a line to see who changed it and when. */ blame?: { repoId: string; rev: string }; /** Where to load the bytes of images, PDFs and other binary files from (ref null: working copy). */ source?: { repoId: string; ref: string | null } }) {
   const svg = /\.svg$/i.test(file.path);
   const md = isMarkdown(file.path) || svg;
   // Images, PDFs and other binary files open in a viewer instead of as text.
@@ -204,12 +204,15 @@ export function FileView({ file, line, term, onLink, toolbar, blame, source }: {
           </div>
         )}
         <span className="spacer" />
-        {mode === 'code' && !file.binary && !viewer && (
-          <button className={`cv-tool ${wrap ? 'on' : ''}`} onClick={() => setWrap((w) => !w)} title="Soft-wrap long lines">
-            ↩ Wrap
-          </button>
-        )}
-        <div className="cv-actions">{toolbar}</div>
+        <div className="cv-actions">
+          {toolbar}
+          <MoreMenu
+            items={[
+              mode === 'code' && !file.binary && !viewer && { icon: '↩', label: 'Wrap lines', checked: wrap, run: () => setWrap((w) => !w) },
+              ...(menu ?? []),
+            ]}
+          />
+        </div>
       </div>
       {viewer ? (
         <BinaryView repoId={source!.repoId} gitRef={source!.ref} path={file.path} />
@@ -359,6 +362,57 @@ export function CodeEditor({ value, onChange, onSave }: { value: string; onChang
           }
         }}
       />
+    </div>
+  );
+}
+
+export type FileMenuItem = { icon: string; label: string; run: () => void; danger?: boolean; disabled?: boolean; title?: string; checked?: boolean } | false;
+
+/** The "⋯" menu of a file: wrap, copy and delete, out of the way of reading. */
+function MoreMenu({ items }: { items: FileMenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  const list = items.filter((i): i is Exclude<FileMenuItem, false> => !!i);
+  if (!list.length) return null;
+  return (
+    <div className="pop-anchor cv-more" ref={ref}>
+      <button className={`btn sm ghost cv-more-btn ${open ? 'on' : ''}`} onClick={() => setOpen((o) => !o)} title="More" aria-label="More actions" aria-expanded={open}>
+        ⋯
+      </button>
+      {open && (
+        <div className="dropdown cv-more-pop pop-in" role="menu">
+          {list.map((it, i) => (
+            <div key={it.label}>
+              {it.danger && i > 0 && <div className="dropdown-sep" />}
+              <div
+                role="menuitem"
+                className={`dropdown-item ${it.danger ? 'danger' : ''} ${it.disabled ? 'disabled' : ''}`}
+                title={it.title}
+                onClick={() => {
+                  if (it.disabled) return;
+                  setOpen(false);
+                  it.run();
+                }}
+              >
+                <span className="ctx-ico">{it.icon}</span>
+                <span className="grow">{it.label}</span>
+                {it.checked && <span className="cv-check">✓</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

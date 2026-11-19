@@ -664,32 +664,26 @@ export function CodePage() {
                   term={search?.query ?? ''}
                   onLink={onLink(parentOf(file.path))}
                   toolbar={
-                    <>
-                      {!file.binary && !isViewablePath(file.path) && (
-                      <button
-                        className="btn sm ghost"
-                        title="Copy file contents"
-                        onClick={() =>
-                          navigator.clipboard
-                            .writeText(file.content)
-                            .then(() => toast('File contents copied'))
-                            .catch(showError)
-                        }
-                      >
-                        ⧉ Copy
-                      </button>
-                      )}
-                      <button className="btn sm ghost" title="Copy path" onClick={() => void call('app:copyText', { text: file.path }).then(() => toast('Path copied'), showError)}>
-                        Path
-                      </button>
-                      <button className="btn sm" disabled={!isCurrent || file.binary || isViewablePath(file.path) || changes.get(file.path) === 'deleted'} title={isCurrent ? 'Edit this file' : `Switch to ${viewRef} to edit`} onClick={() => void startEdit(file.path)}>
-                        ✎ Edit
-                      </button>
-                      <button className="btn sm danger" disabled={!isCurrent || changes.get(file.path) === 'deleted'} title={isCurrent ? 'Delete this file' : `Switch to ${viewRef} to delete files`} onClick={() => setDialog({ kind: 'delete', path: file.path })}>
-                        🗑
-                      </button>
-                    </>
+                    <button className="btn sm" disabled={!isCurrent || file.binary || isViewablePath(file.path) || changes.get(file.path) === 'deleted'} title={isCurrent ? 'Edit this file' : `Switch to ${viewRef} to edit`} onClick={() => void startEdit(file.path)}>
+                      ✎ Edit
+                    </button>
                   }
+                  menu={[
+                    !file.binary && !isViewablePath(file.path) && {
+                      icon: '⧉',
+                      label: 'Copy contents',
+                      run: () => void navigator.clipboard.writeText(file.content).then(() => toast('File contents copied'), showError),
+                    },
+                    { icon: '⎘', label: 'Copy path', run: () => void call('app:copyText', { text: file.path }).then(() => toast('Path copied'), showError) },
+                    {
+                      icon: '🗑',
+                      label: 'Delete file',
+                      danger: true,
+                      disabled: !isCurrent || changes.get(file.path) === 'deleted',
+                      title: isCurrent ? undefined : `Switch to ${viewRef} to delete files`,
+                      run: () => setDialog({ kind: 'delete', path: file.path }),
+                    },
+                  ]}
                 />
               </>
             )}

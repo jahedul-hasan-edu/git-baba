@@ -283,8 +283,6 @@ export function Sidebar() {
                 <span className={`chev ${isCollapsed ? '' : 'open'}`}>▸</span>
                 {groupIcon(g)}
                 <span className="ellipsis grow">{g.label}</span>
-                {g.kind === 'personal' && <span className="group-tag">personal</span>}
-                {g.kind === 'org' && <span className="group-tag">org</span>}
                 <span className="badge">{g.repos.length}</span>
               </button>
               {!isCollapsed && (
@@ -314,7 +312,19 @@ export function Sidebar() {
                         {r.changeCount > 0 && <span className="repo-changes" title={`${r.changeCount} uncommitted change(s)`}>{r.changeCount}</span>}
                         {r.hasConflicts && <span className="dot danger" title="Merge conflicts" />}
                         {!r.exists && <span className="dot danger" title="Folder missing" />}
-                        {r.favorite && <span className="repo-star" title="Favorite">★</span>}
+                        <button
+                          className={`repo-fav ${r.favorite ? 'on' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void toggleFavorite(r);
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          title={r.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                          aria-label={r.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                          aria-pressed={r.favorite}
+                        >
+                          {r.favorite ? '★' : '☆'}
+                        </button>
                         {wts.length > 0 && (
                           <button
                             className={`repo-wt-count ${unfolded ? 'on' : ''}`}
@@ -333,10 +343,11 @@ export function Sidebar() {
                           </button>
                         )}
                       </div>
-                      <div className="meta">
-                        {r.branch && <span className="repo-branch">⎇ {r.branch}</span>}
-                        {repoSubtitle(r)}
-                      </div>
+                      {r.branch && (
+                        <div className="meta">
+                          <span className="repo-branch">⎇ {r.branch}</span>
+                        </div>
+                      )}
                     </div>
                     {unfolded && (
                       <WorktreeTwig
