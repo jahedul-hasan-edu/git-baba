@@ -27,6 +27,15 @@ export function resolveInsideRepo(repoRoot: string, relPath: string): string {
   return full;
 }
 
+/**
+ * What "show in File Explorer" should do with a repository-relative path: the repository root itself
+ * ("", "." or "./") opens the folder; anything else is shown selected in its folder (and must stay inside).
+ */
+export function revealTarget(repoRoot: string, relPath: string): { kind: 'folder' | 'item'; full: string } {
+  if (typeof relPath === 'string' && /^\.?[\\/]*$/.test(relPath)) return { kind: 'folder', full: path.resolve(repoRoot) };
+  return { kind: 'item', full: resolveInsideRepo(repoRoot, relPath) };
+}
+
 /** Validates a list of repo-relative paths and returns them in git's forward-slash form. */
 export function sanitizeRepoPaths(repoRoot: string, relPaths: string[]): string[] {
   return relPaths.map((p) => {

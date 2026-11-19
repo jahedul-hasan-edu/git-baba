@@ -8,7 +8,7 @@ import { authenticateAccount, describeScopes, verifyToken } from '../accounts/ac
 import type { AppContext } from '../context';
 import { AppError } from '../git/errors';
 import { DEFAULT_API_BASE, validateApiBaseUrl } from '../github/GitHubService';
-import { resolveInsideRepo } from '../util/paths';
+import { resolveInsideRepo, revealTarget } from '../util/paths';
 import {
   asBoolean,
   asEnum,
@@ -354,9 +354,12 @@ export function createExtraHandlers(
     'graph:reveal': async (payload) => {
       const p = asObject(payload);
       const { repo } = ctx.git(p.repoId);
-      // Reveal only (never "open"): opening could execute a script from the repository.
-      const full = resolveInsideRepo(repo.path, asString(p.path, 'path', { trim: false }));
-      shell.showItemInFolder(full);
+      // Files are revealed, never "opened" (that could run a script from the repository). The repository
+      // root is a folder, so opening it just shows it in the file manager.
+      const target = revealTarget(repo.path, asString(p.path, 'path', { min: 0, trim: false }));
+      if (target.kind === 'item') return shell.showItemInFolder(target.full);
+      const err = await shell.openPath(target.full);
+      if (err) throw new AppError({ code: 'reveal-failed', title: 'Could Not Open the Folder', message: err });
     },
 
     // ---------------- Code browser ----------------
