@@ -5043,3 +5043,10 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 /* Dialogs sit below the window title bar (which stays on top), so they never run under it. */
 .modal-backdrop { top: 34px; }
 .modal { max-height: calc(100vh - 34px - 48px); }
+
+/* Compare sources: flat rows marked by a coloured left border. */
+.cx-src { border: 0; border-left: 3px solid color-mix(in srgb, var(--c) 45%, transparent); border-radius: 0; background: transparent; padding: 8px 8px 8px 12px; box-shadow: none; }
+.cx-src::before, .cx-src .cx-dot { display: none; }
+.cx-src:hover { background: var(--bg-2); }
+.cx-src.on { border-left-color: var(--c); background: color-mix(in srgb, var(--c) 8%, transparent); box-shadow: none; }
+.cx-src.hot { box-shadow: none; border-left-color: var(--warn); }
