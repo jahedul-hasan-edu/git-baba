@@ -202,6 +202,15 @@ function appMenus(): Record<AppMenuId, Electron.MenuItemConstructorOptions[]> {
   const send = (id: string) => () => mainWindow?.webContents.send('gg:notify', { type: 'menu', id });
   return {
     file: [
+      {
+        label: 'Add repository',
+        submenu: [
+          { label: 'Open existing repository…', click: send('repo-open') },
+          { label: 'Create repository…', click: send('repo-create') },
+          { label: 'Clone repository…', click: send('repo-clone') },
+        ],
+      },
+      { type: 'separator' },
       { label: 'Create GitHub App Token', click: send('token') },
       { type: 'separator' },
       { label: 'Keyboard Shortcuts', accelerator: 'CmdOrCtrl+/', registerAccelerator: false, click: send('shortcuts') },

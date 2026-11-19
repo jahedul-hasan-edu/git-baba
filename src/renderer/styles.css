@@ -5272,3 +5272,10 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .tabs.dock .tab-compare { margin-left: auto; align-self: center; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-2); color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; transition: color .15s, border-color .15s, background .15s; }
 .tabs.dock .tab-compare:hover { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg-2)); }
 .tabs.dock .tab-compare ~ .tab-clear, .tabs.dock .tab-compare ~ .tab-search { margin-left: 6px; }
+
+/* Repositories sidebar: hides completely; the title bar's panel icon brings it back */
+.sidebar.hidden { overflow: hidden; border-right: 0; min-width: 0; }
+.sb-hide { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: var(--text-3); cursor: pointer; }
+.sb-hide:hover { background: var(--bg-3); color: var(--text); }
+.tb-pane { -webkit-app-region: no-drag; width: 26px; height: 24px; margin-left: 6px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 5px; background: transparent; color: var(--text-2); cursor: pointer; }
+.tb-pane:hover { background: var(--bg-3); color: var(--text); }
