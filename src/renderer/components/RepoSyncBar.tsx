@@ -141,8 +141,15 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
       <div className="row sync-bar">
         {/* Branch picker */}
         <div className="pop-anchor" ref={branchRef}>
-          <button className={`pill pill-btn ${branchOpen ? 'open' : ''}`} onClick={() => setBranchOpen((o) => !o)} disabled={disabled} title="Switch branch">
-            <span className="sb-dot" />⎇ <strong className="ellipsis">{branch}</strong> <span className="caret">▾</span>
+          <button className={`pill pill-btn hb-trigger ${branchOpen ? 'open' : ''}`} onClick={() => setBranchOpen((o) => !o)} disabled={disabled} title={`${branch}
+Switch branch`}>
+            <span className="sb-dot" />
+            <span className="hb-trig-ico">⎇</span>
+            <span className="hb-trig-name">
+              {branch.includes('/') && <span className="hb-trig-pre">{branch.slice(0, branch.lastIndexOf('/') + 1)}</span>}
+              <strong className="hb-trig-leaf">{branch.slice(branch.lastIndexOf('/') + 1)}</strong>
+            </span>
+            <span className="caret">▾</span>
           </button>
           {branchOpen && view === 'stashes' && (
             <StashPanel
@@ -164,6 +171,7 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
               items={branches ? toPickerItems(branches) : []}
               recentKey="header-switch"
               hideSubject
+              tree
               onRowContextMenu={(it, e) => {
                 // The dropdown stays open behind the menu.
                 if (repoTab !== 'changes') setRepoTab('changes');

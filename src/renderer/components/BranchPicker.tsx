@@ -108,6 +108,80 @@ const pushRecent = (key: string | undefined, name: string) => {
   }
 };
 
+type PanelRow =
+  | { kind: 'head'; label: string }
+  | { kind: 'item'; item: PickerItem; hits: number[]; key: string; depth?: number; leaf?: string }
+  | { kind: 'folder'; key: string; label: string; depth: number; open: boolean; count: number };
+
+interface TreeNode {
+  name: string;
+  path: string;
+  children: Map<string, TreeNode>;
+  leaf: PickerItem | null;
+}
+
+const OPEN_KEY = (k?: string) => `gb.bp.open.${k ?? 'default'}`;
+const readOpen = (k?: string): string[] => {
+  try {
+    return JSON.parse(localStorage.getItem(OPEN_KEY(k)) ?? '[]') as string[];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Branches as a folder tree ("feature/x" under "feature"): newest work first, a folder ranked by its newest
+ * branch, the current branch on top, and single-child folder chains merged ("inride/features").
+ */
+function treeRows(scope: string, list: PickerItem[], open: Set<string>): PanelRow[] {
+  const root: TreeNode = { name: '', path: '', children: new Map(), leaf: null };
+  for (const it of list) {
+    const parts = it.name.split('/');
+    let node = root;
+    parts.forEach((part, i) => {
+      const last = i === parts.length - 1;
+      const k = last ? `${part}\u0000` : part;
+      let next = node.children.get(k);
+      if (!next) {
+        next = { name: part, path: parts.slice(0, i + 1).join('/'), children: new Map(), leaf: null };
+        node.children.set(k, next);
+      }
+      if (last) next.leaf = it;
+      node = next;
+    });
+  }
+  const newest = (n: TreeNode): number => Math.max(n.leaf ? Date.parse(n.leaf.date ?? '') || 0 : 0, ...[...n.children.values()].map(newest));
+  const hasCurrent = (n: TreeNode): boolean => !!n.leaf?.current || [...n.children.values()].some(hasCurrent);
+  const count = (n: TreeNode): number => (n.leaf ? 1 : 0) + [...n.children.values()].reduce((a, c) => a + count(c), 0);
+  const out: PanelRow[] = [];
+  const walk = (node: TreeNode, depth: number) => {
+    const kids = [...node.children.values()].sort((a, b) => Number(hasCurrent(b)) - Number(hasCurrent(a)) || newest(b) - newest(a) || a.name.localeCompare(b.name));
+    for (const child of kids) {
+      if (child.children.size === 0 && child.leaf) {
+        out.push({ kind: 'item', item: child.leaf, hits: [], key: `${scope}:${child.leaf.name}`, depth, leaf: child.name });
+        continue;
+      }
+      // Merge "a" → "b" when "a" holds nothing but the folder "b".
+      let f = child;
+      let label = f.name;
+      while (!f.leaf && f.children.size === 1) {
+        const only = [...f.children.values()][0];
+        if (only.children.size === 0) break;
+        f = only;
+        label += `/${f.name}`;
+      }
+      const key = `${scope}:${f.path}`;
+      const isOpen = open.has(key);
+      out.push({ kind: 'folder', key, label, depth, open: isOpen, count: count(f) });
+      if (!isOpen) continue;
+      if (f.leaf) out.push({ kind: 'item', item: f.leaf, hits: [], key: `${scope}:${f.leaf.name}`, depth: depth + 1, leaf: f.name });
+      walk(f, depth + 1);
+    }
+  };
+  walk(root, 0);
+  return out;
+}
+
 /**
  * The picker's popup: fuzzy search, Local/Remote tabs, recents, rich rows and full keyboard control.
  * Used by BranchPicker and by the header branch menu (which puts its own actions in the footer).
@@ -125,6 +199,7 @@ export function BranchPickerPanel({
   panelRef,
   hideSubject,
   onRowContextMenu,
+  tree,
 }: {
   value: string;
   items: PickerItem[];
@@ -140,6 +215,8 @@ export function BranchPickerPanel({
   /** One line per branch: no last-commit message. */
   hideSubject?: boolean;
   onRowContextMenu?: (it: PickerItem, e: React.MouseEvent) => void;
+  /** Without a search, show branches as a folder tree (searching always lists flat matches). */
+  tree?: boolean;
 }) {
   const [q, setQ] = useState('');
   const [tab, setTab] = useState<Tab>('all');
@@ -148,12 +225,29 @@ export function BranchPickerPanel({
   const inputRef = useRef<HTMLInputElement>(null);
   const hasRemote = items.some((i) => i.remote);
   const hasLocal = items.some((i) => !i.remote);
+  const [open, setOpen] = useState<Set<string>>(() => {
+    const s = new Set(readOpen(recentKey));
+    const parts = value.split('/');
+    for (let i = 1; i < parts.length; i++) s.add(`Local:${parts.slice(0, i).join('/')}`);
+    return s;
+  });
+  const toggleFolder = (key: string, to?: boolean) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (to ?? !next.has(key)) next.add(key);
+      else next.delete(key);
+      try {
+        localStorage.setItem(OPEN_KEY(recentKey), JSON.stringify([...next].slice(-200)));
+      } catch {
+        /* per-viewer convenience */
+      }
+      return next;
+    });
 
   // Rows: specials, recents (no query), then local / remote groups, filtered and ranked.
   const rows = useMemo(() => {
     const query = q.trim().toLowerCase();
-    type Row = { kind: 'head'; label: string } | { kind: 'item'; item: PickerItem; hits: number[]; key: string };
-    const out: Row[] = [];
+    const out: PanelRow[] = [];
     const match = (it: PickerItem) => fuzzy(it.label ?? it.name, query);
     const inTab = (it: PickerItem) => tab === 'all' || (tab === 'remote' ? !!it.remote : !it.remote);
     const sp = special.filter((s) => !query || match(s));
@@ -176,13 +270,14 @@ export function BranchPickerPanel({
       else scored.sort((a, b) => Number(!!b.it.current) - Number(!!a.it.current) || (Date.parse(b.it.date ?? '') || 0) - (Date.parse(a.it.date ?? '') || 0));
       if (!scored.length) return;
       out.push({ kind: 'head', label: `${label} · ${scored.length}` });
-      scored.forEach(({ it, m }) => out.push({ kind: 'item', item: it, hits: m.hits, key: `${label}:${it.name}` }));
+      if (tree && !query) out.push(...treeRows(label, scored.map((x) => x.it), open));
+      else scored.forEach(({ it, m }) => out.push({ kind: 'item', item: it, hits: m.hits, key: `${label}:${it.name}` }));
     };
     group('Local', items.filter((i) => !i.remote));
     group('Remote', items.filter((i) => i.remote));
     return out;
-  }, [q, tab, items, special, recentKey]);
-  const pickable = rows.map((r, i) => (r.kind === 'item' && !r.item.disabled ? i : -1)).filter((i) => i !== -1);
+  }, [q, tab, items, special, recentKey, tree, open]);
+  const pickable = rows.map((r, i) => ((r.kind === 'item' && !r.item.disabled) || r.kind === 'folder' ? i : -1)).filter((i) => i !== -1);
 
   useEffect(() => {
     const t = setTimeout(() => inputRef.current?.focus(), 0);
@@ -218,6 +313,10 @@ export function BranchPickerPanel({
       e.preventDefault();
       const r = rows[active];
       if (r?.kind === 'item') choose(r.item);
+      else if (r?.kind === 'folder') toggleFolder(r.key);
+    } else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && rows[active]?.kind === 'folder' && !q) {
+      e.preventDefault();
+      toggleFolder((rows[active] as { key: string }).key, e.key === 'ArrowRight');
     } else if (e.key === 'Escape') {
       // A right-click menu over the panel closes first (it listens on the window).
       if (document.querySelector('.ctx-menu')) return;
@@ -258,10 +357,33 @@ export function BranchPickerPanel({
             <div key={`h${i}`} className="bp-head">
               {r.label}
             </div>
+          ) : r.kind === 'folder' ? (
+            <div
+              key={r.key}
+              data-row={i}
+              role="treeitem"
+              aria-expanded={r.open}
+              className={`bp-row bp-folder ${i === active ? 'active' : ''}`}
+              style={{ paddingLeft: 8 + r.depth * 14 }}
+              onMouseEnter={() => setActive(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setActive(i);
+                toggleFolder(r.key);
+              }}
+              title={r.label}
+            >
+              <span className="bp-caret">{r.open ? '▾' : '▸'}</span>
+              <span className="bp-fico" aria-hidden>
+                {r.open ? '📂' : '📁'}
+              </span>
+              <span className="bp-fname ellipsis">{r.label}</span>
+              <span className="bp-fcount">{r.count}</span>
+            </div>
           ) : (
             (() => {
               const it = r.item;
-              const { folder, leaf } = splitName(it.label ?? it.name);
+              const { folder, leaf } = r.leaf !== undefined ? { folder: '', leaf: r.leaf } : splitName(it.label ?? it.name);
               const off = folder.length;
               return (
                 <div
@@ -270,7 +392,7 @@ export function BranchPickerPanel({
                   role="option"
                   aria-selected={it.name === value}
                   className={`bp-row ${i === active ? 'active' : ''} ${it.name === value ? 'sel' : ''} ${it.disabled ? 'disabled' : ''}`}
-                  style={{ ['--bc' as string]: it.icon ? 'var(--accent)' : branchColor(it.name) }}
+                  style={{ ['--bc' as string]: it.icon ? 'var(--accent)' : branchColor(it.name), ...(r.depth !== undefined ? { paddingLeft: 8 + r.depth * 14 + (r.depth ? 4 : 0) } : {}) }}
                   onMouseEnter={() => !it.disabled && setActive(i)}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => choose(it)}

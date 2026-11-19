@@ -98,6 +98,7 @@ export function TitleBar() {
       {sidebarHidden && (
         <button className="tb-pane" onClick={() => setSidebarHidden(false)} title="Show repositories (Ctrl+B)" aria-label="Show repositories">
           <PaneIcon />
+          <span>Open Repositories</span>
         </button>
       )}
     </div>

@@ -444,12 +444,12 @@ function TabDock({ tabs, active, onPick: pick, locked }: { tabs: [RepoTab, strin
     const on = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setSearching(true);
+        if (!locked) setSearching(true);
       }
     };
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
-  }, []);
+  }, [locked]);
   return (
     <div className="tabs dock" ref={ref} role="tablist">
       {tabs.map(([id, label, count, icon], i) => (
@@ -472,11 +472,12 @@ function TabDock({ tabs, active, onPick: pick, locked }: { tabs: [RepoTab, strin
       {ink && <span className="tab-ink" style={{ transform: `translateX(${ink.left}px)`, width: ink.width }} />}
       <button
         className="tab-compare"
+        disabled={!!locked}
         onClick={() => {
           if (active !== 'changes') pick('changes');
           requestCompare();
         }}
-        title="Compare branches, tags or commits"
+        title={locked ? 'Switch to the account this repository belongs to first' : 'Compare branches, tags or commits'}
       >
         ⇄ Compare
       </button>
@@ -485,7 +486,7 @@ function TabDock({ tabs, active, onPick: pick, locked }: { tabs: [RepoTab, strin
           ✕ Clear search
         </button>
       )}
-      <button className={`tab-search ${filtered ? 'after-clear' : ''}`} onClick={() => setSearching(true)} title="Search commits, code and tags (Ctrl+K)" aria-label="Search">
+      <button className={`tab-search ${filtered ? 'after-clear' : ''}`} disabled={!!locked} onClick={() => setSearching(true)} title={locked ? 'Switch to the account this repository belongs to first' : 'Search commits, code and tags (Ctrl+K)'} aria-label="Search">
         <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <circle cx="10.5" cy="10.5" r="6.5" />
           <path d="M15.5 15.5 21 21" />
