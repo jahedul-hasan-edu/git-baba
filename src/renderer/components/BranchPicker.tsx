@@ -123,6 +123,8 @@ export function BranchPickerPanel({
   className = '',
   style,
   panelRef,
+  hideSubject,
+  onRowContextMenu,
 }: {
   value: string;
   items: PickerItem[];
@@ -135,6 +137,9 @@ export function BranchPickerPanel({
   className?: string;
   style?: React.CSSProperties;
   panelRef?: React.Ref<HTMLDivElement>;
+  /** One line per branch: no last-commit message. */
+  hideSubject?: boolean;
+  onRowContextMenu?: (it: PickerItem, e: React.MouseEvent) => void;
 }) {
   const [q, setQ] = useState('');
   const [tab, setTab] = useState<Tab>('all');
@@ -214,6 +219,8 @@ export function BranchPickerPanel({
       const r = rows[active];
       if (r?.kind === 'item') choose(r.item);
     } else if (e.key === 'Escape') {
+      // A right-click menu over the panel closes first (it listens on the window).
+      if (document.querySelector('.ctx-menu')) return;
       e.preventDefault();
       e.stopPropagation();
       onClose();
@@ -267,6 +274,14 @@ export function BranchPickerPanel({
                   onMouseEnter={() => !it.disabled && setActive(i)}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => choose(it)}
+                  onContextMenu={
+                    onRowContextMenu && !it.icon
+                      ? (e) => {
+                          e.preventDefault();
+                          onRowContextMenu(it, e);
+                        }
+                      : undefined
+                  }
                   title={it.disabled ?? it.name}
                 >
                   {it.icon ? <span className="bp-ico">{it.icon}</span> : <span className="bp-dot" />}
@@ -281,7 +296,7 @@ export function BranchPickerPanel({
                         <Highlight text={leaf} hits={r.hits.filter((h) => h >= off).map((h) => h - off)} />
                       </span>
                     </div>
-                    {(it.subject || it.disabled) && <div className="bp-sub ellipsis">{it.disabled ?? it.subject}</div>}
+                    {(it.disabled || (it.subject && !hideSubject)) && <div className="bp-sub ellipsis">{it.disabled ?? it.subject}</div>}
                   </div>
                   <div className="bp-meta">
                     {it.current && <span className="bp-badge cur">HEAD</span>}

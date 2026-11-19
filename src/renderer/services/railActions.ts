@@ -1,8 +1,9 @@
 /**
- * Lets other screens (the header branch menu) open the branch rail's own windows: New Branch and Stash.
+ * Lets other screens (the header branch menu) open the branch rail's own windows (New Branch, Stash) and its
+ * right-click branch menu.
  * The request is kept until the rail picks it up, so it also works while the rail is still mounting.
  */
-export type RailAction = 'new-branch' | 'stash';
+export type RailAction = 'new-branch' | 'stash' | { kind: 'branch-menu'; name: string; x: number; y: number };
 
 const EVENT = 'gb:rail-action';
 let pending: RailAction | null = null;

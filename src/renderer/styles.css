@@ -5193,3 +5193,7 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .hb-acts button + button { border-left: 1px solid var(--border); }
 .hb-acts button:hover:not(:disabled) { background: var(--bg-2); color: var(--text); }
 .hb-acts button:disabled { opacity: .4; cursor: default; }
+
+/* The branch picker's headings and rows win over the Best-practices ".bp-*" classes of the same name. */
+.bp-pop .bp-head { display: block; width: auto; position: sticky; top: -4px; z-index: 2; padding: 6px 8px 3px; border: 0; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); background: var(--bg-2); cursor: default; }
+.bp-pop.hb-pop .bp-row { padding-top: 7px; padding-bottom: 7px; }

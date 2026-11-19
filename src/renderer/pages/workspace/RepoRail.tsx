@@ -130,6 +130,9 @@ export function RepoRail({ repoId, status, onFocus }: Props) {
   useEffect(() => writePref(`gb.ws.folded:${repoId}`, [...folded]), [folded, repoId]);
 
   const [menu, setMenu] = useState<Menu | null>(null);
+  /** Opens the branch menu for a branch named elsewhere (the header menu); reads the latest branch lists. */
+  const menuFor = useRef<(name: string, x: number, y: number) => void>(() => undefined);
+  const waitingMenu = useRef<{ name: string; x: number; y: number } | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropOn, setDropOn] = useState<string | null>(null);
   const [newBranch, setNewBranch] = useState<{ name: string; from: string; switchTo: boolean; changes?: NewBranchChanges } | null>(null);
@@ -151,6 +154,17 @@ export function RepoRail({ repoId, status, onFocus }: Props) {
   const current = local.find((b) => b.current) ?? null;
   const currentName = current?.name ?? null;
   const dirty = status ? status.staged.length + status.unstaged.length + status.untracked.length + status.conflicted.length : 0;
+  menuFor.current = (name, x, y) => {
+    const b = [...local, ...remote].find((x2) => x2.name === name);
+    if (b) setMenu({ kind: 'branch', x, y, branch: b });
+    else if (!branches.data) waitingMenu.current = { name, x, y }; // the rail is still loading its branches
+  };
+  useEffect(() => {
+    const w = waitingMenu.current;
+    if (!w || !branches.data) return;
+    waitingMenu.current = null;
+    menuFor.current(w.name, w.x, w.y);
+  }, [branches.data]);
   /** A local branch is published when it tracks a remote branch or a remote has a branch of the same name. */
   const publishedOn = (b: BranchInfo): string | null => (b.upstreamGone ? null : b.upstream) ?? remote.find((r) => r.name.slice(r.name.indexOf('/') + 1) === b.name)?.name ?? null;
 
@@ -159,7 +173,8 @@ export function RepoRail({ repoId, status, onFocus }: Props) {
     () =>
       onRailAction((a) => {
         if (a === 'new-branch') setNewBranch({ name: '', from: '', switchTo: true });
-        else setStashing({ message: '', untracked: true });
+        else if (a === 'stash') setStashing({ message: '', untracked: true });
+        else menuFor.current(a.name, a.x, a.y);
       }),
     [],
   );

@@ -25,12 +25,16 @@ interface Props {
   onPush: () => void;
 }
 
+/** A right-click menu is showing (it sits above popovers and handles Escape itself). */
+const menuOpen = () => !!document.querySelector('.ctx-menu');
+
 /** Closes a popover on outside click / Escape. */
 function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, close: () => void) {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && close();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    // Escape with a right-click menu open closes only that menu.
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !menuOpen() && close();
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey);
     return () => {
@@ -136,7 +140,13 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
               value={st?.branch ?? ''}
               items={branches ? toPickerItems(branches) : []}
               recentKey="header-switch"
-              onClose={() => setBranchOpen(false)}
+              hideSubject
+              onRowContextMenu={(it, e) => {
+                // The dropdown stays open behind the menu.
+                if (repoTab !== 'changes') setRepoTab('changes');
+                requestRailAction({ kind: 'branch-menu', name: it.name, x: e.clientX, y: e.clientY });
+              }}
+              onClose={() => !menuOpen() && setBranchOpen(false)}
               onPick={(it) => {
                 if (it.current) return setBranchOpen(false);
                 if (!it.remote) return pickBranch(it.name, 'local');
