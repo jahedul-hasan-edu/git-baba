@@ -461,6 +461,17 @@ export function Sidebar() {
           <div className={`dropdown-item ${ctxMenu.repo.github ? '' : 'disabled'}`} onClick={ctxMenu.repo.github ? act(() => openOnGitHub(ctxMenu.repo)) : undefined} title={ctxMenu.repo.github ? undefined : 'This repository has no GitHub remote'}>
             <span className="ctx-ico">↗</span> View on GitHub
           </div>
+          <div className={`dropdown-item ${ctxMenu.repo.exists ? '' : 'disabled'}`} onClick={ctxMenu.repo.exists ? act(() => void call('graph:reveal', { repoId: ctxMenu.repo.id, path: '.' }).catch(showError)) : undefined} title={ctxMenu.repo.path}>
+            <span className="ctx-ico">📂</span> Open in File Explorer
+          </div>
+          <div className="dropdown-item" onClick={act(() => void call('app:copyText', { text: ctxMenu.repo.path }).then(() => toast('Folder path copied'), showError))}>
+            <span className="ctx-ico">⧉</span> Copy folder path
+          </div>
+          {(ctxMenu.repo.remoteUrl ?? ctxMenu.repo.identity) && (
+            <div className="dropdown-item" onClick={act(() => void call('app:copyText', { text: (ctxMenu.repo.remoteUrl ?? ctxMenu.repo.identity)! }).then(() => toast('Remote URL copied'), showError))}>
+              <span className="ctx-ico">🔗</span> Copy remote URL
+            </div>
+          )}
           <div className="dropdown-sep" />
           <div className={`dropdown-item ${ctxMenu.repo.exists ? '' : 'disabled'}`} onClick={ctxMenu.repo.exists ? act(() => setRepoDialog({ kind: 'lastCommit', repo: ctxMenu.repo })) : undefined}>
             <span className="ctx-ico">◉</span> Last commit &amp; tag

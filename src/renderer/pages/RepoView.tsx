@@ -321,7 +321,7 @@ function Ic({ d, fill }: { d: string; fill?: boolean }) {
 }
 
 function RepoIdentity() {
-  const { activeRepo, repos, selectRepo, toast, showError, ghKey } = useApp();
+  const { activeRepo, repos, selectRepo, ghKey } = useApp();
   const [vis, setVis] = useState<'private' | 'public' | null>(null);
   const repoId = activeRepo?.id;
   const isGh = !!activeRepo?.github;
@@ -351,11 +351,6 @@ function RepoIdentity() {
   if (!activeRepo) return null;
   const mainRepo = activeRepo.worktreeOf ? repos.find((r) => r.id === activeRepo.worktreeOf) : undefined;
   const c = deckColor(activeRepo.identity ?? activeRepo.name);
-  const copy = (text: string, what: string) =>
-    call('app:copyText', { text })
-      .then(() => toast(`${what} copied`))
-      .catch(showError);
-  const web = activeRepo.github ? `https://github.com/${activeRepo.github.owner}/${activeRepo.github.repo}` : null;
   const remote = activeRepo.remoteUrl ?? activeRepo.identity;
   return (
     <div className="deck-id">
@@ -387,27 +382,6 @@ function RepoIdentity() {
               <span className="deck-chip-go">↩</span>
             </button>
           )}
-          {web && (
-            <button className="deck-act" title={`Open on GitHub\n${web}`} onClick={() => void call('shell:openExternal', { url: web }).catch(showError)}>
-              <Ic d={ICONS.github} fill />
-              <span>GitHub</span>
-            </button>
-          )}
-          {remote && (
-            <button className="deck-act" title={`Copy remote URL\n${remote}`} onClick={() => copy(remote, 'Remote URL')}>
-              <Ic d={web ? ICONS.copy : ICONS.cloud} />
-              <span>{web ? 'Copy URL' : 'Remote'}</span>
-            </button>
-          )}
-          {activeRepo.exists && (
-            <button className="deck-act" title={`Show in folder\n${activeRepo.path}`} onClick={() => void call('graph:reveal', { repoId: activeRepo.id, path: '.' }).catch(showError)}>
-              <Ic d={ICONS.folder} />
-              <span>Folder</span>
-            </button>
-          )}
-          <button className="deck-act icon-only" title={`Copy folder path\n${activeRepo.path}`} aria-label="Copy folder path" onClick={() => copy(activeRepo.path, 'Folder path')}>
-            <Ic d={ICONS.copy} />
-          </button>
         </div>
       </div>
     </div>
