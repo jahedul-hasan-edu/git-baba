@@ -610,9 +610,16 @@ export interface BranchPublishResult {
   remote: string;
   verifiedRemoteOid: string;
   committed: CommitInfo | null;
+  /** Name of the stash that holds the changes left behind, when they were stashed. */
+  stashed: string | null;
+  /** Whether the working folder is now on the new branch. */
+  switched: boolean;
   authDescription: string;
   summary: string;
 }
+
+/** What happens to uncommitted changes when a new branch is created: come along, stashed on the old branch, or left where they are (no switch). */
+export type NewBranchChanges = 'carry' | 'stash' | 'leave';
 
 export interface BranchDeletePreview extends AuthContext {
   confirmationId: string;

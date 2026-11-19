@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { BranchInfo, RepoStatus, StashEntry, TagInfo } from '../../../shared/types';
+import type { BranchInfo, NewBranchChanges, RepoStatus, StashEntry, TagInfo } from '../../../shared/types';
 import { BranchPicker, toPickerItems } from '../../components/BranchPicker';
 import { relative } from '../../components/FileDiffList';
 import { fitMenu, markScroll } from '../../components/menuFit';
@@ -7,6 +7,7 @@ import { Modal } from '../../components/Modal';
 import { MultiMergeCard } from '../../components/MultiMergeCard';
 import { BranchChangesDialog } from '../../dialogs/BranchChangesDialog';
 import { DeleteBranchDialog, MergeBranchesDialog, PublishBranchDialog, SwitchBranchDialog } from '../../dialogs/BranchDialogs';
+import { ChangesChoice } from '../../dialogs/ChangesChoice';
 import { ConfirmDialog } from '../../dialogs/ConfirmDialog';
 import { useAsync } from '../../hooks/useAsync';
 import { call } from '../../services/api';
@@ -130,8 +131,8 @@ export function RepoRail({ repoId, status, onFocus }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropOn, setDropOn] = useState<string | null>(null);
-  const [newBranch, setNewBranch] = useState<{ name: string; from: string; switchTo: boolean } | null>(null);
-  const [publish, setPublish] = useState<{ name: string; base: string } | null>(null);
+  const [newBranch, setNewBranch] = useState<{ name: string; from: string; switchTo: boolean; changes?: NewBranchChanges } | null>(null);
+  const [publish, setPublish] = useState<{ name: string; base: string; changes?: NewBranchChanges } | null>(null);
   const [stashing, setStashing] = useState<{ message: string; untracked: boolean } | null>(null);
   const [toDrop, setToDrop] = useState<StashEntry | null>(null);
   const [renaming, setRenaming] = useState<{ branch: BranchInfo; name: string } | null>(null);
@@ -697,6 +698,7 @@ export function RepoRail({ repoId, status, onFocus }: Props) {
             repoId={repoId}
             name={publish.name}
             base={publish.base}
+            changes={publish.changes}
             onClose={() => {
               setPublish(null);
               bump();
@@ -858,12 +860,20 @@ export function RepoRail({ repoId, status, onFocus }: Props) {
     const name = nb.name.trim();
     const valid = /^[A-Za-z0-9._/-]+$/.test(name) && !name.startsWith('/') && !name.endsWith('/') && !name.includes('..') && !name.endsWith('.lock') && !name.startsWith('-');
     const taken = localNames.has(name);
-    const ok = !!name && valid && !taken;
+    // Branch names are paths: "feature/tools" blocks "feature/tools/inventory" (and the other way round).
+    const clash = taken || !name ? undefined : [...localNames].find((n) => name.startsWith(`${n}/`) || n.startsWith(`${name}/`));
+    const fix = clash && name.startsWith(`${clash}/`) ? `${clash}-${name.slice(clash.length + 1).replace(/\//g, '-')}` : null;
+    const ok = !!name && valid && !taken && !clash;
+    // With work in progress the choice of where it goes replaces the plain "switch" checkbox.
+    const changes: NewBranchChanges | undefined = dirty > 0 ? (nb.changes ?? 'carry') : undefined;
     const create = () =>
-      act(async () => {
-        await call('git:createBranch', { repoId, name, startPoint: nb.from || undefined, switchTo: nb.switchTo });
-        setNewBranch(null);
-      }, `Created ${name}`);
+      act(
+        async () => {
+          await call('git:createBranch', { repoId, name, startPoint: nb.from || undefined, switchTo: changes ? changes !== 'leave' : nb.switchTo, changes });
+          setNewBranch(null);
+        },
+        changes === 'stash' ? `Created ${name}. Your changes are stashed on ${currentName ?? 'the previous branch'}.` : changes === 'leave' ? `Created ${name}. You stay on ${currentName ?? 'the current branch'} with your changes.` : `Created ${name}`,
+      );
     return (
       <Modal
         title="New Branch"
@@ -882,7 +892,7 @@ export function RepoRail({ repoId, status, onFocus }: Props) {
               className="btn primary"
               disabled={!ok}
               onClick={() => {
-                setPublish({ name, base: nb.from });
+                setPublish({ name, base: nb.from, changes });
                 setNewBranch(null);
               }}
               title="Create the branch, push it with the authentication you choose, and verify it on the remote"
@@ -904,6 +914,24 @@ export function RepoRail({ repoId, status, onFocus }: Props) {
             spellCheck={false}
           />
           {taken && <div className="small text-danger">A branch with this name already exists.</div>}
+          {clash && (
+            <div className="small text-danger nb-clash">
+              {fix ? (
+                <>
+                  <span>
+                    <span className="mono">{clash}</span> is a branch; names can't nest under it.
+                  </span>
+                  <button type="button" className="mm-chip static" onClick={() => setNewBranch({ ...nb, name: fix })}>
+                    Use {fix}
+                  </button>
+                </>
+              ) : (
+                <span>
+                  Taken as a folder by <span className="mono">{clash}</span>.
+                </span>
+              )}
+            </div>
+          )}
           {!valid && name && <div className="small text-danger">Use letters, digits, “.”, “_”, “-” and “/” (no “..” or trailing “/”).</div>}
           <div className="wr-presets">
             {['feature/', 'fix/', 'chore/', 'release/'].map((p) => (
@@ -923,10 +951,18 @@ export function RepoRail({ repoId, status, onFocus }: Props) {
             recentKey="branch-start"
           />
         </div>
-        <label className="check">
-          <input type="checkbox" checked={nb.switchTo} onChange={(e) => setNewBranch({ ...nb, switchTo: e.target.checked })} /> Switch to the new branch
-        </label>
-        {nb.switchTo && dirty > 0 && <p className="small muted">Your {dirty} uncommitted change(s) come along to the new branch.</p>}
+        {changes ? (
+          <div className="field">
+            <label>
+              {dirty} uncommitted change{dirty === 1 ? '' : 's'}
+            </label>
+            <ChangesChoice value={changes} onChange={(v) => setNewBranch({ ...nb, changes: v })} count={dirty} from={currentName ?? 'HEAD'} to={name || 'the new branch'} compact />
+          </div>
+        ) : (
+          <label className="check">
+            <input type="checkbox" checked={nb.switchTo} onChange={(e) => setNewBranch({ ...nb, switchTo: e.target.checked })} /> Switch to the new branch
+          </label>
+        )}
       </Modal>
     );
   }

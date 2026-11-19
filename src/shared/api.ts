@@ -71,6 +71,7 @@ import type {
   BranchMergeResult,
   BranchPublishPreview,
   BranchPublishResult,
+  NewBranchChanges,
   SshKeyType,
   SshLocalKey,
   SshTestResult,
@@ -230,7 +231,7 @@ export interface ApiMap {
   'git:branches': { req: R; res: BranchInfo[] };
   'git:branchOrigins': { req: R; res: Record<string, BranchOrigin> };
   'git:renameBranch': { req: R & { name: string; newName: string }; res: void };
-  'git:createBranch': { req: R & { name: string; startPoint?: string; switchTo: boolean }; res: void };
+  'git:createBranch': { req: R & { name: string; startPoint?: string; switchTo: boolean; changes?: NewBranchChanges }; res: { stashed: string | null } };
   'git:switchBranch': { req: R & { name: string }; res: void };
   'git:deleteBranch': { req: R & { name: string; force: boolean; confirmed: true }; res: void };
   'git:switchPreview': { req: R & { target: string; kind: 'local' | 'remote' }; res: BranchSwitchPreview };
@@ -260,7 +261,7 @@ export interface ApiMap {
   /** Local-only fix: move a branch forward to its remote-tracking branch when that is a pure fast-forward. */
   'git:fastForwardBranch': { req: R & { branch: string }; res: { from: string; to: string } };
   'git:publishPreview': { req: R & { name: string; base?: string }; res: BranchPublishPreview };
-  'git:publishExecute': { req: R & { confirmationId: string; auth: AuthInput; switchTo: boolean; commitMessage?: string }; res: BranchPublishResult };
+  'git:publishExecute': { req: R & { confirmationId: string; auth: AuthInput; switchTo: boolean; commitMessage?: string; changes?: NewBranchChanges }; res: BranchPublishResult };
   'git:deletePreview': { req: R & { branch: string; kind: 'local' | 'remote' }; res: BranchDeletePreview };
   'git:deleteExecute': { req: R & { confirmationId: string; auth: AuthInput; deleteLocal: boolean; deleteRemote: boolean; force: boolean; confirmed: true }; res: BranchDeleteResult };
   'git:log': { req: R & { limit?: number }; res: CommitInfo[] };

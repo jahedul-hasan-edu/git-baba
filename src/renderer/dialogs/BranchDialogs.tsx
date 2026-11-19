@@ -7,6 +7,7 @@ import type {
   BranchSwitchPreview,
   ErrorAction,
   FriendlyError,
+  NewBranchChanges,
   SwitchFileState,
   SwitchStrategy,
 } from '../../shared/types';
@@ -16,6 +17,7 @@ import { Modal, Spinner } from '../components/Modal';
 import { call, toFriendly } from '../services/api';
 import { useApp } from '../state/AppState';
 import { PublishChanges } from './PublishChanges';
+import { ChangesChoice, changesSummary } from './ChangesChoice';
 
 export { MergeBranchesDialog } from './BranchMergeDialog';
 
@@ -247,7 +249,8 @@ export function SwitchBranchDialog({ repoId, target, kind, onClose, onDone }: { 
 // Create & publish a branch
 // ---------------------------------------------------------------------------
 
-export function PublishBranchDialog({ repoId, name, base, onClose, onDone }: { repoId: string; name: string; base: string; onClose: () => void; onDone: () => void }) {
+export function PublishBranchDialog({ repoId, name, base, changes, onClose, onDone }: { repoId: string; name: string; base: string; changes?: NewBranchChanges; onClose: () => void; onDone: () => void }) {
+  const { toast } = useApp();
   const [preview, setPreview] = useState<BranchPublishPreview | null>(null);
   const [error, setError] = useState<FriendlyError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -255,6 +258,9 @@ export function PublishBranchDialog({ repoId, name, base, onClose, onDone }: { r
   const [commitPending, setCommitPending] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [result, setResult] = useState<BranchPublishResult | null>(null);
+  /** What happens to uncommitted changes: asked first, before anything is published. */
+  const [mode, setMode] = useState<NewBranchChanges>(changes ?? 'carry');
+  const [stage, setStage] = useState<'changes' | 'publish'>(changes ? 'publish' : 'changes');
   const { auth, authKey, onAuth, resetAuth } = useAuthState();
 
   const load = useCallback(async () => {
@@ -270,6 +276,11 @@ export function PublishBranchDialog({ repoId, name, base, onClose, onDone }: { r
     void load();
   }, [load]);
 
+  /** A brand-new branch with work in progress: the changes need a decision. */
+  const asks = !!preview && preview.pendingFiles.length > 0 && !preview.localExists;
+  const willCommit = commitPending && (!asks || mode === 'carry');
+  const from = preview?.currentBranch ?? 'HEAD';
+
   const run = async () => {
     if (!preview || !auth.input) return;
     setBusy(true);
@@ -280,8 +291,9 @@ export function PublishBranchDialog({ repoId, name, base, onClose, onDone }: { r
           repoId,
           confirmationId: preview.confirmationId,
           auth: auth.input,
-          switchTo: switchTo || commitPending,
-          commitMessage: commitPending ? commitMessage.trim() : undefined,
+          switchTo: asks ? mode !== 'leave' : switchTo || willCommit,
+          commitMessage: willCommit ? commitMessage.trim() : undefined,
+          changes: asks ? mode : undefined,
         }),
       );
     } catch (err) {
@@ -292,6 +304,83 @@ export function PublishBranchDialog({ repoId, name, base, onClose, onDone }: { r
       setBusy(false);
     }
   };
+
+  /** Create the branch now (nothing pushed); publishing can follow any time later. */
+  const createOnly = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await call('git:createBranch', { repoId, name, startPoint: base || undefined, switchTo: mode !== 'leave', changes: mode });
+      toast(
+        mode === 'leave'
+          ? `Created ${name}. You are still on ${from} with your changes.`
+          : r.stashed
+            ? `Created ${name} and switched to it. Your changes are stashed on ${from}.`
+            : `Created ${name} and switched to it. Your changes came along.`,
+        'success',
+      );
+      onDone();
+    } catch (err) {
+      setError(toFriendly(err));
+      setBusy(false);
+    }
+  };
+
+  if (asks && stage === 'changes' && preview) {
+    return (
+      <Modal
+        title={`New branch ${name}`}
+        onClose={onClose}
+        locked={busy}
+        size="wide"
+        footer={
+          <>
+            <span className="spacer grow" />
+            <button className="btn cancel" onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+            <button className="btn" onClick={() => void createOnly()} disabled={busy} title="Create it on this computer only; publish later">
+              {busy ? 'Creating…' : 'Create only'}
+            </button>
+            <button className="btn primary" onClick={() => setStage('publish')} disabled={busy}>
+              Next: Publish →
+            </button>
+          </>
+        }
+      >
+        {error && <ErrorPanel error={error} />}
+        <div className="grid-2" style={{ gap: 20, alignItems: 'start' }}>
+          <div className="pb">
+            <div className="chc-route">
+              <span className="branch-pill">{from}</span>
+              <span className="muted">→</span>
+              <span className="branch-pill pb-new">{name}</span>
+              <span className="mono small muted" title={preview.baseSubject}>
+                {preview.baseOid.slice(0, 7)}
+              </span>
+            </div>
+            <PublishChanges
+              repoId={repoId}
+              branch={name}
+              canCommit={false}
+              include={false}
+              onInclude={() => undefined}
+              message=""
+              onMessage={() => undefined}
+              onUndone={() => void load()}
+              disabled={busy}
+              listOnly
+              stayText=""
+            />
+          </div>
+          <div>
+            <h3 className="chc-h">Where should your changes go?</h3>
+            <ChangesChoice value={mode} onChange={setMode} count={preview.pendingFiles.length} from={from} to={name} disabled={busy} />
+          </div>
+        </div>
+      </Modal>
+    );
+  }
 
   if (result) {
     return (
@@ -305,6 +394,8 @@ export function PublishBranchDialog({ repoId, name, base, onClose, onDone }: { r
             <div className="small">
               Remote verified at <span className="mono">{result.verifiedRemoteOid.slice(0, 12)}</span> (same as the local branch). Upstream tracking is set.
             </div>
+            {result.stashed && <div className="small">Your uncommitted changes are saved in the stash “{result.stashed}”.</div>}
+            {!result.switched && <div className="small">You are still on your previous branch, and your changes stayed there.</div>}
             {result.committed && (
               <div className="small">
                 Committed your pending changes as <span className="mono">{result.committed.shortHash}</span> “{result.committed.subject}”.
@@ -317,7 +408,7 @@ export function PublishBranchDialog({ repoId, name, base, onClose, onDone }: { r
     );
   }
 
-  const commitInvalid = commitPending && !commitMessage.trim();
+  const commitInvalid = willCommit && !commitMessage.trim();
   return (
     <Modal
       title={`Create & Publish ${name}`}
@@ -366,7 +457,19 @@ export function PublishBranchDialog({ repoId, name, base, onClose, onDone }: { r
               </div>
             )}
 
-            {preview.pendingFiles.length > 0 && (
+            {asks && (
+              <div className="chc-sum">
+                <span className="chc-ic" aria-hidden>
+                  {mode === 'carry' ? '➜' : mode === 'stash' ? '⧈' : '⏸'}
+                </span>
+                <span className="grow small">{changesSummary(mode, preview.pendingFiles.length, from, name)}</span>
+                <button className="link small" disabled={busy} onClick={() => setStage('changes')}>
+                  Change
+                </button>
+              </div>
+            )}
+
+            {preview.pendingFiles.length > 0 && (!asks || mode === 'carry') && (
               <PublishChanges
                 repoId={repoId}
                 branch={name}
@@ -377,14 +480,21 @@ export function PublishBranchDialog({ repoId, name, base, onClose, onDone }: { r
                 onMessage={setCommitMessage}
                 onUndone={() => void load()}
                 disabled={busy}
+                {...(asks ? { stayLabel: 'Uncommitted', stayText: '' } : {})}
               />
             )}
 
             <ol className="pb-steps">
+              {asks && mode === 'stash' && (
+                <li>
+                  <b>Stash</b> {preview.pendingFiles.length} change{preview.pendingFiles.length === 1 ? '' : 's'} on {from}
+                </li>
+              )}
               <li>
-                <b>{preview.localExists ? 'Reuse' : 'Create'}</b> {name} at <span className="mono">{preview.baseOid.slice(0, 7)}</span> and check it contains the base
+                <b>{preview.localExists ? 'Reuse' : 'Create'}</b> {name} at <span className="mono">{preview.baseOid.slice(0, 7)}</span>
+                {asks ? (mode === 'leave' ? `, you stay on ${from}` : ' and switch to it') : ' and check it contains the base'}
               </li>
-              {commitPending && (
+              {willCommit && (
                 <li>
                   <b>Commit</b> {preview.pendingFiles.length} change{preview.pendingFiles.length === 1 ? '' : 's'} on {name}
                 </li>
@@ -396,10 +506,12 @@ export function PublishBranchDialog({ repoId, name, base, onClose, onDone }: { r
                 <b>Verify</b> the remote points at the same commit — success is only reported then
               </li>
             </ol>
+            {!asks && (
             <label className="check small">
               <input type="checkbox" checked={switchTo || commitPending} disabled={commitPending} onChange={(e) => setSwitchTo(e.target.checked)} /> Switch to {name} afterwards
               {commitPending && <span className="muted"> (needed to commit there)</span>}
             </label>
+            )}
           </div>
           <BranchAuth repoId={repoId} ctx={preview} remoteUrl={preview.remote?.url ?? null} authKey={authKey} onChange={onAuth} />
         </div>

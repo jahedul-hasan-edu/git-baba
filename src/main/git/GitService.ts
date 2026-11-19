@@ -941,12 +941,59 @@ export class GitService {
     return result;
   }
 
+  /**
+   * Git stores branches as paths, so "feature/tools" and "feature/tools/inventory" cannot both exist.
+   * Returns the existing branch that blocks `name`, or null.
+   */
+  async branchNameClash(name: string): Promise<string | null> {
+    const parts = name.split('/');
+    for (let i = 1; i < parts.length; i++) {
+      const prefix = parts.slice(0, i).join('/');
+      if (await this.tryRevParse(`refs/heads/${prefix}`)) return prefix;
+    }
+    const below = (await this.gitOut(['for-each-ref', '--count=1', '--format=%(refname:short)', `refs/heads/${name}/`])).trim();
+    return below || null;
+  }
+
   async createBranch(name: string, startPoint: string | null, switchTo: boolean): Promise<void> {
     if (!isValidBranchName(name)) throw new AppError({ code: 'invalid-branch', title: 'Invalid Branch Name', message: `"${name}" is not a valid branch name.` });
     if (startPoint) this.assertRevision(startPoint);
+    const clash = await this.branchNameClash(name);
+    if (clash) throw branchClashError(name, clash);
     // --no-track: a new branch started from origin/main must not track main (pushing it would update main).
     if (switchTo) await this.git(['switch', '--no-track', '-c', name, ...(startPoint ? [startPoint] : [])]);
     else await this.git(['branch', '--no-track', '--', name, ...(startPoint ? [startPoint] : [])]);
+  }
+
+  /**
+   * Creates a branch and decides what happens to uncommitted changes: they come along (carry), are stashed first so the
+   * new branch opens clean (stash), or stay where they are because the folder does not switch (leave).
+   * Returns the stash message when changes were stashed. A failed switch puts the stashed changes back.
+   */
+  async createBranchWithChanges(name: string, startPoint: string | null, changes: 'carry' | 'stash' | 'leave', from: string): Promise<string | null> {
+    if (changes === 'leave') {
+      await this.createBranch(name, startPoint, false);
+      return null;
+    }
+    if (changes === 'carry') {
+      await this.createBranch(name, startPoint, true);
+      return null;
+    }
+    const st = await this.status();
+    const dirty = st.staged.length + st.unstaged.length + st.untracked.length > 0;
+    if (!dirty) {
+      await this.createBranch(name, startPoint, true);
+      return null;
+    }
+    const message = `Git Baba: changes left on ${from} when ${name} was created`;
+    const oid = await this.stashAll(message);
+    try {
+      await this.createBranch(name, startPoint, true);
+    } catch (err) {
+      if (!(await this.stashApplyCommit(oid))) await this.stashDropCommit(oid);
+      throw err;
+    }
+    return message;
   }
 
   async switchBranch(name: string): Promise<void> {
@@ -2266,4 +2313,17 @@ export function parseBlamePorcelain(out: string): BlameInfo {
     else if (key === 'summary') draft.summary = val;
   }
   return { lines, commits };
+}
+
+/** A clear explanation (and a working alternative) when a branch name collides with an existing branch's path. */
+export function branchClashError(name: string, clash: string): AppError {
+  const parent = name.startsWith(`${clash}/`);
+  const suggestion = parent ? `${clash}-${name.slice(clash.length + 1).replace(/\//g, '-')}` : null;
+  return new AppError({
+    code: 'branch-name-clash',
+    title: 'Branch Name Not Possible',
+    message: parent
+      ? `A branch named "${clash}" already exists, so Git cannot also create "${name}" inside it (branch names work like folders). Try "${suggestion}" instead. Nothing was changed.`
+      : `Branches such as "${clash}" already use "${name}/" as a folder, so Git cannot create a branch named "${name}". Choose another name. Nothing was changed.`,
+  });
 }

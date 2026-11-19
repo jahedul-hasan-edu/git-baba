@@ -940,8 +940,10 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       const name = asBranchName(p.name);
       const startPoint = p.startPoint ? asBranchName(p.startPoint, 'start point') : null;
       const switchTo = asBoolean(p.switchTo, 'switchTo');
-      await ctx.withLock(repo.id, () => git.createBranch(name, startPoint, switchTo));
-      ctx.recordOperation(repo, 'Create branch', 'SUCCESS', `${name}${startPoint ? ` from ${startPoint}` : ''}`);
+      const changes = p.changes === undefined ? (switchTo ? 'carry' : 'leave') : asEnum(p.changes, 'changes', ['carry', 'stash', 'leave'] as const);
+      const stashed = await ctx.withLock(repo.id, async () => git.createBranchWithChanges(name, startPoint, changes, (await git.status()).branch ?? 'HEAD'));
+      ctx.recordOperation(repo, 'Create branch', 'SUCCESS', `${name}${startPoint ? ` from ${startPoint}` : ''}${stashed ? `; changes stashed ("${stashed}")` : ''}`);
+      return { stashed };
     },
 
     'git:switchBranch': async (payload) => {

@@ -47,8 +47,13 @@ export function PublishChanges(props: {
   /** Called after files were undone, so the publish preview is rebuilt. */
   onUndone: () => void;
   disabled?: boolean;
+  /** Only list the files (the choice of what happens to them is made elsewhere). */
+  listOnly?: boolean;
+  /** Toggle label and footer text while the changes are not committed. */
+  stayLabel?: string;
+  stayText?: string;
 }) {
-  const { repoId, branch, canCommit, include, onInclude, message, onMessage, onUndone, disabled } = props;
+  const { repoId, branch, canCommit, include, onInclude, message, onMessage, onUndone, disabled, listOnly, stayLabel = 'Stay here', stayText = 'They stay uncommitted on your current branch and are not published.' } = props;
   const { toast, showError } = useApp();
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -132,11 +137,11 @@ export function PublishChanges(props: {
             <b className="text-ok">+{totals.add}</b> <b className="text-danger">−{totals.del}</b>
           </span>
         </div>
-        {canCommit ? (
+        {listOnly ? null : canCommit ? (
           <label className="pc-switch" title="Commit these changes on the new branch and publish them with it">
             <input type="checkbox" checked={include} disabled={off} onChange={(e) => onInclude(e.target.checked)} />
             <span className="pc-knob" aria-hidden />
-            <span>{include ? 'Going out' : 'Stay here'}</span>
+            <span>{include ? 'Going out' : stayLabel}</span>
           </label>
         ) : (
           <span className="small muted" title="Pending changes can only be committed when the branch starts from your current commit.">
@@ -216,7 +221,7 @@ export function PublishChanges(props: {
           </span>
         ) : (
           <>
-            <span className="small muted grow">{include ? `Committed on ${branch}, then published.` : 'They stay uncommitted on your current branch and are not published.'}</span>
+            <span className="small muted grow">{include && !listOnly ? `Committed on ${branch}, then published.` : stayText}</span>
             <button className="link small" disabled={off} onClick={() => setConfirm('*')}>
               ↶ Undo all
             </button>
@@ -224,7 +229,7 @@ export function PublishChanges(props: {
         )}
       </footer>
 
-      {include && canCommit && (
+      {include && canCommit && !listOnly && (
         <div className="pc-msg">
           <div className="pc-types">
             {TYPES.map((t) => (
