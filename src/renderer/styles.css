@@ -5197,3 +5197,73 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 /* The branch picker's headings and rows win over the Best-practices ".bp-*" classes of the same name. */
 .bp-pop .bp-head { display: block; width: auto; position: sticky; top: -4px; z-index: 2; padding: 6px 8px 3px; border: 0; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); background: var(--bg-2); cursor: default; }
 .bp-pop.hb-pop .bp-row { padding-top: 7px; padding-bottom: 7px; }
+
+/* ===== Changes sidebar: worktrees only ===== */
+.wtr { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.wtr-head { display: flex; align-items: center; gap: 6px; padding: 10px 8px 8px 12px; }
+.wtr-title { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
+.wtr-n, .hb-n { font-size: 10.5px; padding: 0 6px; line-height: 16px; border-radius: 999px; background: var(--bg-3); color: var(--text-2); }
+.hb-n { margin-left: 5px; }
+.wtr-icon { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: var(--text-3); cursor: pointer; font-size: 13px; }
+.wtr-icon:hover { background: var(--bg-3); color: var(--text); }
+.wtr-search { display: flex; align-items: center; gap: 6px; margin: 0 8px 6px; padding: 0 8px; border: 1px solid var(--border); border-radius: 7px; color: var(--text-3); }
+.wtr-search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 5px 0; box-shadow: none; outline: none; }
+.wtr-list { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 0 8px; }
+.wtr-row { position: relative; display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 8px 0 11px; border-left: 3px solid color-mix(in srgb, var(--c) 40%, transparent); cursor: pointer; outline: none; animation: sp-in .2s ease both; transition: background .12s, border-color .12s; }
+.wtr-row:hover, .wtr-row:focus-visible, .wtr-row.menu { background: var(--bg-3); border-left-color: var(--c); }
+.wtr-row.here { cursor: default; border-left-color: var(--c); background: color-mix(in srgb, var(--c) 10%, transparent); }
+.wtr-row.gone { opacity: .55; }
+.wtr-row.gone .wtr-leaf { text-decoration: line-through; text-decoration-color: var(--text-3); }
+.wtr-row.busy { opacity: .6; pointer-events: none; }
+.wtr-dot { flex: none; width: 16px; height: 16px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: var(--c); box-shadow: inset 0 0 0 2px var(--c); }
+.wtr-row.here .wtr-dot { background: var(--c); color: var(--bg-2); }
+.wtr-name { flex: 1; min-width: 0; display: flex; font-family: var(--mono); font-size: 12px; white-space: nowrap; overflow: hidden; }
+/* The folder part gives way first, so the branch's own name stays readable. */
+.wtr-pre { flex: 0 1 auto; min-width: 12px; overflow: hidden; text-overflow: ellipsis; color: var(--text-3); }
+.wtr-leaf { flex: 0 0 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: var(--text); }
+.wtr-tag { flex: none; font-size: 11px; color: var(--text-2); }
+.wtr-tag.dirty { color: var(--warn, #d29922); font-weight: 600; }
+.wtr-tag.warn { color: var(--warn, #d29922); }
+.wtr-here { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ok, #3fb950); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok, #3fb950) 25%, transparent); }
+.wtr-del { flex: none; width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--text-3); cursor: pointer; font-size: 11px; opacity: 0; transition: opacity .12s; }
+.wtr-row:hover .wtr-del, .wtr-row:focus-visible .wtr-del { opacity: 1; }
+.wtr-del:hover { background: color-mix(in srgb, var(--danger, #f85149) 18%, transparent); color: var(--danger, #f85149); }
+.wtr-empty { padding: 12px; font-size: 12px; color: var(--text-3); }
+.wtr-new { display: flex; align-items: center; gap: 10px; width: calc(100% - 16px); margin: 8px; padding: 10px; border: 1px dashed var(--border-2); border-radius: 8px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.wtr-new:hover { border-color: var(--accent); }
+.wtr-new > span:last-child { display: flex; flex-direction: column; }
+.wtr-new-ico { width: 26px; height: 26px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; background: var(--bg-3); color: var(--accent); }
+.wtr-clean { margin: 0; padding: 8px 12px; border: 0; border-top: 1px solid var(--border); background: transparent; color: var(--warn, #d29922); font-size: 11.5px; text-align: left; cursor: pointer; }
+.wtr-clean:hover { background: var(--bg-3); }
+.ws-rail-show { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--text-2); cursor: pointer; }
+.ws-rail-show:hover { color: var(--text); background: var(--bg-3); }
+
+/* Delete worktree */
+.wtd-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-left: 3px solid var(--c); background: var(--bg-3); border-radius: 0 8px 8px 0; min-width: 0; }
+.wtd-name { font-family: var(--mono); font-weight: 600; }
+.wtd-path { font-size: 11px; color: var(--text-3); }
+.wtd-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.wtd-chip { font-size: 10.5px; padding: 0 7px; line-height: 18px; border-radius: 999px; border: 1px solid var(--border-2); color: var(--text-2); }
+.wtd-chip.remote { color: var(--ok, #3fb950); border-color: color-mix(in srgb, var(--ok, #3fb950) 45%, transparent); }
+.wtd-chip.local, .wtd-chip.gone, .wtd-chip.warn { color: var(--warn, #d29922); border-color: color-mix(in srgb, var(--warn, #d29922) 45%, transparent); }
+.wtd-chip.danger { color: var(--danger, #f85149); border-color: color-mix(in srgb, var(--danger, #f85149) 45%, transparent); }
+.wtd-opts { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.wtd-sub { margin-left: 22px; color: var(--text-2); }
+.wtd-note { margin: 8px 0 0; }
+
+/* Stash list in the header branch menu */
+.hs-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.hs-back { width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); cursor: pointer; }
+.hs-back:hover { background: var(--bg-3); color: var(--text); }
+.hs-list { flex: 1; min-height: 60px; overflow-y: auto; padding: 4px 0; }
+.hs-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; min-width: 0; }
+.hs-row:hover, .hs-row.ask { background: var(--bg-3); }
+.hs-ico { flex: none; font-size: 13px; }
+.hs-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.hs-text { font-size: 12.5px; font-weight: 600; }
+.hs-on { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+.hs-acts { flex: none; display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+.hs-row:hover .hs-acts, .hs-acts.on { opacity: 1; }
+.hs-acts button { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-2); color: var(--text-2); font-size: 11px; padding: 2px 7px; cursor: pointer; }
+.hs-acts button:hover:not(:disabled) { color: var(--text); border-color: var(--border-2); }
+.hs-acts .hs-x:hover, .hs-acts .hs-yes { color: var(--danger, #f85149); border-color: color-mix(in srgb, var(--danger, #f85149) 50%, transparent); }

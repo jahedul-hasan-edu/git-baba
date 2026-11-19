@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { PaneIcon } from '../../components/PaneIcon';
 import { createPortal } from 'react-dom';
 import type { BranchChanges, CommitStatFile, CompareResult, FileDiff, FriendlyError } from '../../../shared/types';
 import { BranchPicker, type PickerItem } from '../../components/BranchPicker';
@@ -13,13 +14,6 @@ const colorOf = (name: string) => {
 };
 const isSha = (s: string) => /^[0-9a-f]{7,40}$/i.test(s);
 const label = (s: string) => (isSha(s) ? s.slice(0, 8) : s);
-/** Sidebar toggle icon: a window with a left panel. */
-const PaneIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-    <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2.5" />
-    <line x1="6" y1="2.5" x2="6" y2="13.5" />
-  </svg>
-);
 type CommitInfo = { subject: string; body: string; author: string };
 
 type Res<T> = { status: 'loading' } | { status: 'ok'; data: T } | { status: 'error'; error: FriendlyError };

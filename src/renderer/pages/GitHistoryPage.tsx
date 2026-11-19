@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { layoutGraph, type GraphRow } from '../../shared/graphLayout';
 import type { CommitDetails, CommitStatFile, CompareResult, FriendlyError, GraphCommit, HistoryQuery, HistoryScope, RepoStatus } from '../../shared/types';
 import { ChangesPage } from './ChangesPage';
@@ -223,6 +223,8 @@ interface Props {
     reload: () => Promise<void>;
     error: FriendlyError | null;
     focus: GraphFocus | null;
+    /** Brings the hidden sidebar back (shown at the start of the toolbar). */
+    railToggle?: ReactNode;
   };
 }
 
@@ -852,6 +854,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     <RefActionsContext.Provider value={refActions}>
     <div className="content flush" style={{ flexDirection: 'column' }}>
       <div className={`history-toolbar ${ws ? 'ws-toolbar' : ''}`}>
+        {ws?.railToggle}
         {ws && (
           <button className={`ws-wip-pill ${wip ? 'on' : ''} ${head.dirty ? 'dirty' : ''}`} onClick={openWip} title="Your working changes: stage, review and commit (W)">
             <span>✎</span> Working changes
