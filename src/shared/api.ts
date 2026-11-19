@@ -431,7 +431,7 @@ export interface ApiMap {
   'app:copyText': { req: { text: string }; res: void };
   'app:quit': { req: void; res: void };
   /** Opens a title-bar menu as a native pop-up at (x, y) in window coordinates; resolves when it closes. */
-  'app:menuPopup': { req: { menu: AppMenuId; x: number; y: number }; res: void };
+  'app:menuPopup': { req: { menu: AppMenuId; x: number; y: number; theme?: string }; res: void };
   /** Paints the window-button area of the title bar to match the theme (Windows / Linux). */
   'app:titleBar': { req: { color: string; symbolColor: string }; res: void };
   'app:menus': { req: void; res: AppMenuId[] };

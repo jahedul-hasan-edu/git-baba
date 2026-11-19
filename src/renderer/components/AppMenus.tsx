@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { UpdateCheck } from '../../shared/api';
 import { call, onNotify } from '../services/api';
 import { useApp } from '../state/AppState';
+import { applyTheme, THEMES, type Theme } from '../services/theme';
 import { AboutDialog, EditionDialog, ShortcutsDialog } from './AppFooter';
 import { Hourglass } from './Hourglass';
 import { Modal } from './Modal';
@@ -22,7 +23,10 @@ export function AppMenus() {
     () =>
       onNotify((e) => {
         if (e.type !== 'menu') return;
-        if (e.id === 'token') setView('token');
+        if (e.id.startsWith('theme:')) {
+          const t = e.id.slice(6);
+          if (THEMES.some((x) => x.id === t)) applyTheme(t as Theme, true);
+        } else if (e.id === 'token') setView('token');
         else if (e.id === 'help') setView('help');
         else if ((MENU_DIALOGS as string[]).includes(e.id)) setDialog(e.id as Dialog);
       }),

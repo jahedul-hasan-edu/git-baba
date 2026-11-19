@@ -1,4 +1,7 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { HEADER_REPO_SLOT } from '../components/AppHeader';
+import { NotificationBell } from '../components/NotificationBell';
 import { requestCompare } from '../services/compareRequest';
 import { Spinner } from '../components/Modal';
 import type { PullResult } from '../../shared/types';
@@ -87,6 +90,10 @@ export function RepoView() {
   // A branch switch whose re-applied changes still need conflict resolution.
   const switchSession = useAsync(() => (repoId && activeRepo?.exists ? call('git:switchSession', { repoId }) : Promise.resolve(null)), [repoId, revision, activeRepo?.exists]);
 
+  // The repository's name, branch, Fetch and Push live in the app header (next to the account).
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => setHeaderSlot(document.getElementById(HEADER_REPO_SLOT)), []);
+
   if (!activeRepo) return null;
   const st = status.data;
   const conflictCount = st?.conflicted.length ?? 0;
@@ -129,9 +136,12 @@ export function RepoView() {
 
   return (
     <>
-      <div className="topbar deck">
+      {headerSlot &&
+        createPortal(
+      <div className="ah-deck">
         <RepoIdentity />
         {st?.operation && <span className="badge danger">{st.operation} in progress</span>}
+        <NotificationBell />
         <RepoSyncBar
           repoId={repoId}
           isGitHub={!!activeRepo.github}
@@ -145,7 +155,9 @@ export function RepoView() {
           onPull={() => setDialog('pull')}
           onPush={() => setDialog('push')}
         />
-      </div>
+      </div>,
+          headerSlot,
+        )}
 
       {!activeRepo.exists && activeRepo.worktreeOf ? (
         <MissingWorktree key={activeRepo.id} repo={activeRepo} />

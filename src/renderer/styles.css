@@ -5279,3 +5279,17 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .sb-hide:hover { background: var(--bg-3); color: var(--text); }
 .tb-pane { -webkit-app-region: no-drag; width: 26px; height: 24px; margin-left: 6px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 5px; background: transparent; color: var(--text-2); cursor: pointer; }
 .tb-pane:hover { background: var(--bg-3); color: var(--text); }
+
+/* ===== App header: the account area lines up with the repositories sidebar, the repo controls with the main column ===== */
+.app-header { gap: 0; padding: 0; min-height: 46px; align-items: stretch; }
+.ah-left { flex: none; box-sizing: border-box; min-width: var(--sidebar-w, 290px); display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-right: 1px solid var(--border); transition: min-width 0.22s ease; }
+.ah-repo { flex: 1; min-width: 0; display: flex; }
+.ah-repo:empty { display: none; }
+.ah-deck { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 12px; }
+.ah-deck .deck-id { min-width: 0; gap: 10px; }
+.ah-deck .deck-tile { width: 30px; height: 30px; border-radius: 9px; font-size: 12px; box-shadow: none; }
+.ah-deck .deck-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ah-deck .deck-name { font-size: 15px; }
+.ah-deck .deck-acts { margin-top: 0; flex-wrap: nowrap; }
+.ah-deck .deck-acts:empty { display: none; }
+.ah-left .ax-switch-pop, .ah-left .nb-pop { left: 0; right: auto; }

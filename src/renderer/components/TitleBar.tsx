@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AppMenuId } from '../../shared/api';
 import logoUrl from '../assets/logo.png';
 import { call } from '../services/api';
+import { getTheme } from '../services/theme';
 import { useApp } from '../state/AppState';
 import { setSidebarHidden, useSidebarHidden } from '../services/sidebarState';
 import { PaneIcon } from './PaneIcon';
@@ -52,7 +53,7 @@ export function TitleBar() {
     const r = el.getBoundingClientRect();
     setOpen(id);
     try {
-      await call('app:menuPopup', { menu: id, x: r.left, y: r.bottom });
+      await call('app:menuPopup', { menu: id, x: r.left, y: r.bottom, theme: getTheme() });
     } finally {
       setOpen((o) => (o === id ? null : o));
     }
