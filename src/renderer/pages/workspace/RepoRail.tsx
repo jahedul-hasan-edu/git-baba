@@ -13,6 +13,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { call } from '../../services/api';
 import { requestMergeStudio } from '../../services/mergeStudio';
 import { requestQuickMerge } from '../../services/quickMerge';
+import { onRailAction } from '../../services/railActions';
 import { useApp } from '../../state/AppState';
 import type { GraphFocus } from '../GitHistoryPage';
 import { WorktreePanel, type AddRequest } from './WorktreePanel';
@@ -153,6 +154,15 @@ export function RepoRail({ repoId, status, onFocus }: Props) {
   /** A local branch is published when it tracks a remote branch or a remote has a branch of the same name. */
   const publishedOn = (b: BranchInfo): string | null => (b.upstreamGone ? null : b.upstream) ?? remote.find((r) => r.name.slice(r.name.indexOf('/') + 1) === b.name)?.name ?? null;
 
+  // The header branch menu opens New Branch / Stash here (kept waiting if the rail was not mounted yet).
+  useEffect(
+    () =>
+      onRailAction((a) => {
+        if (a === 'new-branch') setNewBranch({ name: '', from: '', switchTo: true });
+        else setStashing({ message: '', untracked: true });
+      }),
+    [],
+  );
   // Other screens (the clean Changes screen, keyboard) open the New Branch window.
   useEffect(() => {
     const on = (e: Event) => setNewBranch({ name: '', from: (e as CustomEvent<string>).detail || '', switchTo: true });

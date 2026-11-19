@@ -5,6 +5,9 @@ import { call } from '../services/api';
 import { useApp } from '../state/AppState';
 import { requestQuickMerge } from '../services/quickMerge';
 import { isPublished } from '../../shared/publish';
+import { requestRailAction, type RailAction } from '../services/railActions';
+import { branchColor } from './BranchPicker';
+import { relative } from './FileDiffList';
 
 const REMOTE_CHECK_MS = 3 * 60 * 1000;
 
@@ -44,7 +47,7 @@ function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, clo
  * checked against the remote in the background), and a Push button that shows what is waiting to go out.
  */
 export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, inOperation, disabled, onRefresh, onFetch, onPull, onPush }: Props) {
-  const { revision, setRepoTab, bump, refreshRepos } = useApp();
+  const { revision, repoTab, setRepoTab, bump, refreshRepos } = useApp();
   const [incoming, setIncoming] = useState<number | null>(null);
   const [lastCheck, setLastCheck] = useState<Date | null>(null);
   const [branchOpen, setBranchOpen] = useState(false);
@@ -105,6 +108,14 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
   const remoteOnly = (branches ?? []).filter((b) => b.remote && !b.name.endsWith('/HEAD') && !localNames.has(b.name.split('/').slice(1).join('/')));
   const match = (b: BranchInfo) => !q || b.name.toLowerCase().includes(q);
 
+  const dirty = st ? st.staged.length + st.unstaged.length + st.untracked.length : 0;
+  /** New Branch and Stash live in the branch rail of the Changes tab: open them there. */
+  const rail = (a: RailAction) => {
+    setBranchOpen(false);
+    if (repoTab !== 'changes') setRepoTab('changes');
+    requestRailAction(a);
+  };
+
   const pickBranch = (target: string, kind: 'local' | 'remote') => {
     setBranchOpen(false);
     setSwitching({ target, kind });
@@ -127,46 +138,50 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
             <span className="sb-dot" />⎇ <strong className="ellipsis">{branch}</strong> <span className="caret">▾</span>
           </button>
           {branchOpen && (
-            <div className="branch-pop pop-in">
-              <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Find a branch…" spellCheck={false} />
-              <div className="branch-pop-list">
+            <div className="branch-pop hb pop-in">
+              <div className="hb-search">
+                <span aria-hidden>⌕</span>
+                <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Find a branch…" spellCheck={false} />
+              </div>
+              <div className="branch-pop-list hb-list">
                 {!branches ? (
                   <div className="small muted pad">Loading…</div>
                 ) : (
                   <>
-                    <div className="dropdown-title">Local</div>
+                    <div className="hb-sec">
+                      Local <span>{local.filter(match).length}</span>
+                    </div>
                     {local.filter(match).map((b) => (
-                      <div key={b.name} className={`dropdown-item ${b.current ? 'active' : ''}`} onClick={() => !b.current && pickBranch(b.name, 'local')} title={b.subject}>
-                        <span className="ctx-ico">{b.current ? '✓' : '⎇'}</span>
-                        <span className="grow ellipsis mono">{b.name}</span>
-                        {(b.ahead || b.behind) && (
-                          <span className="small muted">
-                            {b.ahead ? `↑${b.ahead}` : ''} {b.behind ? `↓${b.behind}` : ''}
-                          </span>
-                        )}
-                      </div>
+                      <BranchRow key={b.name} b={b} onPick={() => !b.current && pickBranch(b.name, 'local')} />
                     ))}
-                    {remoteOnly.filter(match).length > 0 && <div className="dropdown-title">Remote only</div>}
-                    {remoteOnly.filter(match).map((b) => (
-                      <div key={b.name} className="dropdown-item" onClick={() => pickBranch(b.name, 'remote')} title={`Check out ${b.name} locally`}>
-                        <span className="ctx-ico">☁</span>
-                        <span className="grow ellipsis mono">{b.name}</span>
+                    {remoteOnly.filter(match).length > 0 && (
+                      <div className="hb-sec">
+                        Remote only <span>{remoteOnly.filter(match).length}</span>
                       </div>
+                    )}
+                    {remoteOnly.filter(match).map((b) => (
+                      <BranchRow key={b.name} b={b} onPick={() => pickBranch(b.name, 'remote')} />
                     ))}
                     {local.filter(match).length + remoteOnly.filter(match).length === 0 && <div className="small muted pad">No branches match.</div>}
                   </>
                 )}
               </div>
-              <div className="dropdown-sep" />
-              <div
-                className="dropdown-item"
-                onClick={() => {
-                  setBranchOpen(false);
-                  requestQuickMerge({ source: st?.branch ?? undefined });
-                }}
-                title="Merge one branch into another — or open a pull request"
-              >
-                <span className="ctx-ico">⤵</span> Merge…
+              <div className="hb-acts">
+                <button onClick={() => rail('new-branch')} title="New branch from here">
+                  ＋ Branch
+                </button>
+                <button
+                  onClick={() => {
+                    setBranchOpen(false);
+                    requestQuickMerge({ source: st?.branch ?? undefined });
+                  }}
+                  title="Merge this branch into another — or open a pull request"
+                >
+                  ⤵ Merge
+                </button>
+                <button disabled={dirty === 0} onClick={() => rail('stash')} title={dirty ? 'Shelve your uncommitted changes' : 'Nothing to stash'}>
+                  📦 Stash
+                </button>
               </div>
             </div>
           )}
@@ -290,5 +305,32 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
         />
       )}
     </>
+  );
+}
+
+/** One branch in the header menu: a coloured left edge, the name, and its last commit message (like Compare's list). */
+function BranchRow({ b, onPick }: { b: BranchInfo; onPick: () => void }) {
+  return (
+    <div
+      className={`hb-row ${b.current ? 'on' : ''} ${b.remote ? 'remote' : ''}`}
+      style={{ ['--c' as string]: branchColor(b.name) }}
+      role="button"
+      tabIndex={0}
+      onClick={onPick}
+      onKeyDown={(e) => e.key === 'Enter' && onPick()}
+      title={b.current ? `You are on ${b.name}` : b.remote ? `Check out ${b.name} locally` : `Switch to ${b.name}`}
+    >
+      <div className="hb-name">
+        {b.remote && <span className="hb-cloud">☁</span>}
+        <span className="mono ellipsis">{b.name}</span>
+        {b.current && <span className="hb-cur">current</span>}
+        {b.ahead ? <span className="hb-ab up">↑{b.ahead}</span> : null}
+        {b.behind ? <span className="hb-ab down">↓{b.behind}</span> : null}
+      </div>
+      <div className="hb-meta">
+        <span className="ellipsis grow">{b.subject}</span>
+        {b.date && <span className="hb-when">{relative(b.date)}</span>}
+      </div>
+    </div>
   );
 }
