@@ -13,6 +13,13 @@ const colorOf = (name: string) => {
 };
 const isSha = (s: string) => /^[0-9a-f]{7,40}$/i.test(s);
 const label = (s: string) => (isSha(s) ? s.slice(0, 8) : s);
+/** Sidebar toggle icon: a window with a left panel. */
+const PaneIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+    <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2.5" />
+    <line x1="6" y1="2.5" x2="6" y2="13.5" />
+  </svg>
+);
 type CommitInfo = { subject: string; body: string; author: string };
 
 type Res<T> = { status: 'loading' } | { status: 'ok'; data: T } | { status: 'error'; error: FriendlyError };
@@ -266,41 +273,18 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
           </button>
         </header>
 
-        <div className={`cx-body ${mini ? 'mini' : ''}`} ref={body} style={{ gridTemplateColumns: mini ? '46px 1px minmax(0, 1fr)' : `${split}% 10px minmax(0, 1fr)` }}>
-          {/* ---------------- Sources ---------------- */}
-          {mini ? (
-            <section className="cx-pane cx-rail" aria-label="Sources (folded)">
-              <button className="cx-rail-btn" onClick={() => setMini(false)} title="Show sources">
-                »
-              </button>
-              <span className="cx-rail-n" title={`${sources.length} source${sources.length === 1 ? '' : 's'}`}>
-                {sources.length}
-              </span>
-              <div className="cx-rail-list">
-                {sources.map((s) => {
-                  const r = adds[keyOf(s)];
-                  const d = r?.status === 'ok' ? r.data : null;
-                  return (
-                    <button
-                      key={s}
-                      className={`cx-rail-src ${focused === s ? 'on' : ''}`}
-                      style={{ ['--c' as string]: colorOf(s) }}
-                      onClick={() => setFocus(s)}
-                      title={`${tip(s)}${d ? `\n↑ ${d.ahead} new · ↓ ${d.behind} behind · +${d.additions} −${d.deletions}` : ''}`}
-                    >
-                      {(isSha(s) ? commitInfo[s]?.subject || s : s.split('/').pop() || s).slice(0, 1).toUpperCase()}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          ) : (
-          <section className="cx-pane cx-sources">
+        <div
+          className={`cx-body ${mini ? 'mini' : ''} ${dragging ? 'dragging' : ''}`}
+          ref={body}
+          style={{ gridTemplateColumns: mini ? '0px 0px minmax(0, 1fr)' : `${split}% 10px minmax(0, 1fr)` }}
+        >
+          {/* ---------------- Sources (hidden entirely when folded) ---------------- */}
+          <section className="cx-pane cx-sources" aria-hidden={mini} inert={mini ? true : undefined}>
             <div className="cx-pane-head">
               <span className="cx-pill src">Sources</span>
               <span className="cx-hint grow">{sources.length || 'none yet'}</span>
-              <button className="cx-icon cx-fold" onClick={() => setMini(true)} title="Fold the sources pane">
-                «
+              <button className="cx-icon cx-fold" onClick={() => setMini(true)} title="Hide sources">
+                <PaneIcon />
               </button>
             </div>
             <div className="cx-add">
@@ -412,19 +396,20 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
               )}
             </div>
           </section>
-          )}
 
-          {mini ? (
-            <div className="cx-rail-edge" aria-hidden />
-          ) : (
-            <div className="cx-handle" onPointerDown={(e) => (e.preventDefault(), setDragging(true))} onDoubleClick={() => setSplit(26)} title="Drag to resize · double-click to reset" role="separator" aria-orientation="vertical">
-              <span />
-            </div>
-          )}
+          <div className="cx-handle" onPointerDown={(e) => (e.preventDefault(), setDragging(true))} onDoubleClick={() => setSplit(26)} title="Drag to resize · double-click to reset" role="separator" aria-orientation="vertical">
+            <span />
+          </div>
 
           {/* ---------------- Comparison ---------------- */}
           <section className="cx-pane cx-main">
-            <div className="cx-route" style={{ ['--c' as string]: focused ? colorOf(focused) : 'var(--accent)' }}>
+            <div className={`cx-route ${mini ? 'with-toggle' : ''}`} style={{ ['--c' as string]: focused ? colorOf(focused) : 'var(--accent)' }}>
+              {mini && (
+                <button className="cx-icon cx-unfold" onClick={() => setMini(false)} title={`Show sources (${sources.length})`}>
+                  <PaneIcon />
+                  {sources.length > 1 && <span className="cx-unfold-n">{sources.length}</span>}
+                </button>
+              )}
               <div className="cx-end src">
                 <span className="cx-pill src">Source</span>
                 <span className="cx-end-name" title={focused ? tip(focused) : ''}>

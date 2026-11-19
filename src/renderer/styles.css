@@ -5065,14 +5065,14 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .cx-src-name .cx-name-sha { margin-top: 1px; }
 .cx-src-name .cx-name-ref { white-space: normal; overflow-wrap: anywhere; }
 
-/* Compare: the sources pane folds to a thin rail. */
-.cx-fold { flex: none; }
-.cx-rail { align-items: center; gap: 6px; padding: 8px 0; background: var(--bg-2); }
-.cx-rail-btn { width: 30px; height: 28px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg-3); color: var(--text-2); cursor: pointer; font-size: 13px; }
-.cx-rail-btn:hover { color: var(--text); border-color: var(--accent); }
-.cx-rail-n { font-size: 10.5px; font-weight: 700; color: var(--accent); padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 15%, transparent); }
-.cx-rail-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 4px; scrollbar-width: none; }
-.cx-rail-src { width: 30px; height: 30px; flex: none; border: 0; border-left: 3px solid color-mix(in srgb, var(--c) 45%, transparent); background: transparent; color: var(--text-2); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.cx-rail-src:hover { background: var(--bg-3); color: var(--text); }
-.cx-rail-src.on { border-left-color: var(--c); color: var(--c); background: color-mix(in srgb, var(--c) 10%, transparent); }
-.cx-rail-edge { background: var(--border); }
+/* Compare: the sources pane hides entirely; a toggle in the route bar brings it back. */
+.cx-body { transition: grid-template-columns 0.22s ease; }
+.cx-body.dragging { transition: none; }
+.cx-body.mini .cx-sources, .cx-body.mini .cx-handle { opacity: 0; pointer-events: none; }
+.cx-sources { transition: opacity 0.15s ease; }
+.cx-fold, .cx-unfold { flex: none; display: inline-grid; place-items: center; }
+.cx-route.with-toggle { grid-template-columns: auto minmax(0, 1fr) 70px minmax(0, 1fr); }
+.cx-unfold { position: relative; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-3); color: var(--text-2); cursor: pointer; animation: bp-in 0.15s ease-out; }
+.cx-unfold:hover { color: var(--text); border-color: var(--accent); }
+.cx-unfold-n { position: absolute; top: -6px; right: -6px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 9.5px; font-weight: 700; line-height: 15px; text-align: center; }
+@media (prefers-reduced-motion: reduce) { .cx-body, .cx-sources { transition: none; } }
