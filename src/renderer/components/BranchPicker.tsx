@@ -108,20 +108,39 @@ const pushRecent = (key: string | undefined, name: string) => {
   }
 };
 
-/** Searchable branch picker: fuzzy search, Local/Remote tabs, recents, rich rows and full keyboard control. */
-export function BranchPicker({ value, onChange, items, special = [], placeholder = 'Choose a branch…', disabled, recentKey, compact, title }: Props) {
-  const [open, setOpen] = useState(false);
+/**
+ * The picker's popup: fuzzy search, Local/Remote tabs, recents, rich rows and full keyboard control.
+ * Used by BranchPicker and by the header branch menu (which puts its own actions in the footer).
+ */
+export function BranchPickerPanel({
+  value,
+  items,
+  special = [],
+  recentKey,
+  onPick,
+  onClose,
+  footer,
+  className = '',
+  style,
+  panelRef,
+}: {
+  value: string;
+  items: PickerItem[];
+  special?: PickerItem[];
+  recentKey?: string;
+  onPick: (it: PickerItem) => void;
+  onClose: () => void;
+  /** Replaces the keyboard hints at the bottom. */
+  footer?: ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+  panelRef?: React.Ref<HTMLDivElement>;
+}) {
   const [q, setQ] = useState('');
   const [tab, setTab] = useState<Tab>('all');
   const [active, setActive] = useState(0);
-  const [pos, setPos] = useState<{ left: number; top: number; width: number; up: boolean; maxH: number } | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const popRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const all = useMemo(() => [...special, ...items], [special, items]);
-  const selected = all.find((i) => i.name === value) ?? null;
   const hasRemote = items.some((i) => i.remote);
   const hasLocal = items.some((i) => !i.remote);
 
@@ -160,6 +179,151 @@ export function BranchPicker({ value, onChange, items, special = [], placeholder
   }, [q, tab, items, special, recentKey]);
   const pickable = rows.map((r, i) => (r.kind === 'item' && !r.item.disabled ? i : -1)).filter((i) => i !== -1);
 
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+  }, []);
+  // Keep the highlighted row on the selected branch (or the first pickable one).
+  useEffect(() => {
+    const sel = rows.findIndex((r) => r.kind === 'item' && r.item.name === value && !r.item.disabled);
+    setActive(q || sel === -1 ? pickable[0] ?? 0 : sel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, tab, items.length]);
+  useEffect(() => {
+    listRef.current?.querySelector(`[data-row="${active}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
+
+  const choose = (it: PickerItem) => {
+    if (it.disabled) return;
+    pushRecent(recentKey, it.name);
+    onPick(it);
+  };
+  const step = (d: number) => {
+    if (!pickable.length) return;
+    const i = pickable.indexOf(active);
+    setActive(pickable[(i + d + pickable.length) % pickable.length]);
+  };
+  const tabs: Tab[] = hasLocal && hasRemote ? ['all', 'local', 'remote'] : [];
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') (e.preventDefault(), step(1));
+    else if (e.key === 'ArrowUp') (e.preventDefault(), step(-1));
+    else if (e.key === 'PageDown') (e.preventDefault(), step(8));
+    else if (e.key === 'PageUp') (e.preventDefault(), step(-8));
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const r = rows[active];
+      if (r?.kind === 'item') choose(r.item);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    } else if (e.key === 'Tab' && tabs.length) {
+      e.preventDefault();
+      setTab((t) => tabs[(tabs.indexOf(t) + (e.shiftKey ? tabs.length - 1 : 1)) % tabs.length]);
+    }
+  };
+  const activeItem = rows[active]?.kind === 'item' ? (rows[active] as { item: PickerItem }).item : null;
+
+  return (
+    <div ref={panelRef} className={`bp-pop ${className}`} style={style} onKeyDown={onKey} role="listbox">
+      <div className="bp-search">
+        <span className="bp-search-ico">⌕</span>
+        <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search branches…" spellCheck={false} />
+        {q && (
+          <button className="bp-clear" onClick={() => setQ('')} title="Clear search">
+            ✕
+          </button>
+        )}
+      </div>
+      {tabs.length > 0 && (
+        <div className="bp-tabs">
+          {tabs.map((t) => (
+            <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
+              {t === 'all' ? 'All' : t === 'local' ? `⎇ Local ${items.filter((i) => !i.remote).length}` : `☁ Remote ${items.filter((i) => i.remote).length}`}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="bp-list" ref={listRef}>
+        {rows.length === 0 && <div className="bp-none">{q ? `No branch matches “${q}”` : 'No branches'}</div>}
+        {rows.map((r, i) =>
+          r.kind === 'head' ? (
+            <div key={`h${i}`} className="bp-head">
+              {r.label}
+            </div>
+          ) : (
+            (() => {
+              const it = r.item;
+              const { folder, leaf } = splitName(it.label ?? it.name);
+              const off = folder.length;
+              return (
+                <div
+                  key={r.key}
+                  data-row={i}
+                  role="option"
+                  aria-selected={it.name === value}
+                  className={`bp-row ${i === active ? 'active' : ''} ${it.name === value ? 'sel' : ''} ${it.disabled ? 'disabled' : ''}`}
+                  style={{ ['--bc' as string]: it.icon ? 'var(--accent)' : branchColor(it.name) }}
+                  onMouseEnter={() => !it.disabled && setActive(i)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => choose(it)}
+                  title={it.disabled ?? it.name}
+                >
+                  {it.icon ? <span className="bp-ico">{it.icon}</span> : <span className="bp-dot" />}
+                  <div className="bp-main">
+                    <div className="bp-name ellipsis">
+                      {folder && (
+                        <span className="bp-folder">
+                          <Highlight text={folder} hits={r.hits.filter((h) => h < off)} />
+                        </span>
+                      )}
+                      <span className={it.label ? '' : 'mono'}>
+                        <Highlight text={leaf} hits={r.hits.filter((h) => h >= off).map((h) => h - off)} />
+                      </span>
+                    </div>
+                    {(it.subject || it.disabled) && <div className="bp-sub ellipsis">{it.disabled ?? it.subject}</div>}
+                  </div>
+                  <div className="bp-meta">
+                    {it.current && <span className="bp-badge cur">HEAD</span>}
+                    {!!it.ahead && <span className="bp-ab up">↑{it.ahead}</span>}
+                    {!!it.behind && <span className="bp-ab down">↓{it.behind}</span>}
+                    {it.date && <span className="bp-when">{relative(it.date)}</span>}
+                    {it.name === value && <span className="bp-check">✓</span>}
+                  </div>
+                </div>
+              );
+            })()
+          ),
+        )}
+      </div>
+      {footer ?? (
+        <div className="bp-foot">
+          {activeItem?.oid ? (
+            <span className="mono ellipsis">
+              {activeItem.oid.slice(0, 8)} <span className="muted">{activeItem.subject}</span>
+            </span>
+          ) : (
+            <span className="muted">
+              <kbd>↑</kbd>
+              <kbd>↓</kbd> move · <kbd>Enter</kbd> pick {tabs.length ? <>· <kbd>Tab</kbd> local/remote</> : null} · <kbd>Esc</kbd> close
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Searchable branch picker: a trigger button that opens BranchPickerPanel next to it. */
+export function BranchPicker({ value, onChange, items, special = [], placeholder = 'Choose a branch…', disabled, recentKey, compact, title }: Props) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number; up: boolean; maxH: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+
+  const all = useMemo(() => [...special, ...items], [special, items]);
+  const selected = all.find((i) => i.name === value) ?? null;
+
   const place = () => {
     const t = triggerRef.current?.getBoundingClientRect();
     if (!t) return;
@@ -189,56 +353,11 @@ export function BranchPicker({ value, onChange, items, special = [], placeholder
     window.addEventListener('mousedown', close);
     return () => window.removeEventListener('mousedown', close);
   }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    setQ('');
-    setTab('all');
-    setTimeout(() => inputRef.current?.focus(), 0);
-  }, [open]);
-  // Keep the highlighted row on the selected branch (or the first pickable one).
-  useEffect(() => {
-    if (!open) return;
-    const sel = rows.findIndex((r) => r.kind === 'item' && r.item.name === value && !r.item.disabled);
-    setActive(q || sel === -1 ? pickable[0] ?? 0 : sel);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, q, tab]);
-  useEffect(() => {
-    listRef.current?.querySelector(`[data-row="${active}"]`)?.scrollIntoView({ block: 'nearest' });
-  }, [active]);
 
-  const choose = (it: PickerItem) => {
-    if (it.disabled) return;
-    pushRecent(recentKey, it.name);
-    onChange(it.name);
+  const close = () => {
     setOpen(false);
     triggerRef.current?.focus();
   };
-  const step = (d: number) => {
-    if (!pickable.length) return;
-    const i = pickable.indexOf(active);
-    setActive(pickable[(i + d + pickable.length) % pickable.length]);
-  };
-  const tabs: Tab[] = hasLocal && hasRemote ? ['all', 'local', 'remote'] : [];
-  const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') (e.preventDefault(), step(1));
-    else if (e.key === 'ArrowUp') (e.preventDefault(), step(-1));
-    else if (e.key === 'PageDown') (e.preventDefault(), step(8));
-    else if (e.key === 'PageUp') (e.preventDefault(), step(-8));
-    else if (e.key === 'Enter') {
-      e.preventDefault();
-      const r = rows[active];
-      if (r?.kind === 'item') choose(r.item);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      setOpen(false);
-      triggerRef.current?.focus();
-    } else if (e.key === 'Tab' && tabs.length) {
-      e.preventDefault();
-      setTab((t) => tabs[(tabs.indexOf(t) + (e.shiftKey ? tabs.length - 1 : 1)) % tabs.length]);
-    }
-  };
-  const activeItem = rows[active]?.kind === 'item' ? (rows[active] as { item: PickerItem }).item : null;
 
   const shown = selected ?? null;
   const c = shown && shown.name ? branchColor(shown.name) : 'var(--text-3)';
@@ -281,96 +400,20 @@ export function BranchPicker({ value, onChange, items, special = [], placeholder
       {open &&
         pos &&
         createPortal(
-          <div
-            ref={popRef}
-            className={`bp-pop ${pos.up ? 'up' : ''}`}
+          <BranchPickerPanel
+            panelRef={popRef}
+            className={pos.up ? 'up' : ''}
             style={{ left: pos.left, width: pos.width, maxHeight: pos.maxH, ...(pos.up ? { bottom: window.innerHeight - pos.top } : { top: pos.top }) }}
-            onKeyDown={onKey}
-            role="listbox"
-          >
-            <div className="bp-search">
-              <span className="bp-search-ico">⌕</span>
-              <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search branches…" spellCheck={false} />
-              {q && (
-                <button className="bp-clear" onClick={() => setQ('')} title="Clear search">
-                  ✕
-                </button>
-              )}
-            </div>
-            {tabs.length > 0 && (
-              <div className="bp-tabs">
-                {tabs.map((t) => (
-                  <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
-                    {t === 'all' ? 'All' : t === 'local' ? `⎇ Local ${items.filter((i) => !i.remote).length}` : `☁ Remote ${items.filter((i) => i.remote).length}`}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="bp-list" ref={listRef}>
-              {rows.length === 0 && <div className="bp-none">No branch matches “{q}”</div>}
-              {rows.map((r, i) =>
-                r.kind === 'head' ? (
-                  <div key={`h${i}`} className="bp-head">
-                    {r.label}
-                  </div>
-                ) : (
-                  (() => {
-                    const it = r.item;
-                    const { folder, leaf } = splitName(it.label ?? it.name);
-                    const off = folder.length;
-                    return (
-                      <div
-                        key={r.key}
-                        data-row={i}
-                        role="option"
-                        aria-selected={it.name === value}
-                        className={`bp-row ${i === active ? 'active' : ''} ${it.name === value ? 'sel' : ''} ${it.disabled ? 'disabled' : ''}`}
-                        style={{ ['--bc' as string]: it.icon ? 'var(--accent)' : branchColor(it.name) }}
-                        onMouseEnter={() => !it.disabled && setActive(i)}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => choose(it)}
-                        title={it.disabled ?? it.name}
-                      >
-                        {it.icon ? <span className="bp-ico">{it.icon}</span> : <span className="bp-dot" />}
-                        <div className="bp-main">
-                          <div className="bp-name ellipsis">
-                            {folder && (
-                              <span className="bp-folder">
-                                <Highlight text={folder} hits={r.hits.filter((h) => h < off)} />
-                              </span>
-                            )}
-                            <span className={it.label ? '' : 'mono'}>
-                              <Highlight text={leaf} hits={r.hits.filter((h) => h >= off).map((h) => h - off)} />
-                            </span>
-                          </div>
-                          {(it.subject || it.disabled) && <div className="bp-sub ellipsis">{it.disabled ?? it.subject}</div>}
-                        </div>
-                        <div className="bp-meta">
-                          {it.current && <span className="bp-badge cur">HEAD</span>}
-                          {!!it.ahead && <span className="bp-ab up">↑{it.ahead}</span>}
-                          {!!it.behind && <span className="bp-ab down">↓{it.behind}</span>}
-                          {it.date && <span className="bp-when">{relative(it.date)}</span>}
-                          {it.name === value && <span className="bp-check">✓</span>}
-                        </div>
-                      </div>
-                    );
-                  })()
-                ),
-              )}
-            </div>
-            <div className="bp-foot">
-              {activeItem?.oid ? (
-                <span className="mono ellipsis">
-                  {activeItem.oid.slice(0, 8)} <span className="muted">{activeItem.subject}</span>
-                </span>
-              ) : (
-                <span className="muted">
-                  <kbd>↑</kbd>
-                  <kbd>↓</kbd> move · <kbd>Enter</kbd> pick {tabs.length ? <>· <kbd>Tab</kbd> local/remote</> : null} · <kbd>Esc</kbd> close
-                </span>
-              )}
-            </div>
-          </div>,
+            value={value}
+            items={items}
+            special={special}
+            recentKey={recentKey}
+            onPick={(it) => {
+              onChange(it.name);
+              close();
+            }}
+            onClose={close}
+          />,
           document.body,
         )}
     </>
