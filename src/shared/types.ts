@@ -157,6 +157,20 @@ export interface DiffLine {
   newLine?: number;
 }
 
+/** Who last changed each line of a file at a revision (git blame). */
+export interface BlameCommit {
+  author: string;
+  email: string;
+  /** ISO date the change was authored. */
+  date: string;
+  summary: string;
+}
+export interface BlameInfo {
+  /** Commit id per line: index 0 is line 1. */
+  lines: string[];
+  commits: Record<string, BlameCommit>;
+}
+
 export interface DiffHunk {
   header: string;
   oldStart: number;

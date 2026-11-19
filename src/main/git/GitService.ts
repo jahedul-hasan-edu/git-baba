@@ -34,6 +34,8 @@ import type {
   SigningMethod,
   StashEntry,
   RepoContributor,
+  BlameCommit,
+  BlameInfo,
 } from '../../shared/types';
 import { resolveInsideRepo, sanitizeRepoPaths } from '../util/paths';
 import { isValidBranchName, isValidRemoteName } from '../util/validate';
@@ -2181,6 +2183,15 @@ export class GitService {
     return { path: p, hash, content: binary ? '' : res.stdout.slice(0, max), binary, truncated: res.stdout.length > max };
   }
 
+  /** Who last changed each line of `relPath` at `rev` (`git blame --porcelain`). */
+  async blame(rev: string, relPath: string): Promise<BlameInfo> {
+    this.assertRevision(rev);
+    const [p] = sanitizeRepoPaths(this.root, [relPath]);
+    const res = await this.git(['blame', '--porcelain', rev, '--', p], { maxBufferBytes: 32 * 1024 * 1024 }).catch(() => null);
+    if (!res) throw new AppError({ code: 'blame-failed', title: 'No Line History', message: `Line history for ${p} at ${rev} is not available.` });
+    return parseBlamePorcelain(res.stdout);
+  }
+
   // ---------------------------------------------------------------------
   // Guards
   // ---------------------------------------------------------------------
@@ -2197,4 +2208,42 @@ export class GitService {
       throw new AppError({ code: 'invalid-revision', title: 'Invalid Revision', message: `"${rev}" is not a valid revision.` });
     }
   }
+}
+
+/** `git blame --porcelain` → a commit id per line plus the details of each commit. */
+export function parseBlamePorcelain(out: string): BlameInfo {
+  const lines: string[] = [];
+  const commits: Record<string, BlameCommit> = {};
+  let cur: string | null = null;
+  let draft: Partial<BlameCommit> & { time?: number; tz?: string } = {};
+  for (const raw of out.split('\n')) {
+    const head = /^([0-9a-f]{40,64}) \d+ (\d+)(?: \d+)?$/.exec(raw);
+    if (head) {
+      cur = head[1];
+      if (!commits[cur]) draft = {};
+      continue;
+    }
+    if (!cur) continue;
+    if (raw.startsWith('\t')) {
+      if (!commits[cur]) {
+        commits[cur] = {
+          author: draft.author ?? 'Unknown',
+          email: draft.email ?? '',
+          date: draft.time ? new Date(draft.time * 1000).toISOString() : '',
+          summary: draft.summary ?? '',
+        };
+      }
+      lines.push(cur);
+      continue;
+    }
+    if (commits[cur]) continue;
+    const sp = raw.indexOf(' ');
+    const key = sp < 0 ? raw : raw.slice(0, sp);
+    const val = sp < 0 ? '' : raw.slice(sp + 1);
+    if (key === 'author') draft.author = val;
+    else if (key === 'author-mail') draft.email = val.replace(/^<|>$/g, '');
+    else if (key === 'author-time') draft.time = Number(val);
+    else if (key === 'summary') draft.summary = val;
+  }
+  return { lines, commits };
 }

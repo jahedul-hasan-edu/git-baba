@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import type { BranchChanges, CommitStatFile, CompareResult, FileDiff, FriendlyError } from '../../../shared/types';
 import { BranchPicker, type PickerItem } from '../../components/BranchPicker';
-import { DiffViewer } from '../../components/DiffViewer';
+import { DiffViewer, type DiffBlameSource } from '../../components/DiffViewer';
 import { call, toFriendly } from '../../services/api';
 
 const COLORS = ['#5b8cff', '#3ecf8e', '#f5b84a', '#ff6b6b', '#b18cff', '#6cc4ff', '#ff9f6b', '#9fd36b'];
@@ -496,6 +496,7 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
                         leftIsTarget={lens === 'direct'}
                         hot={new Set(hotspots.filter(([, by]) => by.includes(focused)).map(([f]) => f))}
                         emptyText={lens === 'adds' ? `${label(focused)} adds nothing that ${label(target)} lacks.` : `${label(target)} and ${label(focused)} are identical.`}
+                        blame={{ repoId, oldRev: lens === 'adds' ? (fa?.status === 'ok' ? fa.data.mergeBase : null) : target, newRev: focused }}
                       />
                     )}
                   </>
@@ -530,7 +531,7 @@ const STATUS: Record<CommitStatFile['status'], { l: string; c: string; t: string
 };
 
 /** File rail + one large diff with both sides labelled; ↑/↓ (or j/k) move between files. */
-function ChangesView({ files, diffs, left, right, leftIsTarget, hot, emptyText }: { files: CommitStatFile[]; diffs: FileDiff[]; left: string; right: string; leftIsTarget: boolean; hot: Set<string>; emptyText: string }) {
+function ChangesView({ files, diffs, left, right, leftIsTarget, hot, emptyText, blame }: { files: CommitStatFile[]; diffs: FileDiff[]; left: string; right: string; leftIsTarget: boolean; hot: Set<string>; emptyText: string; blame?: DiffBlameSource }) {
   const [q, setQ] = useState('');
   const [mode, setMode] = useState<'split' | 'unified'>(() => {
     try {
@@ -722,7 +723,7 @@ ${leftIsTarget ? st.t : f.status}`}>
           </div>
         )}
         <div className="cx-diff-body">
-          {current && current.binary ? <div className="cx-empty">Binary file: no text to compare.</div> : <DiffViewer diff={diff} hideHeader forceMode={mode} emptyText="No line changes for this file." />}
+          {current && current.binary ? <div className="cx-empty">Binary file: no text to compare.</div> : <DiffViewer diff={diff} hideHeader forceMode={mode} emptyText="No line changes for this file." blame={blame} />}
         </div>
       </div>
     </div>

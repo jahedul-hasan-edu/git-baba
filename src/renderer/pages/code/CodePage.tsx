@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CodeTree } from './CodeTree';
 import type { CodeEntry, CodeInfo, CodeLastCommit, CodeSearchHit, FileAtCommit, FriendlyError, RepoStatus } from '../../../shared/types';
 import { isPublished } from '../../../shared/publish';
 import { ErrorPanel } from '../../components/ErrorPanel';
@@ -73,6 +74,22 @@ export function CodePage() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [dialog, setDialog] = useState<null | { kind: 'commit'; message: string } | { kind: 'push' } | { kind: 'switch'; target: string; remote: boolean } | { kind: 'delete'; path: string }>(null);
   const [saving, setSaving] = useState(false);
+  // The explorer tree beside the content (shown unless hidden; remembered).
+  const [treeOpen, setTreeOpen] = useState(() => {
+    try {
+      return localStorage.getItem('gb.code.tree') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const showTree = (on: boolean) => {
+    setTreeOpen(on);
+    try {
+      localStorage.setItem('gb.code.tree', on ? '1' : '0');
+    } catch {
+      // per-viewer convenience only
+    }
+  };
   const searchBox = useRef<HTMLInputElement>(null);
 
   const viewRef = ref ?? info?.ref ?? null;
@@ -515,6 +532,26 @@ export function CodePage() {
         )}
 
         {/* body: scrolls on its own (a file's code scrolls inside the viewer) */}
+        <div className={`code-explore ${treeOpen && viewRef ? 'with-tree' : ''}`}>
+        {treeOpen && viewRef && (
+          <CodeTree
+            repoId={repoId}
+            viewRef={viewRef}
+            activePath={view.kind === 'file' || view.kind === 'edit' ? view.path : null}
+            changes={changes}
+            onOpen={(p) => openFile(p)}
+            onDir={(d) => view.kind === 'tree' && goDir(d)}
+            onHide={() => showTree(false)}
+          />
+        )}
+        {!treeOpen && viewRef && (
+          <button className="ct-show" onClick={() => showTree(true)} title="Show the explorer">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+              <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2.5" />
+              <line x1="6" y1="2.5" x2="6" y2="13.5" />
+            </svg>
+          </button>
+        )}
         <div className="code-body">
         {view.kind === 'search' ? (
           <div className="card code-card fade-in">
@@ -618,6 +655,7 @@ export function CodePage() {
                 )}
                 <FileView
                   file={file}
+                  blame={file.hash === 'WORKTREE' ? undefined : { repoId, rev: viewRef! }}
                   line={view.line}
                   term={search?.query ?? ''}
                   onLink={onLink(parentOf(file.path))}
@@ -738,6 +776,7 @@ export function CodePage() {
             )}
           </div>
         )}
+        </div>
         </div>
       </div>
 

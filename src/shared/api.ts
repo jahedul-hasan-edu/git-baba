@@ -60,6 +60,7 @@ import type {
   CreateRepoInput,
   CreateRepoState,
   FileAtCommit,
+  BlameInfo,
   GraphCommit,
   HistoryQuery,
   VerifiedAccount,
@@ -423,6 +424,7 @@ export interface ApiMap {
   'graph:commit': { req: R & { hash: string }; res: CommitDetails };
   'graph:compare': { req: R & { from: string; to: string }; res: CompareResult };
   'graph:fileAt': { req: R & { hash: string; path: string }; res: FileAtCommit };
+  'graph:blame': { req: R & { rev: string; path: string }; res: BlameInfo };
   'graph:reveal': { req: R & { path: string }; res: void };
   'app:copyText': { req: { text: string }; res: void };
   'app:quit': { req: void; res: void };

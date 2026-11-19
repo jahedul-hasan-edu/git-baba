@@ -61,6 +61,7 @@ export type ExtraChannels =
   | 'graph:commit'
   | 'graph:compare'
   | 'graph:fileAt'
+  | 'graph:blame'
   | 'graph:reveal'
   | 'graph:branchChanges'
   | 'graph:mergeForecast'
@@ -339,6 +340,10 @@ export function createExtraHandlers(
     'graph:fileAt': async (payload) => {
       const p = asObject(payload);
       return graphGit(p).fileAtCommit(asHash(p.hash, 'commit'), asString(p.path, 'path', { trim: false }));
+    },
+    'graph:blame': async (payload) => {
+      const p = asObject(payload);
+      return graphGit(p).blame(asString(p.rev, 'revision', { max: 255 }), asString(p.path, 'path', { trim: false }));
     },
     'graph:reveal': async (payload) => {
       const p = asObject(payload);
