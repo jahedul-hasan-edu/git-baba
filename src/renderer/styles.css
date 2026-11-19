@@ -5267,3 +5267,8 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .hs-acts button { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-2); color: var(--text-2); font-size: 11px; padding: 2px 7px; cursor: pointer; }
 .hs-acts button:hover:not(:disabled) { color: var(--text); border-color: var(--border-2); }
 .hs-acts .hs-x:hover, .hs-acts .hs-yes { color: var(--danger, #f85149); border-color: color-mix(in srgb, var(--danger, #f85149) 50%, transparent); }
+
+/* Compare sits in the tab bar, just before Search */
+.tabs.dock .tab-compare { margin-left: auto; align-self: center; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-2); color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; transition: color .15s, border-color .15s, background .15s; }
+.tabs.dock .tab-compare:hover { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg-2)); }
+.tabs.dock .tab-compare ~ .tab-clear, .tabs.dock .tab-compare ~ .tab-search { margin-left: 6px; }

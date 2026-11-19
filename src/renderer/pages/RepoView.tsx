@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { requestCompare } from '../services/compareRequest';
 import { Spinner } from '../components/Modal';
 import type { PullResult } from '../../shared/types';
 import { RepoSyncBar } from '../components/RepoSyncBar';
@@ -483,6 +484,16 @@ function TabDock({ tabs, active, onPick: pick, locked }: { tabs: [RepoTab, strin
         </div>
       ))}
       {ink && <span className="tab-ink" style={{ transform: `translateX(${ink.left}px)`, width: ink.width }} />}
+      <button
+        className="tab-compare"
+        onClick={() => {
+          if (active !== 'changes') pick('changes');
+          requestCompare();
+        }}
+        title="Compare branches, tags or commits"
+      >
+        ⇄ Compare
+      </button>
       {filtered && (
         <button className="tab-clear" onClick={requestClearFilter} title="Show all commits again">
           ✕ Clear search
