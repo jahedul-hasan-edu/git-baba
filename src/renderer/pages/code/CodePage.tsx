@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FilePeople } from './FilePeople';
 import { isViewablePath } from './BinaryView';
 import { CodeTree } from './CodeTree';
 import type { CodeEntry, CodeInfo, CodeLastCommit, CodeSearchHit, FileAtCommit, FriendlyError, RepoStatus } from '../../../shared/types';
@@ -73,6 +74,8 @@ export function CodePage() {
   const [pickerTab, setPickerTab] = useState<'branches' | 'tags' | null>(null);
   // On narrow windows the About column becomes a drawer.
   const [aboutOpen, setAboutOpen] = useState(false);
+  /** File whose people (who changed it) are shown. */
+  const [people, setPeople] = useState<{ path: string; ref: string | null } | null>(null);
   const [dialog, setDialog] = useState<null | { kind: 'commit'; message: string } | { kind: 'push' } | { kind: 'switch'; target: string; remote: boolean } | { kind: 'delete'; path: string }>(null);
   const [saving, setSaving] = useState(false);
   // The explorer tree beside the content (shown unless hidden; remembered).
@@ -669,6 +672,7 @@ export function CodePage() {
                     </button>
                   }
                   menu={[
+                    { icon: '👥', label: 'People who changed it', run: () => setPeople({ path: file.path, ref: file.hash === 'WORKTREE' ? null : viewRef! }) },
                     !file.binary && !isViewablePath(file.path) && {
                       icon: '⧉',
                       label: 'Copy contents',
@@ -821,6 +825,7 @@ export function CodePage() {
           }}
         />
       )}
+      {people && <FilePeople repoId={repoId} gitRef={people.ref} path={people.path} onClose={() => setPeople(null)} />}
       {dialog?.kind === 'delete' && (
         <ConfirmDialog
           title="Delete File"

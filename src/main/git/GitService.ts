@@ -36,6 +36,7 @@ import type {
   RepoContributor,
   BlameCommit,
   BlameInfo,
+  FileCommit,
   FileBytes,
 } from '../../shared/types';
 import { resolveInsideRepo, sanitizeRepoPaths } from '../util/paths';
@@ -2257,6 +2258,21 @@ export class GitService {
     const res = await this.git(['blame', '--porcelain', rev, '--', p], { maxBufferBytes: 32 * 1024 * 1024 }).catch(() => null);
     if (!res) throw new AppError({ code: 'blame-failed', title: 'No Line History', message: `Line history for ${p} at ${rev} is not available.` });
     return parseBlamePorcelain(res.stdout);
+  }
+
+  /** Every commit that changed a file (following renames), newest first; merges are skipped. */
+  async fileHistory(rev: string | null, relPath: string, max = 2000): Promise<FileCommit[]> {
+    if (rev) this.assertRevision(rev);
+    const [p] = sanitizeRepoPaths(this.root, [relPath]);
+    const res = await this.git(['log', '--follow', '--no-merges', `--max-count=${max}`, '--format=%H%x1f%an%x1f%ae%x1f%aI%x1f%s', ...(rev ? [rev] : []), '--', p], { maxBufferBytes: 16 * 1024 * 1024 }).catch(() => null);
+    if (!res) return [];
+    return res.stdout
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => {
+        const [hash, author, email, date, subject] = l.split('\x1f');
+        return { hash, author, email, date, subject: subject ?? '' };
+      });
   }
 
   // ---------------------------------------------------------------------

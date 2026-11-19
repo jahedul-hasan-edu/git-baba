@@ -1497,3 +1497,12 @@ export interface WorktreeSyncResult {
   kept: boolean;
   message: string;
 }
+
+/** One commit that changed a file (for "who changed this file"). */
+export interface FileCommit {
+  hash: string;
+  author: string;
+  email: string;
+  date: string;
+  subject: string;
+}

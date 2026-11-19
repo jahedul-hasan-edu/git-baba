@@ -51,3 +51,29 @@ describe('GitService.fileBytes', () => {
     await expect(svc.fileBytes('main', '../outside.png')).rejects.toThrow();
   });
 });
+
+describe('GitService.fileHistory', () => {
+  it('lists every commit that changed a file, across a rename, newest first', async () => {
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gb-fh-')));
+    const git = (...a: string[]) => execFileSync('git', a, { cwd: repo, stdio: 'pipe' }).toString().trim();
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.name', 'Ada');
+    git('config', 'user.email', 'ada@example.com');
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'one\n');
+    fs.writeFileSync(path.join(repo, 'other.txt'), 'x\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'add a');
+    git('config', 'user.name', 'Grace');
+    git('mv', 'a.txt', 'b.txt');
+    git('commit', '-q', '-m', 'rename');
+    fs.writeFileSync(path.join(repo, 'b.txt'), 'one\ntwo\n');
+    git('commit', '-qam', 'edit b');
+    fs.writeFileSync(path.join(repo, 'other.txt'), 'y\n');
+    git('commit', '-qam', 'unrelated');
+
+    const h = await new GitService(repo).fileHistory(null, 'b.txt');
+    expect(h.map((c) => c.subject)).toEqual(['edit b', 'rename', 'add a']);
+    expect(h.map((c) => c.author)).toEqual(['Grace', 'Grace', 'Ada']);
+    await expect(new GitService(repo).fileHistory('--evil', 'b.txt')).rejects.toThrow();
+  });
+});

@@ -61,6 +61,7 @@ import type {
   CreateRepoState,
   FileAtCommit,
   BlameInfo,
+  FileCommit,
   FileBytes,
   GraphCommit,
   HistoryQuery,
@@ -427,6 +428,7 @@ export interface ApiMap {
   'graph:compare': { req: R & { from: string; to: string }; res: CompareResult };
   'graph:fileAt': { req: R & { hash: string; path: string }; res: FileAtCommit };
   'graph:blame': { req: R & { rev: string; path: string }; res: BlameInfo };
+  'code:fileHistory': { req: R & { ref: string | null; path: string }; res: FileCommit[] };
   'graph:reveal': { req: R & { path: string }; res: void };
   'app:copyText': { req: { text: string }; res: void };
   'app:quit': { req: void; res: void };
