@@ -75,7 +75,7 @@ type RepoDialog = { kind: 'duplicate' | 'contributors' | 'lastCommit' | 'remove'
 
 /** Repositories grouped by owner (favourites pinned on top), with a right-click menu of repository actions. */
 export function Sidebar() {
-  const { repos, activeRepoId, selectRepo, view, showError, bump, toast, requestAppSetup } = useApp();
+  const { repos, activeRepoId, selectRepo, view, showError, bump, toast } = useApp();
   const [dialog, setDialog] = useState<'create' | 'clone' | null>(null);
   const [menu, setMenu] = useState(false);
   const [query, setQuery] = useState('');
@@ -214,7 +214,6 @@ export function Sidebar() {
       bump();
       selectRepo(repo.id);
       toast(`Added ${repo.name}`);
-      if (repo.github && !repo.settings.githubApp) requestAppSetup(repo.id);
     } catch (err) {
       showError(err);
     }

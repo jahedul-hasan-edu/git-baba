@@ -25,23 +25,6 @@ import { FILTER_EVENT, requestClearFilter } from '../services/jump';
 const SearchPalette = lazy(() => import('../components/search/SearchPalette').then((m) => ({ default: m.SearchPalette })));
 const RepoSettingsShell = lazy(() => import('./repoSettings/RepoSettingsShell').then((m) => ({ default: m.RepoSettingsShell })));
 
-// "Not now" for the GitHub App banner is a per-viewer convenience; storage may be unavailable.
-function readDismissed(repoId: string | undefined): boolean {
-  try {
-    return !!repoId && localStorage.getItem(`gg-app-setup-dismissed:${repoId}`) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeDismissed(repoId: string): void {
-  try {
-    localStorage.setItem(`gg-app-setup-dismissed:${repoId}`, '1');
-  } catch {
-    // ignore
-  }
-}
-
 export function RepoView() {
   const { activeRepo, repoTab, setRepoTab, revision, bump, appSetupRepoId, requestAppSetup, activeAccount, accounts, setAccounts, refreshSession, refreshRepos, toast, setView } = useApp();
   const otherAccount = activeRepo?.account && activeRepo.account.id !== activeAccount?.id ? activeRepo.account : null;
@@ -53,7 +36,6 @@ export function RepoView() {
     void refreshRepos().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRepo?.id]);
-  const [setupDismissed, setSetupDismissed] = useState(() => readDismissed(activeRepo?.id));
   const [dialog, setDialog] = useState<'fetch' | 'pull' | 'push' | null>(null);
   const lockedRef = useRef(false);
   lockedRef.current = !!otherAccount;
@@ -192,27 +174,6 @@ export function RepoView() {
                 onClick={() => void switchToOwner()}
               >
                 Switch to {otherAccount.login}
-              </button>
-            </div>
-          )}
-          {activeRepo.github && !activeRepo.settings.githubApp && !setupDismissed && !locked && (
-            <div className="banner info">
-              <span className="icon">🔑</span>
-              <div className="grow">
-                <strong>GitHub repository: {activeRepo.github.owner}/{activeRepo.github.repo}.</strong> Link your GitHub App once so push and PR dialogs don't ask for the App ID, owner and repository
-                again.
-              </div>
-              <button className="btn sm primary" onClick={() => requestAppSetup(activeRepo.id)}>
-                Set up GitHub App
-              </button>
-              <button
-                className="btn sm ghost"
-                onClick={() => {
-                  writeDismissed(activeRepo.id);
-                  setSetupDismissed(true);
-                }}
-              >
-                Not now
               </button>
             </div>
           )}

@@ -33,7 +33,7 @@ const ICON: Record<NonNullable<Detected>['kind'], string> = { github: '🐙', ur
 
 /** Launchpad shown when no repository is open: one smart box, three actions, and recent repositories. */
 export function WelcomePage() {
-  const { info, showError, bump, selectRepo, setView, requestAppSetup, repos } = useApp();
+  const { info, showError, bump, selectRepo, setView, repos } = useApp();
   const [dialog, setDialog] = useState<'create' | 'clone' | null>(null);
   const [quick, setQuick] = useState('');
   const [cloneFrom, setCloneFrom] = useState<string | undefined>(undefined);
@@ -47,7 +47,6 @@ export function WelcomePage() {
       const repo = await call('repo:addExisting', { selectionId: pick.selectionId });
       bump();
       selectRepo(repo.id);
-      if (repo.github && !repo.settings.githubApp) requestAppSetup(repo.id);
     } catch (err) {
       showError(err);
     }
@@ -55,7 +54,6 @@ export function WelcomePage() {
   const onCreated = (r: RepoSummary) => {
     bump();
     selectRepo(r.id);
-    if (r.github && !r.settings.githubApp) requestAppSetup(r.id);
   };
   const startClone = (from?: string) => {
     setCloneFrom(from);
