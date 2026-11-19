@@ -5282,7 +5282,7 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 
 /* ===== App header: the account area lines up with the repositories sidebar, the repo controls with the main column ===== */
 .app-header { gap: 0; padding: 0; min-height: 46px; align-items: stretch; }
-.ah-left { flex: none; box-sizing: border-box; min-width: var(--sidebar-w, 290px); display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-right: 1px solid var(--border); transition: min-width 0.22s ease; }
+.ah-left { flex: none; box-sizing: border-box; min-width: var(--sidebar-w, 290px); display: flex; align-items: center; gap: 8px; padding: 6px 14px; transition: min-width 0.22s ease; }
 .ah-repo { flex: 1; min-width: 0; display: flex; }
 .ah-repo:empty { display: none; }
 .ah-deck { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 12px; }
