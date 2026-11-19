@@ -69,6 +69,15 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
   const [commitInfo, setCommitInfo] = useState<Record<string, CommitInfo | null>>({});
   const [hotFile, setHotFile] = useState<string | null>(null);
   const [split, setSplit] = useState(() => readNum('gb.compare.split', 26, 16, 60));
+  // The sources pane can be folded to a thin rail to give the diff the whole width (remembered).
+  const [mini, setMini] = useState(() => {
+    try {
+      return localStorage.getItem('gb.compare.mini') === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => save('gb.compare.mini', mini ? '1' : '0'), [mini]);
   const [dragging, setDragging] = useState(false);
   const body = useRef<HTMLDivElement>(null);
 
@@ -257,12 +266,42 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
           </button>
         </header>
 
-        <div className="cx-body" ref={body} style={{ gridTemplateColumns: `${split}% 10px minmax(0, 1fr)` }}>
+        <div className={`cx-body ${mini ? 'mini' : ''}`} ref={body} style={{ gridTemplateColumns: mini ? '46px 1px minmax(0, 1fr)' : `${split}% 10px minmax(0, 1fr)` }}>
           {/* ---------------- Sources ---------------- */}
+          {mini ? (
+            <section className="cx-pane cx-rail" aria-label="Sources (folded)">
+              <button className="cx-rail-btn" onClick={() => setMini(false)} title="Show sources">
+                »
+              </button>
+              <span className="cx-rail-n" title={`${sources.length} source${sources.length === 1 ? '' : 's'}`}>
+                {sources.length}
+              </span>
+              <div className="cx-rail-list">
+                {sources.map((s) => {
+                  const r = adds[keyOf(s)];
+                  const d = r?.status === 'ok' ? r.data : null;
+                  return (
+                    <button
+                      key={s}
+                      className={`cx-rail-src ${focused === s ? 'on' : ''}`}
+                      style={{ ['--c' as string]: colorOf(s) }}
+                      onClick={() => setFocus(s)}
+                      title={`${tip(s)}${d ? `\n↑ ${d.ahead} new · ↓ ${d.behind} behind · +${d.additions} −${d.deletions}` : ''}`}
+                    >
+                      {(isSha(s) ? commitInfo[s]?.subject || s : s.split('/').pop() || s).slice(0, 1).toUpperCase()}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : (
           <section className="cx-pane cx-sources">
             <div className="cx-pane-head">
               <span className="cx-pill src">Sources</span>
-              <span className="cx-hint">{sources.length || 'none yet'}</span>
+              <span className="cx-hint grow">{sources.length || 'none yet'}</span>
+              <button className="cx-icon cx-fold" onClick={() => setMini(true)} title="Fold the sources pane">
+                «
+              </button>
             </div>
             <div className="cx-add">
               <BranchPicker value="" onChange={add} items={items.filter((x) => x.name !== target && !sources.includes(x.name))} placeholder="＋ Add a branch or tag…" recentKey="compare-source" />
@@ -373,10 +412,15 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
               )}
             </div>
           </section>
+          )}
 
-          <div className="cx-handle" onPointerDown={(e) => (e.preventDefault(), setDragging(true))} onDoubleClick={() => setSplit(26)} title="Drag to resize · double-click to reset" role="separator" aria-orientation="vertical">
-            <span />
-          </div>
+          {mini ? (
+            <div className="cx-rail-edge" aria-hidden />
+          ) : (
+            <div className="cx-handle" onPointerDown={(e) => (e.preventDefault(), setDragging(true))} onDoubleClick={() => setSplit(26)} title="Drag to resize · double-click to reset" role="separator" aria-orientation="vertical">
+              <span />
+            </div>
+          )}
 
           {/* ---------------- Comparison ---------------- */}
           <section className="cx-pane cx-main">
