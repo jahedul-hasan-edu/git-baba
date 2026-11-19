@@ -13,6 +13,7 @@ const colorOf = (name: string) => {
 };
 const isSha = (s: string) => /^[0-9a-f]{7,40}$/i.test(s);
 const label = (s: string) => (isSha(s) ? s.slice(0, 8) : s);
+type CommitInfo = { subject: string; body: string; author: string };
 
 type Res<T> = { status: 'loading' } | { status: 'ok'; data: T } | { status: 'error'; error: FriendlyError };
 type Lens = 'adds' | 'direct';
@@ -64,6 +65,8 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
     }
   });
   const [sha, setSha] = useState('');
+  // Commit sources are shown by their message, not their id.
+  const [commitInfo, setCommitInfo] = useState<Record<string, CommitInfo | null>>({});
   const [hotFile, setHotFile] = useState<string | null>(null);
   const [split, setSplit] = useState(() => readNum('gb.compare.split', 26, 16, 60));
   const [dragging, setDragging] = useState(false);
@@ -101,6 +104,34 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources, target, repoId]);
+
+  useEffect(() => {
+    for (const s of sources) {
+      if (!isSha(s) || s in commitInfo) continue;
+      setCommitInfo((m) => ({ ...m, [s]: null }));
+      call('graph:commit', { repoId, hash: s })
+        .then((c) => setCommitInfo((m) => ({ ...m, [s]: { subject: c.subject, body: c.body, author: c.author } })))
+        .catch(() => undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sources, repoId]);
+
+  /** Title text: the full message for a commit, the name otherwise. */
+  const tip = (s: string) => {
+    const c = commitInfo[s];
+    return c ? `${c.subject}${c.body ? `\n\n${c.body.trim()}` : ''}\n\n${s.slice(0, 8)} · ${c.author}` : s;
+  };
+  /** A source's name: a commit's message (one line, cut with …) and its short id, or the ref name. */
+  const nameOf = (s: string) => {
+    const c = commitInfo[s];
+    if (!isSha(s)) return <span className="cx-name-ref mono ellipsis">{s}</span>;
+    return (
+      <span className="cx-name-commit">
+        <span className={`cx-name-subj ellipsis ${c ? '' : 'mono'}`}>{c ? c.subject || '(no message)' : label(s)}</span>
+        <span className="cx-name-sha mono">{s.slice(0, 7)}</span>
+      </span>
+    );
+  };
 
   const focused = focus && sources.includes(focus) ? focus : (sources[0] ?? null);
 
@@ -274,9 +305,8 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
                   >
                     <span className="cx-dot" />
                     <div className="cx-src-main">
-                      <div className="cx-src-name mono" title={s}>
-                        {isSha(s) ? '◉ ' : ''}
-                        {label(s)}
+                      <div className="cx-src-name" title={tip(s)}>
+                        {nameOf(s)}
                       </div>
                       <div className="cx-src-meta">
                         {!target && <span className="muted">choose a target</span>}
@@ -353,8 +383,8 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
             <div className="cx-route" style={{ ['--c' as string]: focused ? colorOf(focused) : 'var(--accent)' }}>
               <div className="cx-end src">
                 <span className="cx-pill src">Source</span>
-                <span className="mono ellipsis" title={focused ?? ''}>
-                  {focused ? label(focused) : 'add a source'}
+                <span className="cx-end-name" title={focused ? tip(focused) : ''}>
+                  {focused ? nameOf(focused) : <span className="muted">add a source</span>}
                 </span>
               </div>
               <span className="cx-route-line">
