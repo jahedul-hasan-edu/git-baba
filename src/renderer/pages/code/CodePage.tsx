@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isViewablePath } from './BinaryView';
 import { CodeTree } from './CodeTree';
 import type { CodeEntry, CodeInfo, CodeLastCommit, CodeSearchHit, FileAtCommit, FriendlyError, RepoStatus } from '../../../shared/types';
 import { isPublished } from '../../../shared/publish';
@@ -197,6 +198,8 @@ export function CodePage() {
     async (path: string): Promise<FileAtCommit> => {
       const mark = changes.get(path);
       if (isCurrent && (mark === 'added' || mark === 'modified' || mark === 'renamed')) {
+        // Images, PDFs and other binaries are read as bytes by the viewer, not as text.
+        if (isViewablePath(path)) return { path, hash: 'WORKTREE', content: '', binary: true, truncated: false };
         const local = await call('gh:readLocalFile', { repoId, path });
         return { path, hash: 'WORKTREE', content: local.content, binary: false, truncated: local.truncated };
       }
@@ -656,11 +659,13 @@ export function CodePage() {
                 <FileView
                   file={file}
                   blame={file.hash === 'WORKTREE' ? undefined : { repoId, rev: viewRef! }}
+                  source={{ repoId, ref: file.hash === 'WORKTREE' ? null : viewRef! }}
                   line={view.line}
                   term={search?.query ?? ''}
                   onLink={onLink(parentOf(file.path))}
                   toolbar={
                     <>
+                      {!file.binary && !isViewablePath(file.path) && (
                       <button
                         className="btn sm ghost"
                         title="Copy file contents"
@@ -673,10 +678,11 @@ export function CodePage() {
                       >
                         ⧉ Copy
                       </button>
+                      )}
                       <button className="btn sm ghost" title="Copy path" onClick={() => void call('app:copyText', { text: file.path }).then(() => toast('Path copied'), showError)}>
                         Path
                       </button>
-                      <button className="btn sm" disabled={!isCurrent || file.binary || changes.get(file.path) === 'deleted'} title={isCurrent ? 'Edit this file' : `Switch to ${viewRef} to edit`} onClick={() => void startEdit(file.path)}>
+                      <button className="btn sm" disabled={!isCurrent || file.binary || isViewablePath(file.path) || changes.get(file.path) === 'deleted'} title={isCurrent ? 'Edit this file' : `Switch to ${viewRef} to edit`} onClick={() => void startEdit(file.path)}>
                         ✎ Edit
                       </button>
                       <button className="btn sm danger" disabled={!isCurrent || changes.get(file.path) === 'deleted'} title={isCurrent ? 'Delete this file' : `Switch to ${viewRef} to delete files`} onClick={() => setDialog({ kind: 'delete', path: file.path })}>

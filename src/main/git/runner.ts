@@ -23,11 +23,15 @@ export interface GitRunOptions {
   onProgress?: (line: string) => void;
   /** Aborting kills the git process (user pressed Cancel). */
   signal?: AbortSignal;
+  /** Keep stdout as bytes (`bytes`) instead of decoding it as text: for binary file contents. */
+  raw?: boolean;
 }
 
 export interface GitRunResult {
   stdout: string;
   stderr: string;
+  /** Undecoded stdout, only with `raw`. */
+  bytes?: Buffer;
   exitCode: number;
 }
 
@@ -183,7 +187,8 @@ export function runGit(opts: GitRunOptions): Promise<GitRunResult> {
 
     child.on('close', (code) => {
       clearTimeout(timer);
-      const stdout = Buffer.concat(out).toString('utf8');
+      const outBuf = Buffer.concat(out);
+      const stdout = opts.raw ? '' : outBuf.toString('utf8');
       const stderr = redactSecrets(Buffer.concat(errChunks).toString('utf8'), secrets);
       opts.signal?.removeEventListener('abort', onAbort);
       if (killedReason === 'cancelled') {
@@ -203,7 +208,7 @@ export function runGit(opts: GitRunOptions): Promise<GitRunResult> {
         reject(new GitCommandError({ exitCode, stderr, stdout: redactSecrets(stdout, secrets), command }));
         return;
       }
-      resolve({ stdout, stderr, exitCode });
+      resolve(opts.raw ? { stdout, stderr, exitCode, bytes: outBuf } : { stdout, stderr, exitCode });
     });
 
     if (opts.input !== undefined) {

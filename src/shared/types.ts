@@ -1250,6 +1250,16 @@ export interface BranchChanges {
 }
 
 // ---- Code tab ----
+/** A file's raw bytes, for showing images, PDFs and other binary files. */
+export interface FileBytes {
+  path: string;
+  /** Size of the whole file in bytes. */
+  size: number;
+  /** Base64 of the bytes (empty when the file is larger than the limit). */
+  base64: string;
+  tooLarge: boolean;
+}
+
 export interface CodeEntry {
   name: string;
   path: string;

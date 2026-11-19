@@ -61,6 +61,7 @@ import type {
   CreateRepoState,
   FileAtCommit,
   BlameInfo,
+  FileBytes,
   GraphCommit,
   HistoryQuery,
   VerifiedAccount,
@@ -440,6 +441,8 @@ export interface ApiMap {
   'code:tree': { req: R & { ref: string; path: string }; res: CodeEntry[] };
   'code:lastCommits': { req: R & { ref: string; paths: string[] }; res: Record<string, CodeLastCommit | null> };
   'code:file': { req: R & { ref: string; path: string }; res: FileAtCommit };
+  /** Raw bytes of a file (images, PDFs, other binaries); `ref` null reads the working copy. */
+  'code:bytes': { req: R & { ref: string | null; path: string }; res: FileBytes };
   'code:search': { req: R & { ref: string; query: string }; res: { files: string[]; hits: CodeSearchHit[]; truncated: boolean } };
   /** Writes a file in the working copy (current branch only) and stages it. */
   'code:writeFile': { req: R & { path: string; content: string; create: boolean }; res: void };

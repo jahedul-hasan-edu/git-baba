@@ -36,6 +36,7 @@ import type {
   RepoContributor,
   BlameCommit,
   BlameInfo,
+  FileBytes,
 } from '../../shared/types';
 import { resolveInsideRepo, sanitizeRepoPaths } from '../util/paths';
 import { isValidBranchName, isValidRemoteName } from '../util/validate';
@@ -2023,6 +2024,25 @@ export class GitService {
 
   async codeFile(ref: string, relPath: string): Promise<FileAtCommit> {
     return this.fileAtCommit(await this.codeCommit(ref), relPath);
+  }
+
+  /** The bytes of a file at a branch/tag/commit, or in the working copy (`ref` null); up to `max` bytes. */
+  async fileBytes(ref: string | null, relPath: string, max = 30 * 1024 * 1024): Promise<FileBytes> {
+    const [p] = sanitizeRepoPaths(this.root, [relPath]);
+    if (ref === null) {
+      const full = resolveInsideRepo(this.root, p);
+      const st = await fs.stat(full).catch(() => null);
+      if (!st || !st.isFile()) throw new AppError({ code: 'file-missing', title: 'File Not Found', message: `${p} is not in your working copy.` });
+      if (st.size > max) return { path: p, size: st.size, base64: '', tooLarge: true };
+      return { path: p, size: st.size, base64: (await fs.readFile(full)).toString('base64'), tooLarge: false };
+    }
+    const oid = await this.codeCommit(ref);
+    const sizeOut = await this.git(['cat-file', '-s', `${oid}:${p}`]).catch(() => null);
+    if (!sizeOut) throw new AppError({ code: 'file-missing', title: 'File Not in This Commit', message: `${p} does not exist at ${ref}.` });
+    const size = Number(sizeOut.stdout.trim()) || 0;
+    if (size > max) return { path: p, size, base64: '', tooLarge: true };
+    const res = await this.git(['cat-file', 'blob', `${oid}:${p}`], { raw: true, maxBufferBytes: max + 1024 });
+    return { path: p, size, base64: (res.bytes ?? Buffer.alloc(0)).toString('base64'), tooLarge: false };
   }
 
   async codeSearch(ref: string, query: string): Promise<{ files: string[]; hits: CodeSearchHit[]; truncated: boolean }> {

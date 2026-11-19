@@ -29,3 +29,25 @@ describe('GitService.blame', () => {
     await expect(new GitService(repo).blame('--evil', 'a.txt')).rejects.toThrow();
   });
 });
+
+describe('GitService.fileBytes', () => {
+  it('returns binary files byte-for-byte, from a commit and from the working copy', async () => {
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gb-bytes-')));
+    const git = (...a: string[]) => execFileSync('git', a, { cwd: repo, stdio: 'pipe' }).toString().trim();
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.name', 'Ada');
+    git('config', 'user.email', 'ada@example.com');
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0x10, 0x80, 0x0d, 0x0a]);
+    fs.writeFileSync(path.join(repo, 'pic.png'), png);
+    git('add', '.');
+    git('commit', '-q', '-m', 'add picture');
+    const svc = new GitService(repo);
+    const committed = await svc.fileBytes('main', 'pic.png');
+    expect(Buffer.from(committed.base64, 'base64').equals(png)).toBe(true);
+    expect(committed).toMatchObject({ size: png.length, tooLarge: false });
+    const local = await svc.fileBytes(null, 'pic.png');
+    expect(Buffer.from(local.base64, 'base64').equals(png)).toBe(true);
+    expect((await svc.fileBytes('main', 'pic.png', 4)).tooLarge).toBe(true);
+    await expect(svc.fileBytes('main', '../outside.png')).rejects.toThrow();
+  });
+});

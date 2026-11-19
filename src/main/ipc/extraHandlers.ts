@@ -69,6 +69,7 @@ export type ExtraChannels =
   | 'code:tree'
   | 'code:lastCommits'
   | 'code:file'
+  | 'code:bytes'
   | 'code:search'
   | 'code:writeFile'
   | 'code:deleteFile'
@@ -340,6 +341,11 @@ export function createExtraHandlers(
     'graph:fileAt': async (payload) => {
       const p = asObject(payload);
       return graphGit(p).fileAtCommit(asHash(p.hash, 'commit'), asString(p.path, 'path', { trim: false }));
+    },
+    'code:bytes': async (payload) => {
+      const p = asObject(payload);
+      const ref = p.ref === null ? null : asString(p.ref, 'ref', { max: 255 });
+      return graphGit(p).fileBytes(ref, asString(p.path, 'path', { trim: false }));
     },
     'graph:blame': async (payload) => {
       const p = asObject(payload);

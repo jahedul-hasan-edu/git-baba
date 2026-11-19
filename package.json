@@ -86,6 +86,7 @@
     "wait-on": "^9.5.1"
   },
   "dependencies": {
+    "pdfjs-dist": "4.10.38",
     "tweetnacl": "1.0.3"
   }
 }

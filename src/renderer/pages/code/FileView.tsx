@@ -4,6 +4,7 @@ import type { BlameInfo, FileAtCommit } from '../../../shared/types';
 import { loadBlame, whenText } from '../../components/DiffViewer';
 import { authorColor, initials } from '../history/graphStyle';
 import { Markdown } from '../../components/Markdown';
+import { BinaryView, ImageStage, isViewablePath } from './BinaryView';
 import { langFor, tokenize } from './syntax';
 
 export const isMarkdown = (p: string) => /\.(md|markdown|mdx)$/i.test(p);
@@ -48,8 +49,11 @@ function indentUnit(lines: string[]): number {
  * gutter, indent guides, the caret line, search marks on the scrollbar and a status bar. It scrolls on its
  * own, inside the page. Markdown files can be previewed.
  */
-export function FileView({ file, line, term, onLink, toolbar, blame }: { file: FileAtCommit; line: number | null; term: string; onLink: (href: string) => void; toolbar: ReactNode; /** Where to read line history from; hover a line to see who changed it and when. */ blame?: { repoId: string; rev: string } }) {
-  const md = isMarkdown(file.path);
+export function FileView({ file, line, term, onLink, toolbar, blame, source }: { file: FileAtCommit; line: number | null; term: string; onLink: (href: string) => void; toolbar: ReactNode; /** Where to read line history from; hover a line to see who changed it and when. */ blame?: { repoId: string; rev: string }; /** Where to load the bytes of images, PDFs and other binary files from (ref null: working copy). */ source?: { repoId: string; ref: string | null } }) {
+  const svg = /\.svg$/i.test(file.path);
+  const md = isMarkdown(file.path) || svg;
+  // Images, PDFs and other binary files open in a viewer instead of as text.
+  const viewer = (file.binary || isViewablePath(file.path)) && !!source;
   const [mode, setMode] = useState<'preview' | 'code'>(md ? 'preview' : 'code');
   const [active, setActive] = useState<number | null>(line);
   const [wrap, setWrap] = useState(false);
@@ -72,7 +76,7 @@ export function FileView({ file, line, term, onLink, toolbar, blame }: { file: F
   useEffect(() => {
     setBl(null);
     setHover(null);
-    if (!blame || file.binary) return;
+    if (!blame || file.binary || viewer) return;
     let live = true;
     void loadBlame(blame.repoId, blame.rev, file.path).then((b) => live && setBl(b));
     return () => {
@@ -183,13 +187,13 @@ export function FileView({ file, line, term, onLink, toolbar, blame }: { file: F
   };
 
   return (
-    <div className={`file-panel cv fade-in ${mode === 'code' && !file.binary ? 'is-code' : ''}`}>
+    <div className={`file-panel cv fade-in ${mode === 'code' && !file.binary && !viewer ? 'is-code' : ''} ${viewer || (svg && mode === 'preview') ? 'is-viewer' : ''}`}>
       <div className="cv-tabs">
         <span className="cv-tab" title={file.path}>
           <span className={`cv-dot lang-${lang.key}`} aria-hidden />
           {name}
         </span>
-        {md && (
+        {md && !viewer && (
           <div className="segmented cv-mode">
             <button className={mode === 'preview' ? 'on' : ''} onClick={() => setMode('preview')}>
               Preview
@@ -200,15 +204,19 @@ export function FileView({ file, line, term, onLink, toolbar, blame }: { file: F
           </div>
         )}
         <span className="spacer" />
-        {mode === 'code' && !file.binary && (
+        {mode === 'code' && !file.binary && !viewer && (
           <button className={`cv-tool ${wrap ? 'on' : ''}`} onClick={() => setWrap((w) => !w)} title="Soft-wrap long lines">
             ↩ Wrap
           </button>
         )}
         <div className="cv-actions">{toolbar}</div>
       </div>
-      {file.binary ? (
+      {viewer ? (
+        <BinaryView repoId={source!.repoId} gitRef={source!.ref} path={file.path} />
+      ) : file.binary ? (
         <div className="empty">This is a binary file and cannot be displayed.</div>
+      ) : mode === 'preview' && svg ? (
+        <ImageStage src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(file.content)}`} size={new Blob([file.content]).size} name={file.path} />
       ) : mode === 'preview' ? (
         <div className="file-panel-md cv-scroll">
           <Markdown source={file.content} onLink={onLink} />
@@ -290,11 +298,11 @@ export function FileView({ file, line, term, onLink, toolbar, blame }: { file: F
           document.body,
         )}
       <div className="cv-status">
-        {mode === 'code' && !file.binary && <span>{active ? `Ln ${active}` : `${lines.length} lines`}</span>}
+        {mode === 'code' && !file.binary && !viewer && <span>{active ? `Ln ${active}` : `${lines.length} lines`}</span>}
         {bl && mode === 'code' && <span className="cv-blame-on" title="Hover a line to see who changed it and when">👤 {Object.keys(bl.commits).length} commit{Object.keys(bl.commits).length === 1 ? '' : 's'} · {new Set(Object.values(bl.commits).map((c) => c.email || c.author)).size} author{new Set(Object.values(bl.commits).map((c) => c.email || c.author)).size === 1 ? '' : 's'}</span>}
         {t && <span className="cv-found">{hits.length ? `${hits.length} match${hits.length === 1 ? '' : 'es'}` : 'no matches'}</span>}
         <span className="spacer" />
-        {!file.binary && (
+        {!file.binary && !viewer && (
           <>
             <span>{formatBytes(new Blob([file.content]).size)}</span>
             <span>{crlf ? 'CRLF' : 'LF'}</span>
@@ -302,7 +310,7 @@ export function FileView({ file, line, term, onLink, toolbar, blame }: { file: F
             <span>{lines.some((x) => x.startsWith('\t')) ? 'Tab' : `${unit} spaces`}</span>
           </>
         )}
-        <span className="cv-lang">{file.binary ? 'Binary' : lang.name}</span>
+        <span className="cv-lang">{viewer ? (/\.pdf$/i.test(file.path) ? 'PDF' : /\.(png|jpe?g|gif|webp|bmp|ico|avif|heic|heif|tiff?|icns)$/i.test(file.path) ? 'Image' : 'Binary') : file.binary ? 'Binary' : lang.name}</span>
         {file.truncated && <span className="cv-warn">first 1 MB shown</span>}
       </div>
     </div>
