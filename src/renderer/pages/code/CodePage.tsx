@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { providerInfo, providerLinks } from '../../../shared/providers';
 import { FilePeople } from './FilePeople';
 import { isViewablePath } from './BinaryView';
 import { CodeTree } from './CodeTree';
@@ -99,6 +100,8 @@ export function CodePage() {
   const viewRef = ref ?? info?.ref ?? null;
   const isCurrent = !!viewRef && viewRef === info?.current;
   const isGitHub = !!activeRepo?.github;
+  const otherProvider = activeRepo?.provider && activeRepo.provider.id !== 'github' ? activeRepo.provider : null;
+  const otherNewPull = otherProvider && providerInfo(otherProvider.id).features.pullRequests && providerLinks(otherProvider).pulls ? providerLinks(otherProvider).newPull : null;
 
   // ---- data loading ----
   useEffect(() => {
@@ -516,6 +519,15 @@ export function CodePage() {
                   ⇄ Pull request
                 </button>
               )}
+              {!isDefault && !isGitHub && otherNewPull && info.current && info.defaultBranch && (
+                <button
+                  className="btn sm"
+                  onClick={() => void call('shell:openExternal', { url: otherNewPull(info.current!, info.defaultBranch!)! }).catch(showError)}
+                  title={`Open a ${otherProvider!.id === 'gitlab' ? 'merge' : 'pull'} request from ${info.current} into ${info.defaultBranch} on ${providerInfo(otherProvider!.id).name}`}
+                >
+                  ⇄ {otherProvider!.id === 'gitlab' ? 'Merge request' : 'Pull request'} ↗
+                </button>
+              )}
             </div>
           )
         ) : (
@@ -785,7 +797,7 @@ export function CodePage() {
       </div>
 
       {aboutOpen && <div className="about-scrim" onClick={() => setAboutOpen(false)} />}
-      <AboutPanel repoId={repoId} info={info} isGitHub={isGitHub} />
+      <AboutPanel repoId={repoId} info={info} isGitHub={isGitHub} providerName={otherProvider ? providerInfo(otherProvider.id).name : null} />
 
       {dialog?.kind === 'commit' && (
         <CommitDialog

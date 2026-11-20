@@ -53,7 +53,7 @@ export function LanguageBar({ languages }: { languages: Record<string, number> }
 }
 
 /** Right-hand "About" column of the Code tab. GitHub data is optional; local data is always shown. */
-export function AboutPanel({ repoId, info, isGitHub }: { repoId: string; info: CodeInfo | null; isGitHub: boolean }) {
+export function AboutPanel({ repoId, info, isGitHub, providerName = null }: { repoId: string; info: CodeInfo | null; isGitHub: boolean; providerName?: string | null }) {
   const { ghKey, revision, setView } = useApp();
   const [gh, setGh] = useState<RepoOverview | null>(null);
   const [ghError, setGhError] = useState<FriendlyError | null>(null);
@@ -142,7 +142,7 @@ export function AboutPanel({ repoId, info, isGitHub }: { repoId: string; info: C
         ) : (
           <div className="small muted">
             {!isGitHub ? (
-              'Local repository — connect a GitHub remote to see stars, forks, watchers and deployments.'
+              providerName ? `${providerName} repository — stars, forks, watchers and deployments are shown for GitHub repositories.` : 'Local repository — connect a GitHub remote to see stars, forks, watchers and deployments.'
             ) : needsSignIn ? (
               <>
                 Sign in to your GitHub account to see stars, forks, watchers, contributors and deployments.{' '}

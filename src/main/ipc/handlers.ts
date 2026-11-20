@@ -1,4 +1,6 @@
 import { app, clipboard, dialog, shell, type BrowserWindow } from 'electron';
+import { detectProvider, providerInfo, type ProviderId } from '../../shared/providers';
+import { asHost, verifyConnection } from '../providers/verify';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -130,7 +132,15 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
     return { name: r.name, url: r.pushUrl };
   }
 
-  const authDeps = { secrets: ctx.secrets, vault: ctx.vault, githubFor: (b: string) => ctx.githubFor(b), tokens: ctx.tokens };
+  const authDeps = {
+    secrets: ctx.secrets,
+    vault: ctx.vault,
+    githubFor: (b: string) => ctx.githubFor(b),
+    tokens: ctx.tokens,
+    get connections() {
+      return ctx.providerConnections;
+    },
+  };
 
   /**
    * Resolves credentials for one repository operation and remembers the non-secret
@@ -261,6 +271,19 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
     return parts.join(' · ');
   }
 
+  /** Self-hosted servers the user connected, plus GitHub Enterprise hosts of added accounts. */
+  function knownHosts(): Record<string, ProviderId> {
+    const map: Record<string, ProviderId> = { ...(ctx.providerConnections?.hostMap() ?? {}) };
+    for (const a of ctx.accounts.list()) {
+      const host = a.apiBaseUrl ? /^https?:\/\/(?:api\.)?([^/]+)/.exec(a.apiBaseUrl)?.[1]?.toLowerCase() : null;
+      if (host && host !== 'github.com') map[host] = 'github';
+    }
+    return map;
+  }
+
+  /** Web hosts of the repositories' providers (links to them may be opened). */
+  const providerWebHosts = new Set<string>();
+
   async function summarize(repo: RepoRecord): Promise<RepoSummary> {
     const exists = fs.existsSync(repo.path);
     let branch: string | null = null;
@@ -297,10 +320,13 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
         ctx.repos.setWorktreeParent(repo.id, parent.id);
       }
     }
+    const provider = remoteUrl ? detectProvider(remoteUrl, { resolvedHost: parsed?.protocol === 'ssh' ? parsed.host : null, known: knownHosts() }) : null;
+    if (provider?.web) providerWebHosts.add(new URL(provider.web).hostname);
     return {
       ...repo,
       worktreeOf,
       github: parsed?.isGitHub && parsed.owner && parsed.repo ? { owner: parsed.owner, repo: parsed.repo } : null,
+      provider,
       ...repoIdentity(repo, parsed),
       exists,
       branch,
@@ -1872,6 +1898,42 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       return { summary: await summarize(updated), ...result };
     },
 
+    // ---- other providers (GitLab, Bitbucket, Azure DevOps, Gitea) ----
+    'providers:connections': async () => ctx.providerConnections?.all() ?? [],
+    'providers:connect': async (payload) => {
+      const p = asObject(payload);
+      const store = ctx.providerConnections;
+      if (!store) throw new AppError({ code: 'unavailable', title: 'Not Available', message: 'Provider connections are not available.' });
+      const provider = asEnum(p.provider, 'provider', ['gitlab', 'bitbucket', 'azure', 'gitea'] as const);
+      const info = providerInfo(provider);
+      // Bitbucket and Azure DevOps are cloud services with one fixed host; GitLab and Gitea may be self-hosted.
+      const host = provider === 'bitbucket' ? 'bitbucket.org' : provider === 'azure' ? 'dev.azure.com' : asHost(p.host ? asString(p.host, 'server', { max: 260 }) : info.host ?? '');
+      const token = asString(p.token, 'token', { max: 1024 });
+      if (/\s/.test(token)) throw new AppError({ code: 'connection-input', title: 'Invalid Token', message: 'The token contains spaces or line breaks.' });
+      const username = p.username ? asString(p.username, 'username', { max: 200 }) : undefined;
+      const email = p.email ? asString(p.email, 'email', { max: 254 }) : undefined;
+      const org = p.org ? asString(p.org, 'organization', { max: 100 }) : undefined;
+      if (org && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(org)) throw new AppError({ code: 'connection-input', title: 'Invalid Organization', message: 'Use the organization name exactly as it appears after dev.azure.com/.' });
+      const who = await verifyConnection({ provider, host, token, username, email, org });
+      const rec = store.save(
+        { provider, host, org: org ?? null, username: who.username, displayName: who.displayName, gitUsername: info.connect?.gitUsername ?? username ?? who.username, lastVerifiedAt: new Date().toISOString() },
+        token,
+      );
+      ctx.recordOperation(null, 'Connect provider', 'SUCCESS', `${info.name} · ${who.username} @ ${host}${org ? `/${org}` : ''}`);
+      return rec;
+    },
+    'providers:remove': async (payload) => {
+      const p = asObject(payload);
+      asConfirmed(p.confirmed);
+      const store = ctx.providerConnections;
+      if (!store) return [];
+      const id = asId(p.id, 'connection');
+      const c = store.get(id);
+      store.remove(id);
+      if (c) ctx.recordOperation(null, 'Disconnect provider', 'SUCCESS', `${providerInfo(c.provider).name} · ${c.username} @ ${c.host}`);
+      return store.all();
+    },
+
     'app:menus': async () => (chrome?.devMenus ? ['file', 'view', 'help'] : ['file', 'help']),
 
     'app:menuPopup': async (payload) => {
@@ -1958,14 +2020,17 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       } catch {
         throw new ValidationError('Invalid URL');
       }
-      const allowedHosts = ['github.com', 'docs.github.com', 'git-scm.com'];
+      // Known providers (and their token pages), the servers the user connected, and the web hosts of the
+      // repositories in the app. Nothing else is opened.
+      const allowedHosts = ['github.com', 'docs.github.com', 'git-scm.com', 'gitlab.com', 'bitbucket.org', 'id.atlassian.com', 'dev.azure.com', 'learn.microsoft.com', 'codeberg.org', ...Object.keys(ctx.providerConnections?.hostMap() ?? {}).map((h) => h.split(':')[0]), ...providerWebHosts];
+      if (/^[a-z0-9-]+\.console\.aws\.amazon\.com$/.test(u.hostname)) allowedHosts.push(u.hostname);
       const extra = ctx.repos
         .list()
         .map((r) => r.settings.apiBaseUrl)
         .filter((x): x is string => !!x)
         .map((x) => new URL(x).hostname);
       if (u.protocol !== 'https:' || ![...allowedHosts, ...extra].includes(u.hostname)) {
-        throw new ValidationError('Only https links to GitHub and Git documentation can be opened');
+        throw new ValidationError('Only https links to your Git providers and Git documentation can be opened');
       }
       await shell.openExternal(u.toString());
     },

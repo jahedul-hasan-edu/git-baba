@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { ProvidersDialog } from './ProvidersDialog';
 import type { UpdateCheck } from '../../shared/api';
 import { call, onNotify } from '../services/api';
 import { useApp } from '../state/AppState';
@@ -7,9 +8,9 @@ import { AboutDialog, EditionDialog, ShortcutsDialog } from './AppFooter';
 import { Hourglass } from './Hourglass';
 import { Modal } from './Modal';
 
-type Dialog = 'shortcuts' | 'cheatsheet' | 'practices' | 'about' | 'edition' | 'update' | null;
+type Dialog = 'shortcuts' | 'cheatsheet' | 'practices' | 'about' | 'edition' | 'update' | 'providers' | null;
 
-const MENU_DIALOGS: Dialog[] = ['shortcuts', 'cheatsheet', 'practices', 'about', 'edition', 'update'];
+const MENU_DIALOGS: Dialog[] = ['shortcuts', 'cheatsheet', 'practices', 'about', 'edition', 'update', 'providers'];
 
 /**
  * Shows what the window's File / Help menu asks for (the menu itself is the native one, built in the main
@@ -61,6 +62,7 @@ export function AppMenus() {
       {dialog === 'cheatsheet' && <CheatSheetDialog onClose={close} />}
       {dialog === 'practices' && <PracticesDialog onClose={close} />}
       {dialog === 'update' && <UpdateDialog onClose={close} />}
+      {dialog === 'providers' && <ProvidersDialog onClose={close} />}
     </>
   );
 }

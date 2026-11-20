@@ -1,3 +1,4 @@
+import type { ProviderId } from './providers';
 import type {
   AuthContext,
   CommitSigningPreference,
@@ -62,6 +63,7 @@ import type {
   FileAtCommit,
   BlameInfo,
   FileCommit,
+  ProviderConnection,
   FileBytes,
   GraphCommit,
   HistoryQuery,
@@ -428,6 +430,9 @@ export interface ApiMap {
   'graph:compare': { req: R & { from: string; to: string }; res: CompareResult };
   'graph:fileAt': { req: R & { hash: string; path: string }; res: FileAtCommit };
   'graph:blame': { req: R & { rev: string; path: string }; res: BlameInfo };
+  'providers:connections': { req: void; res: ProviderConnection[] };
+  'providers:connect': { req: { provider: ProviderId; host?: string; token: string; username?: string; email?: string; org?: string }; res: ProviderConnection };
+  'providers:remove': { req: { id: string; confirmed: true }; res: ProviderConnection[] };
   'code:fileHistory': { req: R & { ref: string | null; path: string }; res: FileCommit[] };
   'graph:reveal': { req: R & { path: string }; res: void };
   'app:copyText': { req: { text: string }; res: void };
@@ -641,4 +646,4 @@ export interface UpdateCheck {
 
 export type Channel = keyof ApiMap;
 
-export const CHANNEL_PATTERN = /^(app|dialog|repo|git|commit|push|pull|conflict|pr|github|ssh|history|shell|accounts|create|clone|graph|session|gh|code|notify):[A-Za-z]+$/;
+export const CHANNEL_PATTERN = /^(app|dialog|repo|git|commit|push|pull|conflict|pr|github|ssh|history|shell|accounts|create|clone|graph|session|gh|code|notify|providers):[A-Za-z]+$/;

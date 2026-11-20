@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { providerInfo, providerLinks } from '../../shared/providers';
 import type { BranchMergePreview, BranchMergeResult, ErrorAction, FriendlyError, MergeConflictStrategy, MergeIssue, MergeIssueCategory } from '../../shared/types';
 import { ErrorPanel } from '../components/ErrorPanel';
 import { Modal, Spinner } from '../components/Modal';
@@ -65,7 +66,11 @@ interface Props {
 
 /** Detect → Explain → Fix → Re-check → Merge or open a pull request. */
 export function MergeBranchesDialog({ repoId, source, target, initialMode = 'direct', onClose, onDone, onBridgeReady, onResult, queue, decided }: Props) {
-  const { setRepoTab, setPrDraft, toast } = useApp();
+  const { setRepoTab, setPrDraft, toast, activeRepo, showError } = useApp();
+  // GitHub opens its in-app pull request; other providers open theirs on the website; plain Git servers have none.
+  const prov = activeRepo?.provider && activeRepo.provider.id !== 'github' ? activeRepo.provider : null;
+  const provNewPull = prov ? providerLinks(prov).newPull : null;
+  const canPull = !prov || !!(providerInfo(prov.id).features.pullRequests && providerLinks(prov).pulls);
   const [preview, setPreview] = useState<BranchMergePreview | null>(null);
   const [error, setError] = useState<FriendlyError | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -127,6 +132,12 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
   };
 
   const openPullRequest = (head: string) => {
+    if (prov) {
+      const url = provNewPull?.(head.replace(new RegExp(`^${preview?.remote?.name ?? 'origin'}/`), ''), target);
+      if (url) void call('shell:openExternal', { url }).catch(showError);
+      onDone();
+      return;
+    }
     setPrDraft({ base: target, head: head.replace(new RegExp(`^${preview?.remote?.name ?? 'origin'}/`), '') });
     onDone();
     setRepoTab('pulls');
@@ -404,9 +415,9 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
               <button className="btn sm ghost" disabled={!auth.input || !!busy} onClick={fetchAndRecheck} title={auth.input ? 'Fetch with the chosen authentication and analyse again' : 'Choose an authentication method first'}>
                 <Hourglass /> Fetch &amp; re-check
               </button>
-              {!decided && preview.state !== 'unrelated' && preview.state !== 'up-to-date' && sourceOnRemote && (
+              {!decided && canPull && preview.state !== 'unrelated' && preview.state !== 'up-to-date' && sourceOnRemote && (
                 <button className="btn sm ghost" onClick={() => openPullRequest(source)}>
-                  ⇄ Pull request instead
+                  ⇄ {prov?.id === 'gitlab' ? 'Merge request' : 'Pull request'} instead{prov ? ' ↗' : ''}
                 </button>
               )}
             </div>

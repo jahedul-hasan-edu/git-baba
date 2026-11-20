@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ProvidersDialog, ProvidersStrip } from '../components/ProvidersDialog';
 import type { RepoSummary } from '../../shared/types';
 import { CloneDialog, isLocalPath } from '../dialogs/CloneDialog';
 import { CreateRepoWizard } from '../dialogs/CreateRepoWizard';
@@ -35,6 +36,7 @@ const ICON: Record<NonNullable<Detected>['kind'], string> = { github: '🐙', ur
 export function WelcomePage() {
   const { info, showError, bump, selectRepo, setView, repos } = useApp();
   const [dialog, setDialog] = useState<'create' | 'clone' | null>(null);
+  const [providers, setProviders] = useState(false);
   const [quick, setQuick] = useState('');
   const [cloneFrom, setCloneFrom] = useState<string | undefined>(undefined);
   const box = useRef<HTMLInputElement>(null);
@@ -178,6 +180,8 @@ export function WelcomePage() {
           </div>
         )}
 
+        <ProvidersStrip onOpen={() => setProviders(true)} />
+        {providers && <ProvidersDialog onClose={() => setProviders(false)} />}
         <div className="lp-promises">
           <span className="lp-chip">🛡 Review before every commit &amp; push</span>
           <span className="lp-chip">🔐 Credentials per operation, in memory</span>

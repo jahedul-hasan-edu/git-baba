@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TokenPermissionPreset } from '../../shared/api';
-import type { AuthInput, AuthMethod, AuthOption, GeneratedTokenInfo, GitHubAppConfig, KeyHandleInfo, SavedSshKey, SshKeyInput } from '../../shared/types';
+import type { AuthInput, AuthMethod, AuthOption, GeneratedTokenInfo, GitHubAppConfig, KeyHandleInfo, ProviderConnection, SavedSshKey, SshKeyInput } from '../../shared/types';
+import { providerInfo } from '../../shared/providers';
 import { call } from '../services/api';
 import { useApp } from '../state/AppState';
 import { SshKeyFields } from './SshKeyFields';
@@ -71,7 +72,32 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
     sshKeyRemembered: !!savedSshKey,
     patSaved: !!options.find((o) => o.method === 'pat')?.hasSaved,
   });
-  const [method, setMethod] = useState<AuthMethod | null>(preset.method);
+  const [method, setMethodRaw] = useState<AuthMethod | null>(preset.method);
+  // A provider connection (GitLab, Bitbucket, Azure DevOps, Gitea) for this repository's own server.
+  const provider = repoRecord?.provider ?? null;
+  const [connections, setConnections] = useState<ProviderConnection[]>([]);
+  const [connId, setConnId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!provider || provider.id === 'github' || purpose === 'pr') return;
+    let live = true;
+    void call('providers:connections')
+      .then((list) => {
+        if (!live) return;
+        const mine = list.filter((c) => c.provider === provider.id && (provider.id === 'azure' ? (c.org ?? '').toLowerCase() === (provider.org ?? '').toLowerCase() : c.host === provider.host));
+        setConnections(mine);
+        if (mine.length) setConnId((cur) => cur ?? mine[0].id);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider?.id, provider?.host, provider?.org, purpose]);
+  const setMethod = (m: AuthMethod) => {
+    setConnId(null);
+    setMethodRaw(m);
+  };
+  const conn = connections.find((c) => c.id === connId) ?? null;
   const [useAcct, setUseAcct] = useState(true);
   // SSH
   const [ssh, setSsh] = useState<{ input: SshKeyInput | null; summary: string }>({ input: null, summary: '' });
@@ -115,6 +141,10 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
 
   useEffect(() => {
     let sel: AuthSelection = { input: null, summary: '' };
+    if (conn) {
+      onChange({ input: { method: 'pat', connectionId: conn.id }, summary: `${providerInfo(conn.provider).name} connection ${conn.username} (${conn.host}${conn.org ? `/${conn.org}` : ''})` });
+      return;
+    }
     switch (method) {
       case 'ssh':
         if (ssh.input) sel = { input: { method: 'ssh', ...ssh.input }, summary: ssh.summary };
@@ -151,7 +181,7 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
     }
     onChange(sel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountReady, useAcct, account, method, ssh, username, token, useSavedPat, savePat, appId, owner, repo, installationId, keyMode, pem, keyInfo, saveKey, rememberApp, tokenMode, existingToken, generated, onChange]);
+  }, [conn, accountReady, useAcct, account, method, ssh, username, token, useSavedPat, savePat, appId, owner, repo, installationId, keyMode, pem, keyInfo, saveKey, rememberApp, tokenMode, existingToken, generated, onChange]);
 
   const loadKey = async () => {
     try {
@@ -301,17 +331,30 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
       <div className="mg-as mb">
         <span className="small muted">{asLabel ?? AS_VERB[purpose]}</span>
         <div className="segmented">
+          {connections.map((c) => (
+            <button key={c.id} className={connId === c.id ? 'on' : ''} onClick={() => setConnId(c.id)} title={`Your ${providerInfo(c.provider).name} connection on ${c.host}${c.org ? `/${c.org}` : ''}`}>
+              <span className="pv-mono sm" style={{ ['--pc' as string]: providerInfo(c.provider).color }}>
+                {providerInfo(c.provider).mono}
+              </span>{' '}
+              {c.username}
+            </button>
+          ))}
           {options.map((o) => (
-            <button key={o.method} className={method === o.method ? 'on' : ''} onClick={() => setMethod(o.method)} title={o.description}>
+            <button key={o.method} className={!conn && method === o.method ? 'on' : ''} onClick={() => setMethod(o.method)} title={o.description}>
               {AS_ICON[o.method]} {o.method === 'pat' && account ? account : o.method === 'github-app' ? 'GitHub App' : o.label}
               {(o.hasSaved || (o.method === 'ssh' && savedSshKey) || (o.method === 'github-app' && githubApp)) && <span className="as-dot" title="Saved for this repository" />}
             </button>
           ))}
         </div>
       </div>
-      {method === preset.method && SOURCE_NOTE[preset.source] && <p className="small auth-preset-note">✓ {SOURCE_NOTE[preset.source]}</p>}
-      {current && method !== 'ssh' && <p className="small muted auth-as-desc">{current.description}</p>}
-      {current?.viaHttps && (
+      {conn && (
+        <p className="small auth-preset-note">
+          ✓ Signs in with your {providerInfo(conn.provider).name} connection <strong>{conn.username}</strong>. The token stays encrypted in the app and is only sent to {conn.host}.
+        </p>
+      )}
+      {!conn && method === preset.method && SOURCE_NOTE[preset.source] && <p className="small auth-preset-note">✓ {SOURCE_NOTE[preset.source]}</p>}
+      {!conn && current && method !== 'ssh' && <p className="small muted auth-as-desc">{current.description}</p>}
+      {!conn && current?.viaHttps && (
         <div className="banner info small">
           <span className="icon">ℹ</span>
           <div>
@@ -320,7 +363,7 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
         </div>
       )}
 
-      {method === 'ssh' && (
+      {!conn && method === 'ssh' && (
         <>
           {current?.viaSsh && (
             <div className="banner info small">
@@ -334,7 +377,7 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
         </>
       )}
 
-      {method === 'pat' && (
+      {!conn && method === 'pat' && (
         <div className="auth-form">
           {accountReady && (
             <label className="check">
@@ -355,7 +398,7 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
               <div className="grid-2">
                 <div className="field">
                   <label>Username</label>
-                  <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="x-access-token (GitHub default)" autoComplete="off" spellCheck={false} />
+                  <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder={provider && provider.id !== 'github' ? (providerInfo(provider.id).connect?.gitUsername ? `${providerInfo(provider.id).connect!.gitUsername} (${providerInfo(provider.id).name} default)` : 'your username') : 'x-access-token (GitHub default)'} autoComplete="off" spellCheck={false} />
                 </div>
                 <div className="field">
                   <label>Personal access token</label>
@@ -373,7 +416,7 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
         </div>
       )}
 
-      {method === 'github-app' && (
+      {!conn && method === 'github-app' && (
         <div className="auth-form">
           <label className={`radio-card ${tokenMode === 'generate' ? 'selected' : ''}`}>
             <input type="radio" checked={tokenMode === 'generate'} onChange={() => setTokenMode('generate')} />
@@ -443,7 +486,7 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
         </div>
       )}
 
-      {method === 'system' && (
+      {!conn && method === 'system' && (
         <div className="auth-form small">
           Git pushes exactly as it would from your terminal: an SSH remote uses your ssh-agent or default <code>~/.ssh</code> keys, an HTTPS remote uses Git Credential Manager. No
           credentials are entered here. If that setup needs a passphrase that is not loaded in ssh-agent, choose <strong>SSH</strong> instead.

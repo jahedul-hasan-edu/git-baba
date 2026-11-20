@@ -5450,3 +5450,63 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .commit-row .commit-text { padding-left: 14px; }
 .bx-names-btn { display: inline-flex; align-items: center; justify-content: center; padding: 3px 7px; }
 .bx-names-btn.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+
+/* ===== Git providers ===== */
+.pv-mono { --pc: var(--accent); flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; font-weight: 800; font-size: 9px; letter-spacing: .02em; color: #fff; background: linear-gradient(135deg, var(--pc), color-mix(in srgb, var(--pc) 55%, #000)); line-height: 1; }
+.pv-mono.sm { width: 16px; height: 16px; font-size: 7px; border-radius: 4px; vertical-align: -3px; }
+.deck-vis.provider { color: var(--text-2); border-color: var(--border-2); background: var(--bg-3); padding-left: 3px; gap: 5px; }
+
+/* Provider window */
+.pvd { display: flex; flex-direction: column; gap: 12px; }
+.pvd-sum { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.pvd-count { margin-left: auto; font-size: 11.5px; padding: 1px 9px; border-radius: 999px; background: color-mix(in srgb, var(--ok, #3fb950) 14%, transparent); color: var(--ok, #3fb950); }
+.pvd-legend { display: flex; gap: 14px; }
+.pvd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.pvd-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-top: 3px solid color-mix(in srgb, var(--pc) 55%, transparent); border-radius: 10px; background: var(--bg-2); min-width: 0; }
+.pvd-card.on { border-color: color-mix(in srgb, var(--pc) 40%, var(--border)); border-top-color: var(--pc); }
+.pvd-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pvd-n { flex: none; font-size: 10.5px; padding: 0 7px; line-height: 18px; border-radius: 999px; background: color-mix(in srgb, var(--pc) 18%, transparent); color: var(--text); }
+.pvd-feats { display: flex; flex-wrap: wrap; gap: 4px; }
+.pvd-feat { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); }
+.pvd-feat i { font-style: normal; font-size: 9px; }
+.pvd-feat.app { color: var(--ok, #3fb950); border-color: color-mix(in srgb, var(--ok, #3fb950) 40%, transparent); }
+.pvd-feat.web { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.pvd-feat.none { color: var(--text-3); opacity: .7; }
+.pvd-conn { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 6px; border-radius: 6px; background: var(--bg-3); min-width: 0; }
+.pvd-tag { flex: none; font-size: 10px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--warn, #d29922); color: var(--warn, #d29922); }
+.pvd-x { flex: none; width: 20px; height: 20px; border: 0; border-radius: 5px; background: transparent; color: var(--text-3); cursor: pointer; }
+.pvd-x:hover { color: var(--danger, #f85149); background: var(--bg-2); }
+.pvd-foot { margin-top: auto; }
+.pvd-form { border: 1px solid color-mix(in srgb, var(--pc) 45%, var(--border)); border-radius: 10px; padding: 12px; background: var(--bg-2); display: flex; flex-direction: column; gap: 6px; }
+.pvd-form-head { display: flex; align-items: center; gap: 8px; }
+
+/* Welcome strip */
+.pvs { display: flex; align-items: center; gap: 12px; width: 100%; margin: 6px 0 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-2); color: var(--text); font: inherit; cursor: pointer; text-align: left; transition: border-color .15s; }
+.pvs:hover { border-color: var(--accent); }
+.pvs-t { font-size: 13px; color: var(--text-2); }
+.pvs-tiles { display: flex; gap: 6px; flex: 1; }
+.pvs-tile { position: relative; opacity: .55; transition: opacity .15s, transform .15s; }
+.pvs-tile.on, .pvs:hover .pvs-tile { opacity: 1; }
+.pvs-dot { position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--ok, #3fb950); box-shadow: 0 0 0 2px var(--bg-2); }
+.pvs-go { font-size: 12px; color: var(--accent); }
+
+/* Provider page (merge / pull requests and pipelines on other providers) */
+.pvh { max-width: 760px; margin: 24px auto; padding: 0 20px; display: flex; flex-direction: column; gap: 14px; }
+.pvh-head { display: flex; align-items: center; gap: 14px; }
+.pvh-title h2 { margin: 0; font-size: 18px; }
+.pvh-title p { margin: 2px 0 0; }
+.pvh-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: var(--bg-2); display: flex; flex-direction: column; gap: 10px; }
+.pvh-card-t { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.pvh-route { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pvh-k { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+.pvh-arrow { color: var(--text-3); }
+.pvh-picker { min-width: 220px; }
+.pvh-links { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.pvh-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-2); color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer; text-align: left; }
+.pvh-link:hover { border-color: var(--accent); }
+.pvh-go { color: var(--accent); }
+.pvh-foot { margin: 0; font-family: var(--mono); }
+.pvd-feats .pvd-feat, .pvd-legend .pvd-feat { height: 20px; line-height: 18px; padding: 0 8px; box-sizing: border-box; white-space: nowrap; }
+.pvd-feat i { display: inline; line-height: 1; }
+.pvd-card { overflow: hidden; }
+.pvd-foot .small { display: block; line-height: 1.4; }

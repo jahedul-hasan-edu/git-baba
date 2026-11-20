@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, Menu, Notification, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron';
+import { ProviderConnectionStore } from './providers/ConnectionStore';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -221,6 +222,7 @@ function appMenus(theme?: string): Record<AppMenuId, Electron.MenuItemConstructo
           ] as const
         ).map(([id, label]) => ({ label, type: 'radio' as const, checked: theme === id, click: send(`theme:${id}`) })),
       },
+      { label: 'Providers…', click: send('providers') },
       { type: 'separator' },
       { label: 'Create GitHub App Token', click: send('token') },
       { type: 'separator' },
@@ -280,6 +282,7 @@ app.whenReady().then(() => {
   const appRegistry = new AppRegistry(path.join(userData, 'github-apps.json'), path.join(userData, 'secrets', 'apps'), electronEncryptor);
   const repoStore = ctx.repos;
   ctx.appRegistry = appRegistry;
+  ctx.providerConnections = new ProviderConnectionStore(path.join(userData, 'provider-connections.json'), path.join(userData, 'secrets', 'providers'), electronEncryptor);
   ctx.secrets.linkedAppKey = (repoId) => {
     const id = repoStore.get(repoId)?.settings.githubApp?.registryId;
     return id ? appRegistry.getKey(id) : null;

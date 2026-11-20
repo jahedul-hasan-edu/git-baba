@@ -1,4 +1,7 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { providerInfo, providerLinks } from '../../shared/providers';
+import { ProviderMono } from '../components/ProviderMono';
+import { ProviderHub } from './provider/ProviderHub';
 import { createPortal } from 'react-dom';
 import { HEADER_REPO_SLOT } from '../components/AppHeader';
 import { NotificationBell } from '../components/NotificationBell';
@@ -94,16 +97,30 @@ export function RepoView() {
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => setHeaderSlot(document.getElementById(HEADER_REPO_SLOT)), []);
 
+  // A tab this repository's provider does not have (e.g. Pull Requests on a plain Git server) falls back to Changes.
+  const prov = activeRepo?.provider && activeRepo.provider.id !== 'github' ? activeRepo.provider : null;
+  const tabMissing = !!prov && ((repoTab === 'pulls' && !(providerInfo(prov.id).tabs.pulls && providerLinks(prov).pulls)) || (repoTab === 'actions' && !(providerInfo(prov.id).tabs.pipelines && providerLinks(prov).pipelines)));
+  useEffect(() => {
+    if (tabMissing) setRepoTab('changes');
+  }, [tabMissing, setRepoTab]);
+
   if (!activeRepo) return null;
   const st = status.data;
   const conflictCount = st?.conflicted.length ?? 0;
   const inOperation = !!st?.operation || !!switchSession.data;
 
+  // GitHub keeps its own Pull Requests and Actions tabs. Other providers get their own names, and a tab only when
+  // the provider has that feature (a plain Git server has neither).
+  const other = activeRepo.provider && activeRepo.provider.id !== 'github' ? activeRepo.provider : null;
+  const otherInfo = other ? providerInfo(other.id) : null;
+  const otherLinks = other ? providerLinks(other) : null;
+  const pullsLabel = other ? (otherInfo!.tabs.pulls && otherLinks!.pulls ? otherInfo!.tabs.pulls : null) : 'Pull Requests';
+  const pipelinesLabel = other ? (otherInfo!.tabs.pipelines && otherLinks!.pipelines ? otherInfo!.tabs.pipelines : null) : 'Actions';
   const tabs: [RepoTab, string, number | null, string][] = [
     ['changes', 'Changes', st ? st.staged.length + st.unstaged.length + st.untracked.length : null, '✎'],
     ['code', 'Code', null, '</>'],
-    ['pulls', 'Pull Requests', null, '⇄'],
-    ['actions', 'Actions', null, '▶'],
+    ...(pullsLabel ? ([['pulls', pullsLabel, null, '⇄']] as [RepoTab, string, null, string][]) : []),
+    ...(pipelinesLabel ? ([['actions', pipelinesLabel, null, '▶']] as [RepoTab, string, null, string][]) : []),
     ...(inOperation || conflictCount > 0 ? ([['conflicts', 'Conflicts', conflictCount, '⚠']] as [RepoTab, string, number, string][]) : []),
     ['settings', 'Settings', null, '⚙'],
   ];
@@ -254,8 +271,8 @@ export function RepoView() {
           {repoTab === 'changes' && <WorkspacePage status={st} reload={status.reload} error={status.error} />}
           {repoTab === 'code' && <CodePage key={repoId} />}
           {repoTab === 'pr' && <PullRequestPage />}
-          {repoTab === 'pulls' && <PullRequestsTab />}
-          {repoTab === 'actions' && <ActionsTab />}
+          {repoTab === 'pulls' && (other ? pullsLabel && <ProviderHub repo={activeRepo} status={st ?? null} kind="pulls" /> : <PullRequestsTab />)}
+          {repoTab === 'actions' && (other ? pipelinesLabel && <ProviderHub repo={activeRepo} status={st ?? null} kind="pipelines" /> : <ActionsTab />)}
           {repoTab === 'conflicts' && <ConflictsPage status={st} switchSession={switchSession.data ?? null} />}
           {repoTab === 'settings' && (
             <div className="content">
@@ -378,6 +395,12 @@ function RepoIdentity() {
             <span className={`deck-vis ${vis}`} title={vis === 'private' ? 'Private repository: only people with access can see it' : 'Public repository: anyone can see it'}>
               <Ic d={vis === 'private' ? ICONS.lock : ICONS.globe} />
               {vis === 'private' ? 'Private' : 'Public'}
+            </span>
+          )}
+          {activeRepo.provider && activeRepo.provider.id !== 'github' && (
+            <span className="deck-vis provider" title={`${providerInfo(activeRepo.provider.id).name} · ${activeRepo.provider.host}${activeRepo.provider.path ? `/${activeRepo.provider.path}` : ''}`}>
+              <ProviderMono id={activeRepo.provider.id} size={16} />
+              {providerInfo(activeRepo.provider.id).name}
             </span>
           )}
           {!remote && (
