@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AccountCredentialInput, AccountSummary, AuthInput, CloneState, DirectoryCheck, FriendlyError, RemoteRepoEntry, RepoSummary, SshKeyInput } from '../../shared/types';
+import type { AccountCredentialInput, AccountSummary, AuthInput, CloneState, DirectoryCheck, FriendlyError, ProviderConnection, RemoteRepoEntry, RepoSummary, SshKeyInput } from '../../shared/types';
+import { detectProvider, providerInfo, type ProviderId, type RepoProvider } from '../../shared/providers';
+import { ProviderMono } from '../components/ProviderMono';
+import { ProvidersDialog } from '../components/ProvidersDialog';
 import { AccountCredentialFields } from '../components/AccountCredentialFields';
 import { ErrorPanel } from '../components/ErrorPanel';
 import { Modal } from '../components/Modal';
@@ -14,7 +17,7 @@ import { Select } from '../components/Select';
 import { Hourglass } from '../components/Hourglass';
 type Source = 'github' | 'enterprise' | 'url';
 type Protocol = 'https' | 'pat' | 'ssh';
-type HttpsAuth = 'account' | 'system';
+type HttpsAuth = 'account' | 'system' | 'connection';
 
 interface Target {
   host: string;
@@ -113,6 +116,15 @@ function Req({ show, children }: { show: boolean; children: React.ReactNode }) {
 }
 
 /** Clone: source (GitHub.com / Enterprise / URL) → protocol (HTTPS / PAT / SSH) → authenticate → clone → verify → add. */
+/** The clone address for another provider: the pasted one when it already uses the transport, else derived. */
+function providerCloneUrl(p: RepoProvider, transport: 'https' | 'ssh', pasted: string, pastedIsSsh: boolean, pastedIsHttps: boolean): string {
+  if ((transport === 'ssh' && pastedIsSsh) || (transport === 'https' && pastedIsHttps)) return pasted;
+  if (transport === 'https') return p.web ? (p.id === 'azure' ? p.web : p.id === 'codecommit' ? `https://${p.host}/v1/repos/${p.path}` : `${p.web}.git`) : pasted;
+  if (p.id === 'azure' && p.org && p.project) return `git@ssh.dev.azure.com:v3/${p.org}/${p.project}/${p.path.split('/').pop()}`;
+  if (p.id === 'codecommit') return `ssh://${p.host}/v1/repos/${p.path}`;
+  return `git@${p.host}:${p.path}.git`;
+}
+
 export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose: () => void; onCloned: (r: RepoSummary) => void; initialRepository?: string }) {
   const { accounts, activeAccount, repos: appRepos, toast } = useApp();
   const [source, setSource] = useState<Source>('url');
@@ -144,6 +156,12 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
   const [error, setError] = useState<FriendlyError | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // Other providers (GitLab, Bitbucket, Azure DevOps, CodeCommit, Gitea, any Git server): their own sign-ins.
+  const [connections, setConnections] = useState<ProviderConnection[]>([]);
+  const [connId, setConnId] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState<ProviderId | null>(null);
+  const loadConnections = useCallback(() => void call('providers:connections').then(setConnections).catch(() => undefined), []);
+  useEffect(loadConnections, [loadConnections]);
 
   const defaultHost = source === 'github' ? 'github.com' : source === 'enterprise' ? cleanHost(enterpriseHost) || null : null;
   const target = useMemo(() => parseTarget(repository, defaultHost), [repository, defaultHost]);
@@ -239,12 +257,29 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
     else if (pastedIsHttps) setProtocol((p) => (p === 'ssh' ? 'https' : p));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pastedIsSsh, pastedIsHttps]);
-  const cloneUrl = !target ? '' : local ? pasted : (protocol === 'ssh' && pastedIsSsh) || (protocol !== 'ssh' && pastedIsHttps) ? pasted : protocol === 'ssh' ? `git@${target.host}:${target.owner}/${target.repo}.git` : `https://${target.host}/${target.owner}/${target.repo}.git`;
+  const knownHosts = useMemo(() => Object.fromEntries(connections.map((c) => [c.host, c.provider])), [connections]);
+  const prov = source === 'url' && !local && pasted ? detectProvider(pasted, { known: knownHosts }) : null;
+  const other = prov && prov.id !== 'github' ? prov : null;
+  const otherInfo = other ? providerInfo(other.id) : null;
+  const otherConns = other ? connections.filter((c) => c.provider === other.id && (other.id === 'azure' ? (c.org ?? '').toLowerCase() === (other.org ?? '').toLowerCase() : c.host === other.host)) : [];
+  const conn = otherConns.find((c) => c.id === connId) ?? null;
+  // On another provider, HTTPS signs in with its connection when there is one (else the system's Git sign-in).
+  useEffect(() => {
+    if (!other || state) return;
+    setConnId((cur) => (otherConns.some((c) => c.id === cur) ? cur : otherConns[0]?.id ?? null));
+    setHttpsAuth(otherConns.length ? 'connection' : 'system');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [other?.id, other?.host, other?.org, otherConns.length]);
+  const cloneUrl = !target ? '' : local ? pasted : other ? providerCloneUrl(other, protocol === 'ssh' ? 'ssh' : 'https', pasted, pastedIsSsh, pastedIsHttps) : (protocol === 'ssh' && pastedIsSsh) || (protocol !== 'ssh' && pastedIsHttps) ? pasted : protocol === 'ssh' ? `git@${target.host}:${target.owner}/${target.repo}.git` : `https://${target.host}/${target.owner}/${target.repo}.git`;
 
   const auth: { kind: 'account'; credential: AccountCredentialInput } | { kind: 'other'; input: AuthInput; summary: string } | null = local
     ? { kind: 'other', input: { method: 'none' }, summary: 'None needed — a folder on this computer' }
     : protocol === 'https'
-      ? httpsAuth === 'account'
+      ? httpsAuth === 'connection'
+        ? conn
+          ? { kind: 'other', input: { method: 'pat', connectionId: conn.id }, summary: `${providerInfo(conn.provider).name} · ${conn.username}` }
+          : null
+        : httpsAuth === 'account'
         ? credential && account
           ? { kind: 'account', credential }
           : null
@@ -273,7 +308,7 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
     missing.push({
       id: 'auth',
       text:
-        protocol === 'https' ? (account ? `Token for ${account.login}` : 'A GitHub account for this server') : protocol === 'pat' ? 'Personal access token' : 'SSH key',
+        protocol === 'https' ? (other ? `A ${otherInfo!.name} sign-in` : account ? `Token for ${account.login}` : 'A GitHub account for this server') : protocol === 'pat' ? 'Personal access token' : 'SSH key',
     });
   }
   const isMissing = (id: string) => missing.some((m) => m.id === id);
@@ -600,8 +635,8 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
             <div className="proto-cards">
               {(
                 [
-                  ['https', 'HTTPS', 'Sign in with your GitHub account, or use the Git credentials already on this computer'],
-                  ['pat', 'Personal access token', 'Paste a token (classic or fine-grained) with read access to the repository'],
+                  ['https', 'HTTPS', otherInfo ? `Your ${otherInfo.name} connection, or the sign-in already on this computer` : 'Sign in with your GitHub account, or use the Git credentials already on this computer'],
+                  ['pat', otherInfo?.connect ? otherInfo.connect.tokenName : 'Personal access token', otherInfo ? 'Paste a token with read access to the repository' : 'Paste a token (classic or fine-grained) with read access to the repository'],
                   ['ssh', 'SSH', 'Use an SSH key on this computer, generate one, or provide your public key'],
                 ] as [Protocol, string, string][]
               ).map(([id, label, desc]) => (
@@ -616,7 +651,36 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
             </div>
 
             <div className={`auth-panel ${flag('auth') ? 'invalid' : ''}`}>
-              {protocol === 'https' && (
+              {protocol === 'https' && other && otherInfo && (
+                <div className="cl-prov">
+                  <div className="cl-prov-head">
+                    <ProviderMono id={other.id} size={28} />
+                    <span className="grow">
+                      <strong>{otherInfo.name}</strong> <span className="muted small">{other.host}</span>
+                    </span>
+                  </div>
+                  <div className="cl-prov-opts">
+                    {otherConns.map((c) => (
+                      <button key={c.id} className={`cl-prov-opt ${httpsAuth === 'connection' && connId === c.id ? 'on' : ''}`} onClick={() => (setHttpsAuth('connection'), setConnId(c.id))} disabled={locked}>
+                        <span className="cl-av">{(c.displayName ?? c.username).slice(0, 2).toUpperCase()}</span>
+                        <span className="ellipsis">{c.username}</span>
+                        <i>✓</i>
+                      </button>
+                    ))}
+                    {otherInfo.connect && (
+                      <button className="cl-prov-opt add" onClick={() => setConnecting(other.id)} disabled={locked}>
+                        <span className="cl-av">＋</span>
+                        <span>Connect</span>
+                      </button>
+                    )}
+                    <button className={`cl-prov-opt ${httpsAuth === 'system' ? 'on' : ''}`} onClick={() => setHttpsAuth('system')} disabled={locked} title={other.id === 'codecommit' ? 'Your AWS CLI credential helper' : 'The Git credential manager on this computer'}>
+                      <span className="cl-av">{other.id === 'codecommit' ? '☁' : '⚙'}</span>
+                      <span>{other.id === 'codecommit' ? 'AWS CLI' : 'This computer'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+              {protocol === 'https' && !other && (
                 <>
                   <div className="segmented mb">
                     <button className={httpsAuth === 'account' ? 'on' : ''} onClick={() => setHttpsAuth('account')} disabled={locked}>
@@ -684,7 +748,7 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                           type={showToken ? 'text' : 'password'}
                           value={patToken}
                           onChange={(e) => setPatToken(e.target.value)}
-                          placeholder="ghp_… or github_pat_…"
+                          placeholder={otherInfo ? `${otherInfo.name} ${otherInfo.connect?.tokenName.toLowerCase() ?? 'token'}` : 'ghp_… or github_pat_…'}
                           autoComplete="off"
                           spellCheck={false}
                           disabled={busy}
@@ -697,7 +761,7 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                     </div>
                     <div className="field">
                       <label>Username (optional)</label>
-                      <input value={patUser} onChange={(e) => setPatUser(e.target.value)} placeholder="your GitHub login" spellCheck={false} disabled={busy} />
+                      <input value={patUser} onChange={(e) => setPatUser(e.target.value)} placeholder={otherInfo ? (otherInfo.connect?.gitUsername ?? 'your username') : 'your GitHub login'} spellCheck={false} disabled={busy} />
                     </div>
                   </div>
                   <div className="row small">
@@ -803,6 +867,15 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
               setError(toFriendly(err));
             }
             setConfirmRemove(false);
+          }}
+        />
+      )}
+      {connecting && (
+        <ProvidersDialog
+          focus={connecting}
+          onClose={() => {
+            setConnecting(null);
+            loadConnections();
           }}
         />
       )}
