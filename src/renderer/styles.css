@@ -5535,3 +5535,70 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .pvg-tile:hover .pvg-state { color: var(--pc); filter: brightness(1.4); }
 .pvg-more { align-self: flex-end; margin-top: 10px; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
 .lp .pvg-more { display: block; margin-left: auto; }
+
+/* Welcome hero: the app's own logo */
+.lp-orb .lp-logo { position: relative; z-index: 1; width: 46px; height: 46px; border-radius: 12px; filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent) 45%, transparent)); }
+
+/* ===== Connect a provider: Where → Token → Ready ===== */
+.cf { --pc: var(--accent); border: 1px solid color-mix(in srgb, var(--pc) 45%, var(--border)); border-radius: 14px; padding: 14px; background: radial-gradient(120% 120% at 0% 0%, color-mix(in srgb, var(--pc) 12%, transparent), transparent 60%), var(--bg-2); display: flex; flex-direction: column; gap: 12px; animation: sp-in .2s ease both; }
+.cf-head { display: flex; align-items: center; gap: 12px; }
+.cf-steps { flex: 1; display: flex; align-items: center; gap: 6px; }
+.cf-step { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); }
+.cf-step + .cf-step::before { content: ""; width: 22px; height: 2px; border-radius: 2px; background: var(--border-2); margin-right: 2px; }
+.cf-step i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 700; border: 1px solid var(--border-2); }
+.cf-step.on { color: var(--text); }
+.cf-step.on i { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 25%, transparent); }
+.cf-step.done { color: var(--ok, #3fb950); }
+.cf-step.done i { border-color: var(--ok, #3fb950); background: color-mix(in srgb, var(--ok, #3fb950) 18%, transparent); }
+.cf-x { width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--text-3); cursor: pointer; }
+.cf-x:hover { background: var(--bg-3); color: var(--text); }
+.cf-row { display: flex; align-items: flex-start; gap: 10px; transition: opacity .2s; }
+.cf-row.off { opacity: .4; pointer-events: none; }
+.cf-n { flex: none; width: 22px; height: 22px; margin-top: 5px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--text-3); background: var(--bg-3); }
+.cf-chips { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; }
+.cf-chip { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--bg); color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; transition: border-color .12s, background .12s, color .12s; }
+.cf-chip b { font-weight: 600; color: var(--text); font-family: var(--mono); font-size: 12px; }
+.cf-chip:hover { border-color: var(--pc); }
+.cf-chip.on { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 16%, var(--bg)); color: var(--text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pc) 18%, transparent); }
+.cf-chip.add { color: var(--text-3); border-style: dashed; }
+.cf-type { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 4px 0 12px; border-radius: 999px; border: 1px solid var(--pc); background: var(--bg); font-size: 12.5px; color: var(--text-3); font-family: var(--mono); }
+.cf-type input { border: 0; background: transparent; box-shadow: none; outline: none; padding: 0; width: 190px; font: inherit; color: var(--text); }
+.cf-token { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cf-get { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cf-open { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px 0 8px; border-radius: 999px; border: 0; background: linear-gradient(135deg, var(--pc), color-mix(in srgb, var(--pc) 60%, #000)); color: #fff; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 18px color-mix(in srgb, var(--pc) 35%, transparent); }
+.cf-open:disabled { opacity: .5; cursor: default; }
+.cf-open .pv-mono { box-shadow: none; background: rgba(255, 255, 255, .18); }
+.cf-scopes { display: flex; flex-wrap: wrap; gap: 4px; }
+.cf-scopes span { font-size: 10.5px; font-family: var(--mono); padding: 1px 7px; border-radius: 999px; background: var(--bg-3); color: var(--text-2); }
+.cf-drop { display: flex; align-items: center; gap: 6px; height: 46px; padding: 0 6px; border: 2px dashed var(--border-2); border-radius: 12px; background: var(--bg); transition: border-color .15s, box-shadow .15s; }
+.cf-drop:focus-within { border-color: var(--pc); border-style: solid; }
+.cf-drop.ok { border-color: color-mix(in srgb, var(--ok, #3fb950) 60%, transparent); border-style: solid; }
+.cf-drop.bad { border-color: var(--danger, #f85149); border-style: solid; animation: cf-shake .3s; }
+.cf-drop.checking { border-color: var(--pc); border-style: solid; box-shadow: 0 0 0 4px color-mix(in srgb, var(--pc) 15%, transparent); }
+@keyframes cf-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@keyframes cf-spin { to { transform: rotate(360deg); } }
+.cf-drop input { flex: 1; min-width: 0; border: 0; background: transparent; box-shadow: none; outline: none; font-family: var(--mono); font-size: 13px; }
+.cf-paste, .cf-eye, .cf-go { flex: none; width: 34px; height: 34px; border: 0; border-radius: 9px; background: var(--bg-3); color: var(--text-2); font-size: 15px; cursor: pointer; }
+.cf-paste { background: color-mix(in srgb, var(--pc) 22%, var(--bg-3)); }
+.cf-go { background: var(--pc); color: #fff; font-weight: 700; }
+.cf-paste:disabled, .cf-eye:disabled, .cf-go:disabled { opacity: .4; cursor: default; }
+.cf-kind { flex: none; font-size: 10.5px; padding: 1px 8px; border-radius: 999px; color: var(--ok, #3fb950); border: 1px solid color-mix(in srgb, var(--ok, #3fb950) 50%, transparent); }
+.cf-kind.bad { color: var(--danger, #f85149); border-color: color-mix(in srgb, var(--danger, #f85149) 50%, transparent); }
+.cf-spin { flex: none; width: 22px; height: 22px; margin: 0 6px; border-radius: 50%; border: 3px solid color-mix(in srgb, var(--pc) 25%, transparent); border-top-color: var(--pc); animation: cf-spin .8s linear infinite; }
+.cf-err { font-size: 12px; color: var(--danger, #f85149); }
+.cf-ready { display: flex; align-items: center; gap: 12px; padding: 8px 4px; animation: sp-in .25s ease both; }
+.cf-avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--pc), color-mix(in srgb, var(--pc) 55%, #000)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok, #3fb950) 40%, transparent); }
+.cf-who { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.cf-who .mono { font-size: 11.5px; color: var(--text-3); }
+.cf-lock { font-size: 16px; }
+
+/* Clone dialog: sign in for another provider */
+.cl-prov { display: flex; flex-direction: column; gap: 10px; }
+.cl-prov-head { display: flex; align-items: center; gap: 10px; }
+.cl-prov-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.cl-prov-opt { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px 0 6px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer; }
+.cl-prov-opt i { font-style: normal; color: var(--ok, #3fb950); display: none; }
+.cl-prov-opt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
+.cl-prov-opt.on i { display: inline; }
+.cl-prov-opt.add { border-style: dashed; color: var(--text-2); }
+.cl-av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--bg-3); color: var(--text-2); }

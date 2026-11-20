@@ -74,7 +74,8 @@ export type ExtraChannels =
   | 'code:search'
   | 'code:writeFile'
   | 'code:deleteFile'
-  | 'app:copyText';
+  | 'app:copyText'
+  | 'app:readClipboard';
 
 export function parseAccountCredential(value: unknown): AccountCredentialInput {
   const o = asObject(value, 'credential');
@@ -422,6 +423,8 @@ export function createExtraHandlers(
       });
       ctx.recordOperation(repo, 'Delete file', 'SUCCESS', rel);
     },
+    // Only on a click of a Paste button (e.g. a token while connecting a provider); one line, bounded.
+    'app:readClipboard': async () => ({ text: (await clipboard.readText()).trim().split(/\r?\n/)[0].slice(0, 2048) }),
     'app:copyText': async (payload) => {
       const text = asString(asObject(payload).text, 'text', { max: 10_000, trim: false });
       if (/gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|PRIVATE KEY/.test(text)) throw new AppError({ code: 'refused', title: 'Not Copied', message: 'Credentials are not copied through this action.' });

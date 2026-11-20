@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import logoUrl from '../assets/logo.png';
+import { detectProvider, providerInfo, type ProviderId } from '../../shared/providers';
+import { ProviderMono } from '../components/ProviderMono';
 import { ProviderGallery } from '../components/ProvidersDialog';
 import type { RepoSummary } from '../../shared/types';
 import { CloneDialog, isLocalPath } from '../dialogs/CloneDialog';
@@ -6,7 +9,7 @@ import { CreateRepoWizard } from '../dialogs/CreateRepoWizard';
 import { call } from '../services/api';
 import { useApp } from '../state/AppState';
 
-type Detected = { kind: 'github' | 'url' | 'ssh' | 'folder'; label: string; url: string } | null;
+type Detected = { kind: 'github' | 'url' | 'ssh' | 'folder'; label: string; url: string; provider?: ProviderId } | null;
 
 const SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
 
@@ -30,6 +33,15 @@ export function detectSource(raw: string): Detected {
   return null;
 }
 
+/** Any provider's URL: named after the provider it belongs to (GitLab, Azure DevOps, CodeCommit…). */
+function detectAny(raw: string): Detected {
+  const d = detectSource(raw);
+  if (!d || d.kind === 'folder') return d;
+  const p = detectProvider(d.url);
+  if (!p) return d;
+  return { ...d, provider: p.id, label: `${providerInfo(p.id).name} · ${p.path}` };
+}
+
 const ICON: Record<NonNullable<Detected>['kind'], string> = { github: '🐙', url: '🌐', ssh: '🔑', folder: '📁' };
 
 /** Launchpad shown when no repository is open: one smart box, three actions, and recent repositories. */
@@ -39,7 +51,7 @@ export function WelcomePage() {
   const [quick, setQuick] = useState('');
   const [cloneFrom, setCloneFrom] = useState<string | undefined>(undefined);
   const box = useRef<HTMLInputElement>(null);
-  const detected = detectSource(quick);
+  const detected = detectAny(quick);
 
   const open = async () => {
     try {
@@ -87,7 +99,7 @@ export function WelcomePage() {
         <div className="lp-hero">
           <div className="lp-orb" aria-hidden>
             <span className="lp-ring" />
-            <span className="lp-core">⎇</span>
+            <img className="lp-logo" src={logoUrl} alt="" width={46} height={46} draggable={false} />
           </div>
           <div>
             <h1>Every Git, one place</h1>
@@ -110,7 +122,7 @@ export function WelcomePage() {
             if (detected) startClone(detected.url);
           }}
         >
-          <span className="lp-quick-ico">{detected ? ICON[detected.kind] : '⌕'}</span>
+          <span className="lp-quick-ico">{detected?.provider ? <ProviderMono id={detected.provider} size={22} /> : detected ? ICON[detected.kind] : '⌕'}</span>
           <input
             ref={box}
             value={quick}

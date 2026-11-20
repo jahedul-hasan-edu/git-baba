@@ -436,6 +436,7 @@ export interface ApiMap {
   'code:fileHistory': { req: R & { ref: string | null; path: string }; res: FileCommit[] };
   'graph:reveal': { req: R & { path: string }; res: void };
   'app:copyText': { req: { text: string }; res: void };
+  'app:readClipboard': { req: void; res: { text: string } };
   'app:quit': { req: void; res: void };
   /** Opens a title-bar menu as a native pop-up at (x, y) in window coordinates; resolves when it closes. */
   'app:menuPopup': { req: { menu: AppMenuId; x: number; y: number; theme?: string }; res: void };
