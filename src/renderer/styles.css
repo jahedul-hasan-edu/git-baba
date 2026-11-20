@@ -5469,9 +5469,9 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .pvd-feats { display: flex; flex-wrap: wrap; gap: 4px; }
 .pvd-feat { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); }
 .pvd-feat i { font-style: normal; font-size: 9px; }
-.pvd-feat.app { color: var(--ok, #3fb950); border-color: color-mix(in srgb, var(--ok, #3fb950) 40%, transparent); }
-.pvd-feat.web { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
-.pvd-feat.none { color: var(--text-3); opacity: .7; }
+.pvd-feat.f-app { color: var(--ok, #3fb950); border-color: color-mix(in srgb, var(--ok, #3fb950) 40%, transparent); }
+.pvd-feat.f-web { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.pvd-feat.f-none { color: var(--text-3); opacity: .7; }
 .pvd-conn { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 6px; border-radius: 6px; background: var(--bg-3); min-width: 0; }
 .pvd-tag { flex: none; font-size: 10px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--warn, #d29922); color: var(--warn, #d29922); }
 .pvd-x { flex: none; width: 20px; height: 20px; border: 0; border-radius: 5px; background: transparent; color: var(--text-3); cursor: pointer; }
@@ -5481,7 +5481,7 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .pvd-form-head { display: flex; align-items: center; gap: 8px; }
 
 /* Welcome strip */
-.pvs { display: flex; align-items: center; gap: 12px; width: 100%; margin: 6px 0 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-2); color: var(--text); font: inherit; cursor: pointer; text-align: left; transition: border-color .15s; }
+.pvs-unused { display: flex; align-items: center; gap: 12px; width: 100%; margin: 6px 0 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-2); color: var(--text); font: inherit; cursor: pointer; text-align: left; transition: border-color .15s; }
 .pvs:hover { border-color: var(--accent); }
 .pvs-t { font-size: 13px; color: var(--text-2); }
 .pvs-tiles { display: flex; gap: 6px; flex: 1; }
@@ -5510,3 +5510,28 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .pvd-feat i { display: inline; line-height: 1; }
 .pvd-card { overflow: hidden; }
 .pvd-foot .small { display: block; line-height: 1.4; }
+
+/* Provider tiles with official logos */
+.pv-mono.logo { color: #fff; }
+.pv-mono.logo svg { display: block; }
+.pv-mono.github { background: linear-gradient(135deg, #3a3f47, #181717); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); }
+
+/* Welcome: the provider gallery */
+.pvg { display: grid; grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); gap: 12px; margin-top: 18px; }
+.pvg-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 10px 14px; border: 1px solid var(--border); border-radius: 16px; background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--pc) 14%, transparent), transparent 70%), var(--bg-2); color: var(--text); font: inherit; cursor: pointer; animation: sp-in .35s ease both; transition: transform .15s, border-color .15s, box-shadow .15s; }
+.pvg-tile:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--pc) 60%, var(--border)); box-shadow: 0 12px 28px color-mix(in srgb, var(--pc) 22%, transparent); }
+.pvg-tile.on { border-color: color-mix(in srgb, var(--pc) 55%, var(--border)); }
+.pvg-logo { position: relative; }
+.pvg-logo .pv-mono { box-shadow: 0 8px 22px color-mix(in srgb, var(--pc) 40%, transparent); }
+.pvg-on { position: absolute; right: -6px; bottom: -6px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 800; color: #fff; background: var(--ok, #3fb950); box-shadow: 0 0 0 3px var(--bg-2); }
+.pvg-tile strong { font-size: 13px; text-align: center; }
+.pvg-marks { display: flex; gap: 6px; }
+.pvg-marks i { font-style: normal; font-size: 11px; width: 16px; text-align: center; }
+.pvg-marks i.m-app { color: var(--ok, #3fb950); }
+.pvg-marks i.m-web { color: var(--accent); }
+.pvg-marks i.m-none { color: var(--text-3); opacity: .5; }
+.pvg-state { font-size: 11px; color: var(--text-3); }
+.pvg-tile.on .pvg-state { color: var(--ok, #3fb950); }
+.pvg-tile:hover .pvg-state { color: var(--pc); filter: brightness(1.4); }
+.pvg-more { align-self: flex-end; margin-top: 10px; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+.lp .pvg-more { display: block; margin-left: auto; }

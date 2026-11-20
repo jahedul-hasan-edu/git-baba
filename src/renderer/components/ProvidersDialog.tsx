@@ -13,7 +13,7 @@ const SUPPORT: Record<'app' | 'web', { label: string; cls: string }> = {
 
 function Feature({ name, s }: { name: string; s: Support }) {
   return (
-    <span className={`pvd-feat ${s ?? 'none'}`} title={s ? `${name}: ${SUPPORT[s].label.toLowerCase()}` : `${name}: not available`}>
+    <span className={`pvd-feat f-${s ?? 'none'}`} title={s ? `${name}: ${SUPPORT[s].label.toLowerCase()}` : `${name}: not available`}>
       <i aria-hidden>{s === 'app' ? '●' : s === 'web' ? '↗' : '–'}</i>
       {name}
     </span>
@@ -32,10 +32,13 @@ function tokenPage(p: ProviderInfo, host: string, org: string): string | null {
  * Every Git hosting provider the app works with, what it can do for each (in the app, on the website, or not
  * at all), the connections you have, and a short form to connect another one.
  */
-export function ProvidersDialog({ onClose }: { onClose: () => void }) {
+export function ProvidersDialog({ onClose, focus }: { onClose: () => void; focus?: ProviderId }) {
   const { showError, toast, setView, accounts, bump, refreshRepos } = useApp();
   const [conns, setConns] = useState<ProviderConnection[]>([]);
-  const [form, setForm] = useState<{ provider: ProviderId; host: string; token: string; username: string; email: string; org: string } | null>(null);
+  const [form, setForm] = useState<{ provider: ProviderId; host: string; token: string; username: string; email: string; org: string } | null>(() => {
+    const p = focus ? providerInfo(focus) : null;
+    return p?.connect ? { provider: p.id, host: p.id === 'gitea' ? '' : (p.host ?? ''), token: '', username: '', email: '', org: '' } : null;
+  });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -98,13 +101,13 @@ export function ProvidersDialog({ onClose }: { onClose: () => void }) {
           <span className="pvd-count">{total} connected</span>
         </p>
         <div className="pvd-legend small muted">
-          <span className="pvd-feat app">
+          <span className="pvd-feat f-app">
             <i>●</i>In the app
           </span>
-          <span className="pvd-feat web">
+          <span className="pvd-feat f-web">
             <i>↗</i>On the provider's website
           </span>
-          <span className="pvd-feat none">
+          <span className="pvd-feat f-none">
             <i>–</i>Not available
           </span>
         </div>
@@ -233,28 +236,61 @@ export function ProvidersDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** The welcome screen's "Works with" strip: every provider, with how many are connected. */
-export function ProvidersStrip({ onOpen }: { onOpen: () => void }) {
-  const { accounts } = useApp();
+/**
+ * The welcome screen: every provider as a large tile with its logo — connected ones lit with a count, what
+ * works in the app (●) or on the website (↗) as small marks. A click connects it (or manages GitHub accounts).
+ */
+export function ProviderGallery() {
+  const { accounts, setView } = useApp();
   const [conns, setConns] = useState<ProviderConnection[]>([]);
+  const [open, setOpen] = useState<{ focus?: ProviderId } | null>(null);
   useEffect(() => {
-    void call('providers:connections').then(setConns).catch(() => undefined);
-  }, []);
+    if (!open) void call('providers:connections').then(setConns).catch(() => undefined);
+  }, [open]);
   const n = (id: ProviderId) => (id === 'github' ? accounts?.accounts.length ?? 0 : conns.filter((c) => c.provider === id).length);
+  const marks: [keyof ProviderInfo['features'], string][] = [
+    ['git', 'Git'],
+    ['signIn', 'Sign-in'],
+    ['pullRequests', 'Pull requests'],
+    ['pipelines', 'Pipelines'],
+  ];
   return (
-    <button className="pvs" onClick={onOpen} title="See what Git Baba does with each provider and connect your accounts">
-      <span className="pvs-t">
-        Works with <strong>{PROVIDERS.length}</strong> providers
-      </span>
-      <span className="pvs-tiles">
-        {PROVIDERS.map((p) => (
-          <span key={p.id} className={`pvs-tile ${n(p.id) ? 'on' : ''}`} title={`${p.name}${n(p.id) ? ` · ${n(p.id)} connected` : ''}`}>
-            <ProviderMono id={p.id} size={24} />
-            {n(p.id) > 0 && <i className="pvs-dot" />}
-          </span>
-        ))}
-      </span>
-      <span className="pvs-go">Manage →</span>
-    </button>
+    <>
+      <div className="pvg">
+        {PROVIDERS.map((p, i) => {
+          const count = n(p.id);
+          return (
+            <button
+              key={p.id}
+              className={`pvg-tile ${count ? 'on' : ''}`}
+              style={{ ['--pc' as string]: p.color, animationDelay: `${i * 45}ms` }}
+              onClick={() => (p.id === 'github' ? setView('accounts') : setOpen({ focus: p.connect ? p.id : undefined }))}
+              title={`${p.name} — ${p.blurb}`}
+            >
+              <span className="pvg-logo">
+                <ProviderMono id={p.id} size={46} />
+                {count > 0 && <span className="pvg-on">✓</span>}
+              </span>
+              <strong>{p.name}</strong>
+              <span className="pvg-marks" aria-label="What works">
+                {marks.map(([k, label]) => {
+                  const s = p.features[k];
+                  return (
+                    <i key={k} className={`m-${s ?? 'none'}`} title={`${label}: ${s === 'app' ? 'in the app' : s === 'web' ? 'on the website' : 'not available'}`}>
+                      {s === 'app' ? '●' : s === 'web' ? '↗' : '·'}
+                    </i>
+                  );
+                })}
+              </span>
+              <span className="pvg-state">{count ? `${count} connected` : p.connect ? 'Connect' : p.id === 'github' ? 'Sign in' : 'Ready'}</span>
+            </button>
+          );
+        })}
+      </div>
+      <button className="pvg-more" onClick={() => setOpen({})}>
+        Compare providers →
+      </button>
+      {open && <ProvidersDialog focus={open.focus} onClose={() => setOpen(null)} />}
+    </>
   );
 }

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ProvidersDialog, ProvidersStrip } from '../components/ProvidersDialog';
+import { useEffect, useRef, useState } from 'react';
+import { ProviderGallery } from '../components/ProvidersDialog';
 import type { RepoSummary } from '../../shared/types';
 import { CloneDialog, isLocalPath } from '../dialogs/CloneDialog';
 import { CreateRepoWizard } from '../dialogs/CreateRepoWizard';
@@ -34,9 +34,8 @@ const ICON: Record<NonNullable<Detected>['kind'], string> = { github: '🐙', ur
 
 /** Launchpad shown when no repository is open: one smart box, three actions, and recent repositories. */
 export function WelcomePage() {
-  const { info, showError, bump, selectRepo, setView, repos } = useApp();
+  const { info, showError, bump, selectRepo } = useApp();
   const [dialog, setDialog] = useState<'create' | 'clone' | null>(null);
-  const [providers, setProviders] = useState(false);
   const [quick, setQuick] = useState('');
   const [cloneFrom, setCloneFrom] = useState<string | undefined>(undefined);
   const box = useRef<HTMLInputElement>(null);
@@ -81,7 +80,6 @@ export function WelcomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialog]);
 
-  const recent = useMemo(() => [...repos].sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || (b.addedAt ?? '').localeCompare(a.addedAt ?? '')).slice(0, 6), [repos]);
 
   return (
     <div className="content">
@@ -92,8 +90,7 @@ export function WelcomePage() {
             <span className="lp-core">⎇</span>
           </div>
           <div>
-            <h1>Let's get a repository open</h1>
-            <p className="muted">Open one you already have, start a new one, or clone from GitHub, any Git server or a folder. Nothing is committed or pushed without your review.</p>
+            <h1>Every Git, one place</h1>
           </div>
         </div>
 
@@ -134,63 +131,7 @@ export function WelcomePage() {
           )}
         </form>
 
-        <div className="lp-actions">
-          <button className="lp-card" onClick={() => void open()}>
-            <span className="lp-card-ico open">📂</span>
-            <strong>Open repository</strong>
-            <span className="small muted">A Git folder already on this computer.</span>
-            <span className="lp-flow">Pick folder → added to your list</span>
-            <kbd>O</kbd>
-          </button>
-          <button className="lp-card" onClick={() => setDialog('create')}>
-            <span className="lp-card-ico create">✨</span>
-            <strong>Create repository</strong>
-            <span className="small muted">New project, locally or on GitHub too.</span>
-            <span className="lp-flow">Name → folder → (GitHub) → first commit</span>
-            <kbd>N</kbd>
-          </button>
-          <button className="lp-card" onClick={() => startClone()}>
-            <span className="lp-card-ico clone">⬇</span>
-            <strong>Clone repository</strong>
-            <span className="small muted">From GitHub, another server (HTTPS/SSH) or a folder.</span>
-            <span className="lp-flow">Source → sign in → download → ready</span>
-            <kbd>C</kbd>
-          </button>
-        </div>
-
-        {recent.length > 0 && (
-          <div className="lp-recent">
-            <div className="lp-section">Your repositories</div>
-            <div className="lp-recent-grid">
-              {recent.map((r) => (
-                <button key={r.id} className={`lp-repo ${r.exists ? '' : 'missing'}`} onClick={() => selectRepo(r.id)} title={r.path}>
-                  <span className="lp-repo-badge">{r.name.slice(0, 2).toUpperCase()}</span>
-                  <span className="lp-repo-text">
-                    <strong className="ellipsis">
-                      {r.favorite ? '★ ' : ''}
-                      {r.name}
-                    </strong>
-                    <span className="small muted ellipsis">
-                      {!r.exists ? 'folder missing' : `⎇ ${r.branch ?? '—'}${r.changeCount ? ` · ${r.changeCount} change${r.changeCount === 1 ? '' : 's'}` : ''}`}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <ProvidersStrip onOpen={() => setProviders(true)} />
-        {providers && <ProvidersDialog onClose={() => setProviders(false)} />}
-        <div className="lp-promises">
-          <span className="lp-chip">🛡 Review before every commit &amp; push</span>
-          <span className="lp-chip">🔐 Credentials per operation, in memory</span>
-          <span className="lp-chip">🔍 Pulls scanned before merging</span>
-          <span className="lp-chip">🚫 Hooks never run silently</span>
-          <a className="small" onClick={() => setView('help')}>
-            Learn the Git commands →
-          </a>
-        </div>
+        <ProviderGallery />
       </div>
       {dialog === 'create' && <CreateRepoWizard onClose={() => setDialog(null)} onCreated={onCreated} />}
       {dialog === 'clone' && <CloneDialog initialRepository={cloneFrom} onClose={() => setDialog(null)} onCloned={onCreated} />}
