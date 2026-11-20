@@ -9,8 +9,10 @@ export function ProviderMono({ id, size = 22 }: { id: ProviderId; size?: number 
   return (
     <span className={`pv-mono ${logo ? 'logo' : ''} ${id}`} style={style} title={p.name} aria-label={p.name}>
       {logo ? (
-        <svg viewBox="0 0 24 24" width={Math.round(size * 0.62)} height={Math.round(size * 0.62)} aria-hidden>
-          <path d={logo.path} fill="currentColor" />
+        <svg viewBox={logo.viewBox ?? '0 0 24 24'} width={Math.round(size * (id === 'codecommit' ? 0.74 : 0.62))} height={Math.round(size * (id === 'codecommit' ? 0.74 : 0.62))} aria-hidden>
+          {(Array.isArray(logo.path) ? logo.path : [logo.path]).map((d, i) => (
+            <path key={i} d={d} fill="currentColor" />
+          ))}
         </svg>
       ) : (
         p.mono
