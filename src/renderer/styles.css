@@ -5348,3 +5348,105 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .fp-sha { color: var(--text-3); font-size: 11px; }
 .fp-when { flex: none; color: var(--text-3); font-size: 11px; }
 .fp-none { font-size: 11.5px; color: var(--text-3); padding: 3px 0; }
+
+/* ===== Branch Explorer: time left → right, one lane per branch ===== */
+.left.bx-host { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
+.bx { flex: 1; min-height: 0; display: flex; flex-direction: column; outline: none; background: var(--bg); position: relative; }
+.bx-tools { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--bg-2); }
+.bx-find { display: flex; align-items: center; gap: 6px; width: 260px; padding: 0 8px; border: 1px solid var(--border); border-radius: 7px; color: var(--text-3); background: var(--bg); }
+.bx-find input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 4px 0; box-shadow: none; outline: none; font-size: 12px; }
+.bx-find-n { font-size: 10.5px; padding: 0 6px; border-radius: 999px; background: var(--bg-3); color: var(--text-2); }
+.bx-chip { font: inherit; font-size: 11.5px; padding: 3px 9px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--warn, #d29922) 50%, transparent); background: transparent; color: var(--warn, #d29922); cursor: pointer; }
+.bx-btn { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text-2); cursor: pointer; }
+.bx-btn:hover:not(:disabled) { color: var(--text); border-color: var(--border-2); }
+.bx-btn:disabled { opacity: .45; cursor: default; }
+.bx-zoom { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+.bx-zoom button { font: inherit; font-size: 12px; border: 0; background: var(--bg); color: var(--text-2); padding: 3px 9px; cursor: pointer; }
+.bx-zoom button + button { border-left: 1px solid var(--border); }
+.bx-zoom button:hover { color: var(--text); background: var(--bg-3); }
+.bx-zoom-n { min-width: 48px; font-variant-numeric: tabular-nums; }
+.bx-body { flex: 1; min-height: 0; display: flex; }
+.bx-labels { flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--bg-2); overflow: hidden; position: relative; z-index: 2; }
+.bx-corner { flex: none; display: flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); border-bottom: 1px solid var(--border); }
+.bx-corner span { font-weight: 500; }
+.bx-label-list { will-change: transform; }
+.bx-label { display: flex; align-items: center; gap: 7px; padding: 0 6px 0 9px; border-left: 3px solid var(--c); cursor: default; min-width: 0; }
+.bx-label:nth-child(even) { background: color-mix(in srgb, var(--bg-3) 50%, transparent); }
+.bx-label.head { background: color-mix(in srgb, var(--c) 12%, transparent); }
+.bx-lane-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.bx-lane-name { flex: 1; min-width: 0; display: flex; font-family: var(--mono); font-size: 11.5px; white-space: nowrap; overflow: hidden; }
+.bx-lane-pre { flex: 0 1 auto; min-width: 8px; overflow: hidden; text-overflow: ellipsis; color: var(--text-3); }
+.bx-lane-leaf { flex: 0 0 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: var(--text); }
+.bx-here { flex: none; font-size: 9.5px; font-weight: 700; padding: 0 5px; line-height: 15px; border-radius: 4px; color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); }
+.bx-lane-acts { flex: none; display: flex; gap: 1px; opacity: 0; transition: opacity .12s; }
+.bx-label:hover .bx-lane-acts { opacity: 1; }
+.bx-lane-acts button { width: 20px; height: 20px; border: 0; border-radius: 5px; background: transparent; color: var(--text-3); font-size: 11px; cursor: pointer; }
+.bx-lane-acts button:hover { background: var(--bg-3); color: var(--text); }
+.bx-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bx-ruler { flex: none; position: relative; overflow: hidden; border-bottom: 1px solid var(--border); background: var(--bg-2); }
+.bx-ruler > div { position: relative; height: 100%; will-change: transform; }
+.bx-tick { position: absolute; bottom: 6px; transform: translateX(-50%); font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
+.bx-tick.month { color: var(--text); font-weight: 600; }
+.bx-scroll { flex: 1; min-height: 0; overflow: auto; position: relative; cursor: grab; }
+.bx-scroll.panning { cursor: grabbing; user-select: none; }
+.bx-svg { display: block; }
+.bx-band { fill: transparent; }
+.bx-band.odd { fill: color-mix(in srgb, var(--bg-3) 40%, transparent); }
+.bx-lane-line { stroke-width: 3; stroke-linecap: round; opacity: .55; }
+.bx-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 4; opacity: .6; }
+.bx-grid.month { stroke-dasharray: none; opacity: .9; }
+.bx-edge { fill: none; stroke-width: 2; opacity: .75; }
+.bx-edge.branch { stroke-dasharray: 4 3; }
+.bx-edge.merge { stroke-width: 2.2; opacity: .9; }
+.bx-node { cursor: pointer; }
+.bx-dot { stroke: var(--bg); stroke-width: 2; transition: transform .12s; }
+.bx-node:hover .bx-dot { transform: scale(1.25); }
+.bx-node.sel .bx-dot { stroke: var(--accent); stroke-width: 3; }
+.bx-node.dim { opacity: .25; }
+.bx-node.hit .bx-dot { stroke: var(--warn, #d29922); stroke-width: 3; }
+.bx-head-ring { fill: none; stroke-width: 2; opacity: .8; animation: bx-pulse 1.8s ease-in-out infinite; }
+@keyframes bx-pulse { 0%, 100% { opacity: .85; } 50% { opacity: .25; } }
+.bx-letter { font-size: 10px; font-weight: 800; text-anchor: middle; fill: var(--accent); }
+.bx-flag line { stroke: var(--warn, #d29922); stroke-width: 1.2; }
+.bx-flag rect { fill: color-mix(in srgb, var(--warn, #d29922) 22%, var(--bg-2)); stroke: color-mix(in srgb, var(--warn, #d29922) 70%, transparent); }
+.bx-flag text { font-size: 9.5px; font-family: var(--mono); fill: var(--text); }
+.bx-more { position: absolute; left: 10px; z-index: 3; font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--border-2); background: var(--bg-2); color: var(--text); cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); }
+.bx-map { flex: none; border-top: 1px solid var(--border); background: var(--bg-2); cursor: pointer; }
+.bx-map svg { display: block; }
+.bx-map-view { fill: color-mix(in srgb, var(--accent) 10%, transparent); stroke: var(--accent); stroke-width: 1; }
+.bx-map-head { fill: var(--ok, #3fb950); }
+.bx-tip { position: fixed; z-index: 90; max-width: 320px; display: flex; flex-direction: column; gap: 2px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border-2); background: var(--bg-2); box-shadow: 0 10px 30px rgba(0, 0, 0, .4); font-size: 11.5px; color: var(--text-2); pointer-events: none; }
+.bx-tip strong { color: var(--text); font-size: 12.5px; }
+.graph-view-seg button { white-space: nowrap; }
+
+/* Branch Explorer — names column: header above a clipped list, two-line names, resizable / collapsible */
+.bx-labels { position: relative; min-width: 0; transition: width .18s ease; }
+.bx-corner { position: relative; z-index: 2; background: var(--bg-2); justify-content: space-between; padding: 0 4px 0 12px; }
+.bx-labels.closed .bx-corner { padding: 0; justify-content: center; }
+.bx-corner-t { display: inline-flex; align-items: center; gap: 6px; }
+.bx-corner-btn { width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--text-3); font-size: 14px; line-height: 1; cursor: pointer; }
+.bx-corner-btn:hover { background: var(--bg-3); color: var(--text); }
+.bx-label-view { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+.bx-label { position: relative; padding: 0 8px 0 10px; }
+.bx-labels.closed .bx-label { justify-content: center; padding: 0; }
+.bx-lane-text { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; line-height: 1.25; }
+.bx-lane-text .bx-lane-leaf { display: block; font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: none; }
+.bx-lane-text .bx-lane-pre { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bx-lane-acts { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); padding-left: 18px; background: linear-gradient(to right, transparent, var(--bg-2) 16px); }
+.bx-label.head .bx-lane-acts { background: linear-gradient(to right, transparent, color-mix(in srgb, var(--c) 12%, var(--bg-2)) 16px); }
+.bx-label-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 3; }
+.bx-label-resize:hover { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+/* Smooth: names and ruler move on the compositor */
+.bx-label-list, .bx-ruler > div { will-change: transform; }
+.bx-scroll { overscroll-behavior: contain; }
+/* Calmer links; the ones at the selected commit stand out */
+.bx-edge { opacity: .45; transition: opacity .15s, stroke-width .15s; }
+.bx-edge.merge { opacity: .55; }
+.bx-edge.hot { opacity: 1; stroke-width: 3; }
+.bx-flag.mini line { stroke: var(--warn, #d29922); stroke-width: 1; }
+.bx-flag.mini rect { fill: var(--warn, #d29922); stroke: none; }
+
+/* Commit list without the graph drawing (the Branch Explorer is the graph) */
+.commit-row .commit-text { padding-left: 14px; }
+.bx-names-btn { display: inline-flex; align-items: center; justify-content: center; padding: 3px 7px; }
+.bx-names-btn.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }

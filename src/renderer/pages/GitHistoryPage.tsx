@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { layoutGraph, type GraphRow } from '../../shared/graphLayout';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { layoutGraph } from '../../shared/graphLayout';
 import type { CommitDetails, CommitStatFile, CompareResult, FriendlyError, GraphCommit, HistoryQuery, HistoryScope, RepoStatus } from '../../shared/types';
 import { ChangesPage } from './ChangesPage';
 import { CleanSlate } from './changes/CleanSlate';
@@ -16,6 +16,7 @@ import { useCommitActions, type CommitAction } from './history/CommitActions';
 import { CommitFilesExplorer } from './history/CommitFilesExplorer';
 import { CommitMenu, type CompareKind } from './history/CommitMenu';
 import { authorColor, initials } from './history/graphStyle';
+import { BranchExplorer } from './history/BranchExplorer';
 import { RefActionsContext, RefChip, type RefActions } from './history/RefChip';
 import { Modal } from '../components/Modal';
 import { SwitchBranchDialog } from '../dialogs/BranchDialogs';
@@ -47,41 +48,6 @@ function MergedMark({ main }: { main: string }) {
 }
 
 /** One row of the commit graph: lane lines in, an author-avatar node, and edges out to the parents. */
-function GraphCell({ row, width, commit, isHead, wipAbove, hot }: { row: GraphRow; width: number; commit: GraphCommit; isHead: boolean; wipAbove: boolean; hot: boolean }) {
-  const mid = ROW_H / 2;
-  const els: ReactElement[] = [];
-  row.before.forEach((v, i) => {
-    if (!v) return;
-    if (v === row.hash) els.push(<path key={`in${i}`} d={`M${laneX(i)} 0 C ${laneX(i)} ${mid * 0.6}, ${laneX(row.lane)} ${mid * 0.4}, ${laneX(row.lane)} ${mid}`} stroke={color(i)} />);
-    else if (row.after[i] === v) els.push(<line key={`pass${i}`} x1={laneX(i)} y1={0} x2={laneX(i)} y2={ROW_H} stroke={color(i)} />);
-    else els.push(<line key={`end${i}`} x1={laneX(i)} y1={0} x2={laneX(i)} y2={mid} stroke={color(i)} />);
-  });
-  row.parentLanes.forEach((j, k) =>
-    els.push(<path key={`out${k}`} d={`M${laneX(row.lane)} ${mid} C ${laneX(row.lane)} ${mid + mid * 0.6}, ${laneX(j)} ${mid + mid * 0.4}, ${laneX(j)} ${ROW_H}`} stroke={color(j)} />),
-  );
-  if (wipAbove) els.push(<line key="wip" x1={laneX(row.lane)} y1={0} x2={laneX(row.lane)} y2={mid} stroke={color(row.lane)} strokeDasharray="3 3" />);
-  const cx = laneX(row.lane);
-  const c = color(row.lane);
-  return (
-    <svg width={width} height={ROW_H} className={`graph-cell ${hot ? 'hot' : ''}`} fill="none" strokeWidth={2}>
-      {els}
-      {isHead && <circle cx={cx} cy={mid} r={12.5} className="g-head-halo" stroke={c} />}
-      {row.isMerge ? (
-        <>
-          <circle cx={cx} cy={mid} r={6} fill="var(--bg)" stroke={c} strokeWidth={2.5} />
-          <circle cx={cx} cy={mid} r={2} fill={c} />
-        </>
-      ) : (
-        <g className="g-node">
-          <circle cx={cx} cy={mid} r={9.5} fill={authorColor(commit.email || commit.author)} stroke={c} strokeWidth={2} />
-          <text x={cx} y={mid + 3} textAnchor="middle" className="g-initials">
-            {initials(commit.author)}
-          </text>
-        </g>
-      )}
-    </svg>
-  );
-}
 
 /** Tags created on a commit, as interactive chips (the first `max`; the rest behind a "+N" toggle). */
 function TagChips({ refs, max = 2 }: { refs: string[]; max?: number }) {
@@ -274,6 +240,23 @@ export function GitHistoryPage({ workspace }: Props = {}) {
   const [slots, setSlots] = useState<[string | null, string | null]>([null, null]);
   const [dragging, setDragging] = useState<string | null>(null);
   const [studio, setStudio] = useState(false);
+  /** Which graph draws the history: the lane list, or the Branch Explorer (time left → right, a row per branch). */
+  const [graphView, setGraphViewRaw] = useState<'lanes' | 'explorer'>(() => {
+    try {
+      // Explorer is the default; "lanes" only when the user picked it.
+      return localStorage.getItem('gb.graph.view2') === 'lanes' ? 'lanes' : 'explorer';
+    } catch {
+      return 'explorer';
+    }
+  });
+  const setGraphView = (v: 'lanes' | 'explorer') => {
+    setGraphViewRaw(v);
+    try {
+      localStorage.setItem('gb.graph.view2', v);
+    } catch {
+      /* per-viewer convenience */
+    }
+  };
   // The tab bar's Compare button opens the Compare window here.
   const openStudio = useRef<() => void>(() => undefined);
   const [dropOn, setDropOn] = useState<string | null>(null);
@@ -934,6 +917,14 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           ⇄ Compare
         </button>
         )}
+        <div className="seg graph-view-seg" role="tablist" aria-label="Graph">
+          <button role="tab" aria-selected={graphView === 'lanes'} className={graphView === 'lanes' ? 'on' : ''} onClick={() => setGraphView('lanes')} title="Lanes: a commit list with the branch graph beside it">
+            ☰ Lanes
+          </button>
+          <button role="tab" aria-selected={graphView === 'explorer'} className={graphView === 'explorer' ? 'on' : ''} onClick={() => setGraphView('explorer')} title="Branch Explorer: time left to right, one row per branch">
+            ⟿ Explorer
+          </button>
+        </div>
         <div className="seg" title="Where commit details open">
           {(
             [
@@ -985,7 +976,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
       )}
       <div className="split hist-split" ref={splitRef} style={{ gridTemplateColumns: showSide ? `minmax(360px, ${100 - paneW}%) 6px minmax(${ws ? 340 : 0}px, 1fr)` : '1fr' }}>
         <div className={ws ? 'ws-center' : 'left-wrap'}>
-        <div className="left" ref={listRef}>
+        <div className={`left ${graphView === 'explorer' ? 'bx-host' : ''}`} ref={listRef}>
           {error && (
             <div style={{ padding: 12 }}>
               <ErrorPanel error={error} />
@@ -1004,6 +995,23 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           ) : (
             <div className="empty">No commits match these filters.</div>
           ))}
+          {graphView === 'explorer' && commits.length > 0 && (
+            <BranchExplorer
+              commits={commits}
+              headOid={head.oid}
+              headBranch={head.detached ? null : head.branch}
+              mainRef={mainRef}
+              selected={selected}
+              pair={compareMode ? slots.filter((h): h is string => !!h) : []}
+              hasMore={hasMore}
+              loading={loading}
+              onSelect={(h) => clickCommit(h)}
+              onMenu={(c, x, y) => setMenu({ x, y, commit: c })}
+              onLoadMore={() => load(true)}
+              onSwitch={(b) => setSwitching({ target: b, kind: 'local' })}
+            />
+          )}
+          {graphView === 'lanes' && <>
           {!ws && head.dirty > 0 && commits[0]?.hash === head.oid && (
             <div
               className={`commit-row wip-row ${ws && wip ? 'selected' : ''}`}
@@ -1065,7 +1073,6 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               onMouseEnter={() => c.branch && setHoverBranch(c.branch)}
               onMouseLeave={() => setHoverBranch(null)}
             >
-              <GraphCell row={rows[i]} width={graphWidth} commit={c} isHead={c.hash === head.oid} wipAbove={!ws && i === 0 && head.dirty > 0 && c.hash === head.oid} hot={!!hoverBranch && c.branch === hoverBranch} />
               <div className="commit-text">
                 <div className="commit-subject ellipsis">
                   {compareMode && (slots[0] === c.hash || slots[1] === c.hash) && <span className={`cmp-letter sm ${slots[0] === c.hash ? 'A' : 'B'}`}>{slots[0] === c.hash ? 'A' : 'B'}</span>}
@@ -1123,6 +1130,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               </button>
             </div>
           )}
+          </>}
         </div>
         {/* A changed file (working or committed) opens here, over the graph, so the diff gets the room it needs. */}
         <div className="ws-diff-host" ref={setDiffHost} />
