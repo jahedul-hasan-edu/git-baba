@@ -24,6 +24,7 @@ export function BranchAuth({ repoId, ctx, remoteUrl, authKey, onChange, hideTitl
         onChange={onChange}
         asLabel={asLabel}
         account={account}
+        action="merge"
       />
     </div>
   );

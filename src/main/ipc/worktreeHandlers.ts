@@ -132,6 +132,7 @@ export function createWorktreeHandlers(ctx: AppContext, helpers: { summarize: (r
           accountId: s.accountId,
           remoteAuth: s.remoteAuth,
           commitSigning: s.commitSigning,
+          actionAuth: s.actionAuth,
           githubApp: s.githubApp,
           sshKeyPath: s.sshKeyPath,
           apiBaseUrl: s.apiBaseUrl,

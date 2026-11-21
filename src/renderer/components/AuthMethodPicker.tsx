@@ -27,6 +27,8 @@ interface Props {
   asLabel?: string;
   /** GitHub login shown on the account-token button in the `asLabel` row. */
   account?: string | null;
+  /** Which action's default (Security & access) to preselect; by default push → push, fetch → pull. */
+  action?: 'push' | 'pull' | 'merge';
 }
 
 const SOURCE_NOTE: Partial<Record<DefaultSource, string>> = {
@@ -49,7 +51,7 @@ function mask(v: string): string {
  * Only methods applicable to the repository are listed. Secrets live in local
  * component state only and disappear when the dialog closes.
  */
-export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave, savedSshKey = null, repoId, purpose, onChange, asLabel, account: accountProp }: Props) {
+export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave, savedSshKey = null, repoId, purpose, onChange, asLabel, account: accountProp, action }: Props) {
   const { showError, toast, activeAccount, session, repos } = useApp();
   // Default to the account the repository belongs to.
   const account = accountProp !== undefined ? accountProp : (repos.find((r) => r.id === repoId)?.account?.login ?? null);
@@ -61,7 +63,7 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
   const preset = remoteAuthDefault({
     available: options.map((o) => o.method),
     githubAppLinked: !!githubApp,
-    preference: repoRecord?.settings.remoteAuth,
+    preference: repoRecord?.settings.actionAuth?.[action ?? (purpose === 'push' ? 'push' : purpose === 'fetch' ? 'pull' : 'push')] ?? repoRecord?.settings.remoteAuth,
     sshKeyRemembered: !!savedSshKey,
     patSaved: !!options.find((o) => o.method === 'pat')?.hasSaved,
   });
@@ -112,6 +114,7 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
   const [generated, setGenerated] = useState<GeneratedTokenInfo | null>(null);
   const [savedKeyAvailable, setSavedKeyAvailable] = useState(() => !!options.find((o) => o.method === 'github-app')?.hasSaved);
   const [forgetting, setForgetting] = useState(false);
+  const [showInstall, setShowInstall] = useState(false);
   const [dropping, setDropping] = useState(false);
   const [keyMode, setKeyMode] = useState<'file' | 'paste' | 'saved'>(savedKeyAvailable ? 'saved' : 'file');
   const [pem, setPem] = useState('');
@@ -257,7 +260,13 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
           <input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="owner" spellCheck={false} aria-label="Owner" />
           <span className="ga-slash">/</span>
           <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="repository" spellCheck={false} aria-label="Repository" />
-          <input value={installationId} onChange={(e) => setInstallationId(e.target.value)} placeholder="install ID · auto" spellCheck={false} aria-label="Installation ID (optional)" />
+          {showInstall || installationId ? (
+            <input value={installationId} onChange={(e) => setInstallationId(e.target.value)} placeholder="installation ID" spellCheck={false} aria-label="Installation ID (optional)" autoFocus={showInstall && !installationId} />
+          ) : (
+            <button className="ga-more" onClick={() => setShowInstall(true)} title="Installation ID — found automatically; set it only for an unusual setup">
+              + install ID
+            </button>
+          )}
           {repoId && appChanged && (
             <label className="ga-remember" title="Remember App ID, owner and repository for this repository (never the key)">
               <input type="checkbox" checked={rememberApp} onChange={(e) => setRememberApp(e.target.checked)} /> remember

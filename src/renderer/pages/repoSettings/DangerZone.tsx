@@ -1,81 +1,106 @@
 import { useState } from 'react';
 import type { GhRepoContext } from '../../../shared/github';
 import { SecureActionDialog } from '../../components/github/SecureActionDialog';
-import { ConfirmDialog } from '../../dialogs/ConfirmDialog';
+import { RemoveRepoDialog } from '../../dialogs/RepoActionDialogs';
 import { call } from '../../services/api';
 import { useApp } from '../../state/AppState';
 
-/** Deleting the repository on GitHub — the most destructive action, behind impact review, auth and a typed name. */
-export function DangerZone({ repoId, ctx }: { repoId: string; ctx: GhRepoContext }) {
+type Step = 'idle' | 'github' | 'local';
+
+/**
+ * Removing a repository, layer by layer: from Git Baba (always), the local folder (to the Recycle Bin /
+ * Trash — recoverable) and the repository on GitHub (admins only, behind re-authentication and its typed
+ * name). GitHub goes first; the local part then verifies access exactly like the plain remove.
+ */
+export function DangerZone({ ctx }: { ctx: GhRepoContext | null }) {
   const { activeRepo, selectRepo, toast, bump } = useApp();
-  const [step, setStep] = useState<'idle' | 'delete' | 'after'>('idle');
-  const full = `${ctx.owner}/${ctx.name}`;
+  const repo = activeRepo!;
+  const [folder, setFolder] = useState(false);
+  const [remote, setRemote] = useState(false);
+  const [step, setStep] = useState<Step>('idle');
+  const full = ctx ? `${ctx.owner}/${ctx.name}` : (repo.identity ?? '');
+  const canDeleteRemote = !!ctx?.permissions.canAdmin;
+
+  const start = () => setStep(remote && canDeleteRemote ? 'github' : 'local');
+  const what = ['remove from Git Baba', folder && 'trash the folder', remote && canDeleteRemote && `delete ${full} on GitHub`].filter(Boolean).join(' · ');
 
   return (
-    <div>
-      <div className="danger-card">
-        <div className="grow">
-          <strong>Delete this repository on GitHub</strong>
-          <div className="small muted">
-            Permanently deletes <span className="mono">{full}</span> on GitHub: code, issues, pull requests, wiki, Actions history, secrets, releases and stars. Forks of a public
-            repository are kept and one is promoted. GitHub may allow a short restore window for some repositories.
-          </div>
-        </div>
-        <button className="btn danger solid" onClick={() => setStep('delete')}>
-          Delete repository…
+    <div className="dz">
+      <Layer icon="📌" title="Remove from Git Baba" sub="Sidebar entry and saved credentials" on locked />
+      {repo.exists && <Layer icon="🗑" title="Move the folder to the Recycle Bin" sub={repo.path} mono on={folder} onToggle={() => setFolder((v) => !v)} />}
+      {repo.github && (
+        <Layer
+          icon="☁"
+          title={`Delete ${full || 'the repository'} on GitHub`}
+          sub={canDeleteRemote ? 'Code, issues, PRs, Actions — for everyone' : ctx ? `Needs admin — you are ${ctx.permissions.level.toLowerCase()}` : 'Sign in to check your permission'}
+          on={remote && canDeleteRemote}
+          disabled={!canDeleteRemote}
+          danger
+          onToggle={() => setRemote((v) => !v)}
+        />
+      )}
+
+      <div className="dz-foot">
+        <span className="small muted grow">{what}</span>
+        <button className="btn danger solid" onClick={start}>
+          {remote && canDeleteRemote ? 'Delete…' : 'Remove…'}
         </button>
       </div>
-      <p className="small muted mt">
-        Your local clone at <span className="mono">{activeRepo?.path}</span> is never touched. To only remove it from Git Baba, use General → Remove from Git Baba.
-      </p>
 
-      {step === 'delete' && (
+      {step === 'github' && ctx && (
         <SecureActionDialog
           title={`Delete ${full}`}
           icon="🗑"
           danger
-          confirmLabel="I understand — delete this repository"
-          repoId={repoId}
+          confirmLabel="Delete on GitHub"
+          repoId={repo.id}
           needs="admin access and the “delete_repo” scope (classic) or “Administration: write” (fine-grained)"
           typeToConfirm={full}
-          impact={
-            <>
-              This cannot be undone from Git Baba. Everyone loses access immediately, open pull requests close, and deploy keys and webhooks stop working.
-              {ctx.isPrivate ? ' Private repository: there are no forks to keep a copy.' : ''}
-            </>
-          }
-          onClose={() => setStep((s) => (s === 'delete' ? 'idle' : s))}
+          impact={<>Cannot be undone from Git Baba. Open pull requests close; deploy keys and webhooks stop.{ctx.isPrivate ? ' Private: no forks keep a copy.' : ''}</>}
+          onClose={() => setStep((s) => (s === 'github' ? 'idle' : s))}
           onConfirm={async (auth) => {
-            await call('gh:adminDeleteRepo', { repoId, typedName: full, auth, confirmed: true });
+            await call('gh:adminDeleteRepo', { repoId: repo.id, typedName: full, auth, confirmed: true });
             toast(`${full} deleted on GitHub`);
-            setStep('after');
+            setStep('local');
           }}
         >
-          <div className="checklist">
-            <div className="check-item done">✓ Visibility: {ctx.isPrivate ? 'private' : 'public'}</div>
-            <div className="check-item done">✓ Default branch: {ctx.defaultBranch}</div>
-            <div className="check-item done">✓ Your role: {ctx.permissions.level.toLowerCase()}</div>
+          <div className="pu-chips">
+            <span className="pu-chip">{ctx.isPrivate ? '🔒 private' : '🌐 public'}</span>
+            <span className="pu-chip">⎇ {ctx.defaultBranch}</span>
+            <span className="pu-chip ok">👑 {ctx.permissions.level.toLowerCase()}</span>
           </div>
         </SecureActionDialog>
       )}
-      {step === 'after' && (
-        <ConfirmDialog
-          title="Also remove it from Git Baba?"
-          explanation={<>{full} no longer exists on GitHub. Your local clone still has the full history.</>}
-          impact="Removing it from Git Baba keeps the folder on disk; you can add it again any time."
-          confirmLabel="Remove from Git Baba"
-          onCancel={() => {
+      {step === 'local' && (
+        <RemoveRepoDialog
+          repo={repo}
+          deleteFolder={folder}
+          onClose={() => {
             setStep('idle');
             bump();
           }}
-          onConfirm={async () => {
-            await call('repo:remove', { repoId });
+          onRemoved={(_missing, trashed) => {
+            toast(trashed ? `${repo.name} removed and its folder moved to the Recycle Bin` : `${repo.name} removed from Git Baba`, 'info');
             selectRepo(null);
             bump();
-            setStep('idle');
           }}
         />
       )}
     </div>
+  );
+}
+
+function Layer({ icon, title, sub, on, locked, disabled, danger, mono, onToggle }: { icon: string; title: string; sub: string; on: boolean; locked?: boolean; disabled?: boolean; danger?: boolean; mono?: boolean; onToggle?: () => void }) {
+  return (
+    <button type="button" className={`dz-layer ${on ? 'on' : ''} ${danger ? 'danger' : ''}`} disabled={locked || disabled} onClick={onToggle} aria-pressed={on}>
+      <span className="dz-ico">{icon}</span>
+      <span className="grow" style={{ minWidth: 0 }}>
+        <span className="dz-title">{title}</span>
+        <span className={`dz-sub ellipsis ${mono ? 'mono' : ''}`} title={sub}>
+          {sub}
+        </span>
+      </span>
+      {locked ? <span className="dz-lock">always</span> : <span className="dz-switch" aria-hidden />}
+    </button>
   );
 }

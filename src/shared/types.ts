@@ -36,9 +36,23 @@ export interface RepoSettings {
   remoteAuth?: RemoteAuthPreference;
   /** Commit signing default: sign with the configured key, or commit unsigned. Unset: follow git config commit.gpgsign. */
   commitSigning?: CommitSigningPreference;
+  /** Per-action sign-in defaults; each one overrides `remoteAuth` (or the automatic choice) for that action only. */
+  actionAuth?: ActionAuth;
 }
 
 export type RemoteAuthPreference = 'ssh' | 'pat' | 'system';
+/** How GitHub API actions (pull request merge, running workflows) authenticate by default. */
+export type ApiAuthPreference = 'session' | 'pat' | 'github-app';
+export interface ActionAuth {
+  push?: RemoteAuthPreference;
+  pull?: RemoteAuthPreference;
+  /** Merging branches locally (and publishing the result). */
+  merge?: RemoteAuthPreference;
+  /** Merging a pull request on GitHub. */
+  prMerge?: ApiAuthPreference;
+  /** Running a workflow (deployments) on GitHub Actions. */
+  deploy?: ApiAuthPreference;
+}
 export type CommitSigningPreference = 'signed' | 'unsigned';
 
 export type OperationStatus = 'SUCCESS' | 'WARNING' | 'CANCELLED' | 'FAILED';

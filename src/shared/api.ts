@@ -11,6 +11,7 @@ import type {
   WorktreeSyncResult,
   NotificationPrefs,
   RemoteAuthPreference,
+  ActionAuth,
   RepoAccessOverview,
   RemoteChangeCheck,
   AuthInput,
@@ -155,7 +156,9 @@ import type {
 type R = { repoId: string };
 
 /** `null` clears an optional setting. */
-export type RepoSettingsPatch = Partial<Omit<RepoSettings, 'githubApp' | 'apiBaseUrl' | 'sshKeyPath' | 'remoteAuth' | 'commitSigning'>> & {
+export type RepoSettingsPatch = Partial<Omit<RepoSettings, 'githubApp' | 'apiBaseUrl' | 'sshKeyPath' | 'remoteAuth' | 'commitSigning' | 'actionAuth'>> & {
+  /** Per action; null returns that action to automatic. Actions left out keep their value. */
+  actionAuth?: { [K in keyof ActionAuth]?: ActionAuth[K] | null };
   /** null returns to automatic (detected) behaviour. */
   remoteAuth?: RemoteAuthPreference | null;
   commitSigning?: CommitSigningPreference | null;
@@ -183,7 +186,7 @@ export interface ApiMap {
   'repo:summary': { req: R; res: RepoSummary };
   'repo:addExisting': { req: { selectionId: string }; res: RepoSummary };
   'repo:create': { req: { selectionId: string; folderName?: string; initialBranch: string }; res: RepoSummary };
-  'repo:remove': { req: R & { auth?: AuthInput }; res: { remoteMissing: boolean } };
+  'repo:remove': { req: R & { auth?: AuthInput; deleteFolder?: boolean }; res: { remoteMissing: boolean; folderDeleted?: boolean } };
   'repo:setFavorite': { req: R & { favorite: boolean }; res: RepoSummary };
   'repo:duplicate': { req: R & { name: string }; res: RepoSummary };
   'repo:contributors': { req: R; res: RepoContributor[] };

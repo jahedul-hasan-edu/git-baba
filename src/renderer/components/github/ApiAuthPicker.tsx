@@ -16,6 +16,8 @@ interface Props {
   onChange: (auth: ApiAuthInput | null, summary: string) => void;
   /** Methods to offer (default: all three). Account-wide operations cannot use a GitHub App. */
   methods?: Method[];
+  /** Preselect what Security & access chose for this action. */
+  action?: 'prMerge' | 'deploy';
 }
 
 function mask(v: string): string {
@@ -27,7 +29,7 @@ function mask(v: string): string {
  * re-confirm the signed-in account with its token, a personal access token, or a GitHub App.
  * Secrets stay in this component's state and are sent only with the operation.
  */
-export function ApiAuthPicker({ repoId, purpose, needs, onChange, methods }: Props) {
+export function ApiAuthPicker({ repoId, purpose, needs, onChange, methods, action }: Props) {
   const { activeAccount, accounts, repos } = useApp();
   const repo = repos.find((r) => r.id === repoId);
   const account = accounts?.accounts.find((a) => a.id === activeAccount?.id) ?? null;
@@ -41,7 +43,9 @@ export function ApiAuthPicker({ repoId, purpose, needs, onChange, methods }: Pro
   const [keyMode, setKeyMode] = useState<'file' | 'paste' | 'saved'>(savedKey ? 'saved' : 'file');
   // Preselect what Security & access configured: the linked GitHub App with its saved key, else the signed-in account.
   const appPreset = !!repo?.settings.githubApp && savedKey && (!methods || methods.includes('github-app'));
-  const [method, setMethod] = useState<Method>(appPreset ? 'github-app' : account ? 'session' : 'pat');
+  const pref = action ? repo?.settings.actionAuth?.[action] : undefined;
+  const prefOk = !!pref && (!methods || methods.includes(pref)) && (pref !== 'session' || !!account) && (pref !== 'github-app' || !!repo?.settings.githubApp);
+  const [method, setMethod] = useState<Method>(prefOk ? pref! : appPreset ? 'github-app' : account ? 'session' : 'pat');
   const [keyInfo, setKeyInfo] = useState<KeyHandleInfo | null>(null);
   const [pem, setPem] = useState('');
   const keyRef = useRef<string | null>(null);

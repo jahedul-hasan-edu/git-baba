@@ -132,7 +132,7 @@ export function PushDialog({ repoId, onClose, onDone, onRequestPull }: Props) {
       size="wide"
       footer={
         <>
-          <span className={`pu-foot-auth grow ${auth.input ? 'ok' : ''}`}>{auth.input ? <>✓ {auth.summary}</> : 'Pick how to sign in'}</span>
+          <span className="grow" />
           <button className="btn cancel" onClick={onClose} disabled={busy}>
             Cancel
           </button>

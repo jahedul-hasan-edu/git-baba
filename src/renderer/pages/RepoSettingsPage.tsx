@@ -13,7 +13,7 @@ import { REMOTE_LABEL, SIGN_LABEL, SOURCE_TEXT } from './repoSettings/RepoAccess
  * Credentials, the GitHub App and signing are chosen under Security & access.
  */
 export function RepoSettingsPage({ onManageAccess }: { onManageAccess?: () => void }) {
-  const { activeRepo, revision, bump, showError, toast, selectRepo } = useApp();
+  const { activeRepo, revision, bump, showError, toast } = useApp();
   const repo = activeRepo!;
   const repoId = repo.id;
   const identity = useAsync(() => (repo.exists ? call('git:identity', { repoId }) : Promise.resolve(null)), [repoId, revision]);
@@ -23,7 +23,7 @@ export function RepoSettingsPage({ onManageAccess }: { onManageAccess?: () => vo
   const [remoteUrl, setRemoteUrl] = useState('');
   const [editing, setEditing] = useState(false);
   const [pendingRemote, setPendingRemote] = useState<{ name: string; url: string } | null>(null);
-  const [confirm, setConfirm] = useState<'remove-repo' | { remote: string } | null>(null);
+  const [confirm, setConfirm] = useState<{ remote: string } | null>(null);
 
   const copy = (text: string, what: string) =>
     call('app:copyText', { text })
@@ -51,7 +51,7 @@ export function RepoSettingsPage({ onManageAccess }: { onManageAccess?: () => vo
               </div>
             </div>
             <div className="gen-facts">
-              <Fact k="GitHub account" v={repo.account?.login ?? 'Not linked to an account'} hint={repo.settings.accountId ? 'chosen' : repo.account ? 'detected from the remote' : undefined} />
+              <Fact k="Account" v={repo.account?.login ?? 'Not linked'} />
               <Fact k="Repository" v={repo.identity ?? 'Local only'} />
               <Fact k="Folder" v={repo.path} mono onClick={() => void copy(repo.path, 'Folder path')} />
             </div>
@@ -60,9 +60,7 @@ export function RepoSettingsPage({ onManageAccess }: { onManageAccess?: () => vo
             <div className="banner warn small">
               <span className="icon">⚠</span>
               <div>
-                Git has no {!id?.name && 'user.name'}
-                {!id?.name && !id?.email && ' or '}
-                {!id?.email && 'user.email'} for this repository. Set it with <code>git config user.name / user.email</code>, or commit as your GitHub account from the commit dialog.
+                No Git identity yet — you can set it the first time you commit.
               </div>
             </div>
           )}
@@ -145,14 +143,14 @@ export function RepoSettingsPage({ onManageAccess }: { onManageAccess?: () => vo
                   </button>
                 </div>
               ))}
-              {remotes.data?.length === 0 && <div className="empty small">No remotes yet. Add one to push and pull.</div>}
+              {remotes.data?.length === 0 && <div className="empty small">No remotes yet.</div>}
             </div>
             {editing && (
               <div className="gen-remote-edit">
                 <input style={{ width: 130 }} value={remoteName} onChange={(e) => setRemoteName(e.target.value)} placeholder="origin" spellCheck={false} />
-                <input className="grow" value={remoteUrl} onChange={(e) => setRemoteUrl(e.target.value)} placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git" spellCheck={false} autoFocus />
+                <input className="grow" value={remoteUrl} onChange={(e) => setRemoteUrl(e.target.value)} placeholder="https://… or git@…" spellCheck={false} autoFocus />
                 <button className="btn primary" disabled={!remoteName.trim() || !remoteUrl.trim()} onClick={() => setPendingRemote({ name: remoteName.trim(), url: remoteUrl.trim() })}>
-                  {(remotes.data ?? []).some((r) => r.name === remoteName.trim()) ? `Check & change ${remoteName.trim()}` : 'Check & add'}
+                  {(remotes.data ?? []).some((r) => r.name === remoteName.trim()) ? 'Check & change' : 'Check & add'}
                 </button>
                 <button className="btn cancel" onClick={() => setEditing(false)}>
                   Cancel
@@ -162,16 +160,6 @@ export function RepoSettingsPage({ onManageAccess }: { onManageAccess?: () => vo
           </div>
         </>
       )}
-
-      <div className="gen-remove">
-        <div className="grow">
-          <strong>Remove from Git Baba</strong>
-          <div className="small muted">Takes {repo.name} off the sidebar and deletes credentials saved for it. Your files and history stay on disk.</div>
-        </div>
-        <button className="btn danger" onClick={() => setConfirm('remove-repo')}>
-          Remove…
-        </button>
-      </div>
 
       {pendingRemote && (
         <RemoteChangeDialog
@@ -187,39 +175,15 @@ export function RepoSettingsPage({ onManageAccess }: { onManageAccess?: () => vo
           }}
         />
       )}
-      {confirm === 'remove-repo' && (
-        <ConfirmDialog
-          title="Remove Repository from App"
-          explanation={
-            <>
-              Removes <strong>{repo.name}</strong> from the sidebar and deletes any credentials saved for it.
-            </>
-          }
-          impact={<>Your files, commits and the .git folder at {repo.path} are not changed.</>}
-          confirmLabel="Remove from app"
-          onCancel={() => setConfirm(null)}
-          onConfirm={async () => {
-            try {
-              await call('repo:remove', { repoId });
-              selectRepo(null);
-              toast(`${repo.name} removed from the app`, 'info');
-            } catch (err) {
-              showError(err);
-            }
-            setConfirm(null);
-            bump();
-          }}
-        />
-      )}
-      {confirm && typeof confirm === 'object' && (
+      {confirm && (
         <ConfirmDialog
           title="Remove Remote"
           explanation={
             <>
-              Removes the remote <strong>{confirm.remote}</strong> and its remote-tracking branches from this repository's configuration.
+              Stops using <strong>{confirm.remote}</strong> here. Nothing on the server is deleted.
             </>
           }
-          impact="You will not be able to fetch from or push to it until it is added again. Nothing on the server is deleted."
+          impact="You can add it again any time."
           confirmLabel="Remove remote"
           onCancel={() => setConfirm(null)}
           onConfirm={async () => {

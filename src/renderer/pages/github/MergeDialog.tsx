@@ -71,7 +71,11 @@ export function MergeDialog({ repoId, number, onClose, onMerged }: Props) {
       }
       // Use what Security & access already configured: a linked GitHub App with its saved key merges without asking.
       const appOk = r.authOptions.some((o) => o.id === 'github-app' && o.available);
-      if (r.githubApp && appOk && savedKey) {
+      const pref = repo?.settings.actionAuth?.prMerge;
+      if (pref === 'github-app' && appOk) {
+        setAuth('github-app');
+        setKeyMode(savedKey ? 'saved' : 'file');
+      } else if (pref !== 'session' && r.githubApp && appOk && savedKey) {
         setAuth('github-app');
         setKeyMode('saved');
       }

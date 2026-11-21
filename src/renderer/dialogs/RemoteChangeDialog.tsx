@@ -86,7 +86,7 @@ export function RemoteChangeDialog({ repoId, name, url, onClose, onSaved }: { re
         </div>
       </div>
 
-      {!check && !error && <Spinner label="Checking the URL and asking the remote (read-only)…" />}
+      {!check && !error && <Spinner label="Checking…" />}
       {check && (
         <ul className="check-list">
           {check.checks.map((c, i) => (
@@ -94,13 +94,13 @@ export function RemoteChangeDialog({ repoId, name, url, onClose, onSaved }: { re
               <span className="check-ico">{LEVEL_ICON[c.level]}</span>
               <div>
                 <strong>{c.title}</strong>
-                <div className="small muted">{c.detail}</div>
+                {c.level !== 'ok' && <div className="small muted">{c.detail}</div>}
               </div>
             </li>
           ))}
         </ul>
       )}
-      {check?.ok && <p className="small muted">Only this repository’s Git configuration changes. Nothing is sent to the remote.</p>}
+
     </Modal>
   );
 }

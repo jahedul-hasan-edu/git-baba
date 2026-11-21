@@ -18,6 +18,7 @@ import type {
   RemoteChangeCheck,
   RepoRecord,
   RepoSettings,
+  ActionAuth,
   RepoSummary,
   SavedSshKey,
   SecurityStatus,
@@ -540,10 +541,22 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
           }
         }
       }
+      const deleteFolder = p.deleteFolder === undefined ? false : asBoolean(p.deleteFolder, 'deleteFolder');
       ctx.secrets.forget(repo.id);
       ctx.repos.remove(repo.id);
-      ctx.recordOperation(null, 'Remove repository', 'SUCCESS', `${repo.name} removed from the app (files untouched)${remoteMissing ? ' — its remote no longer exists' : ''}`);
-      return { remoteMissing };
+      // The folder goes to the Recycle Bin / Trash (recoverable), never a permanent delete.
+      let folderDeleted = false;
+      if (deleteFolder && fs.existsSync(repo.path)) {
+        try {
+          await shell.trashItem(repo.path);
+          folderDeleted = true;
+        } catch (err) {
+          ctx.recordOperation(null, 'Remove repository', 'WARNING', `${repo.name} removed from the app, but its folder could not be moved to the trash: ${String((err as Error)?.message ?? err)}`);
+          return { remoteMissing, folderDeleted };
+        }
+      }
+      ctx.recordOperation(null, 'Remove repository', 'SUCCESS', `${repo.name} removed from the app${folderDeleted ? ' and its folder moved to the trash' : ' (files untouched)'}${remoteMissing ? ' — its remote no longer exists' : ''}`);
+      return { remoteMissing, folderDeleted };
     },
 
     'repo:setFavorite': async (payload) => {
@@ -590,6 +603,15 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       }
       if (s.remoteAuth !== undefined) patch.remoteAuth = s.remoteAuth === null ? undefined : asEnum(s.remoteAuth, 'remote authentication', ['ssh', 'pat', 'system'] as const);
       if (s.commitSigning !== undefined) patch.commitSigning = s.commitSigning === null ? undefined : asEnum(s.commitSigning, 'commit signing', ['signed', 'unsigned'] as const);
+      if (s.actionAuth !== undefined) {
+        const a = asObject(s.actionAuth, 'actionAuth');
+        const next: ActionAuth = { ...(repo.settings.actionAuth ?? {}) };
+        const git = ['ssh', 'pat', 'system'] as const;
+        const api = ['session', 'pat', 'github-app'] as const;
+        for (const k of ['push', 'pull', 'merge'] as const) if (a[k] !== undefined) next[k] = a[k] === null ? undefined : asEnum(a[k], `${k} sign-in`, git);
+        for (const k of ['prMerge', 'deploy'] as const) if (a[k] !== undefined) next[k] = a[k] === null ? undefined : asEnum(a[k], `${k} sign-in`, api);
+        patch.actionAuth = Object.values(next).some((v) => v !== undefined) ? next : undefined;
+      }
       if (s.apiBaseUrl !== undefined) patch.apiBaseUrl = s.apiBaseUrl ? validateApiBaseUrl(asLine(s.apiBaseUrl, 'API URL', { max: 300 })) : undefined;
       if (s.githubApp !== undefined) {
         if (s.githubApp === null) patch.githubApp = undefined;
@@ -804,7 +826,8 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       const name = asRemoteName(p.name);
       const url = asLine(p.url, 'Remote URL', { max: 2048 }).trim();
       const probe = p.probe !== false;
-      const existing = (await git.remotes()).find((r) => r.name === name) ?? null;
+      const all = await git.remotes();
+      const existing = all.find((r) => r.name === name) ?? null;
       const before = existing ? parseRemoteUrl(existing.pushUrl) : null;
       const after = parseRemoteUrl(url);
       const view = (u: string, x: ReturnType<typeof parseRemoteUrl>) => ({ url: redactSecrets(u), protocol: x.protocol, host: x.host ?? null, owner: x.owner ?? null, repo: x.repo ?? null });
@@ -818,8 +841,14 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
         before.owner.toLowerCase() === (after.owner ?? '').toLowerCase() &&
         before.repo.toLowerCase() === (after.repo ?? '').toLowerCase() &&
         (before.host ?? '') === (after.host ?? '');
+      // The same repository on the same provider (any protocol) already configured under another name.
+      const key = (x: ReturnType<typeof parseRemoteUrl>) => (x.owner && x.repo ? `${(x.host ?? '').toLowerCase()}/${x.owner.toLowerCase()}/${x.repo.toLowerCase().replace(/\.git$/, '')}` : null);
+      const target = key(after);
+      const twin = target ? all.find((r) => r.name !== name && key(parseRemoteUrl(r.pushUrl)) === target) ?? null : null;
+      const sameAsNow = !!before && !!target && key(before) === target && before.protocol === after.protocol;
       if (!valid.ok) checks.push({ level: 'error', title: 'This URL cannot be used', detail: valid.reason });
-      else if (unchanged) checks.push({ level: 'info', title: 'Nothing changes', detail: `${name} already points to this URL.` });
+      else if (unchanged || sameAsNow) checks.push({ level: 'info', title: 'Nothing changes', detail: `${name} already points to this repository.` });
+      else if (twin) checks.push({ level: 'error', title: `Already added as ${twin.name}`, detail: `${after.owner}/${after.repo} on ${after.host ?? 'this provider'} is already the remote ${twin.name}. Use it, or remove it first.` });
       else {
         checks.push({ level: 'ok', title: 'Valid remote URL', detail: `${after.protocol.toUpperCase()}${after.host ? ` · ${after.host}` : ''}${after.owner ? ` · ${after.owner}/${after.repo}` : ''}` });
         if (before && sameRepo && before.protocol !== after.protocol) {
@@ -859,7 +888,7 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       }
       let reachable: RemoteChangeCheck['reachable'] = 'skipped';
       let remoteHead: RemoteChangeCheck['remoteHead'] = null;
-      if (valid.ok && !unchanged && probe) {
+      if (valid.ok && !unchanged && !sameAsNow && !twin && probe) {
         const r = await git.probeRemote(url);
         if (r.ok) {
           reachable = 'yes';
@@ -880,8 +909,8 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       }
       return {
         name,
-        ok: valid.ok && !unchanged,
-        unchanged,
+        ok: valid.ok && !unchanged && !sameAsNow && !twin,
+        unchanged: unchanged || sameAsNow,
         isNew: !existing,
         from: existing && before ? view(existing.pushUrl, before) : null,
         to: { ...view(url, after), isGitHub: after.isGitHub },

@@ -6,6 +6,7 @@ import { ErrorPanel } from '../../components/ErrorPanel';
 import { Skeleton } from '../../components/github/common';
 import { useAsync } from '../../hooks/useAsync';
 import { RepoAppLink } from './RepoAppLink';
+import { ActionMatrix } from './ActionMatrix';
 import { call } from '../../services/api';
 import { useApp } from '../../state/AppState';
 
@@ -40,6 +41,7 @@ export function RepoAccess({ appsAvailable }: { appsAvailable: boolean }) {
   const overview = useAsync(() => call('repo:accessOverview', { repoId: repo.id }), [repo.id, revision]);
   const [saving, setSaving] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
 
   const update = async (key: string, settings: RepoSettingsPatch, msg: string) => {
     setSaving(key);
@@ -63,12 +65,80 @@ export function RepoAccess({ appsAvailable }: { appsAvailable: boolean }) {
 
   return (
     <div className="access">
+      {/* ---------------- per action ---------------- */}
+      <section className="access-section">
+        <ActionMatrix o={o} />
+      </section>
+
+      {/* ---------------- GitHub App ---------------- */}
+      <section className="access-section">
+        <header className="access-head">
+          <div>
+            <h3>GitHub App</h3>
+            <p className="small muted">Short-lived tokens, revoked after each use.</p>
+          </div>
+          <Toggle
+            on={!!app}
+            disabled={!repo.github || saving === 'app'}
+            label={app ? 'Linked' : 'Not linked'}
+            onChange={(next) => {
+              if (!next) void update('app', { githubApp: null }, 'GitHub App unlinked');
+              else if (appsAvailable) setShowApps(true);
+              else requestAppSetup(repo.id);
+            }}
+          />
+        </header>
+        {app ? (
+          <div className="access-app on">
+            <span className="app-logo">🤖</span>
+            <div className="grow">
+              <strong>App {app.appId}</strong> · {app.owner}/{app.repo}
+              {app.installationId && <span className="muted"> · installation {app.installationId}</span>}
+              <div className="small muted">
+                {app.registryId ? 'Linked from your account’s App registry' : 'Set up for this repository'}
+                {o.detected.githubAppKeySaved && ' · key saved (encrypted)'}
+              </div>
+            </div>
+            <span className="badge ok">preselected</span>
+          </div>
+        ) : (
+          <div className="access-app">
+            <span className="app-logo muted">🤖</span>
+            <div className="grow small muted">
+              {repo.github ? 'Not linked' : 'GitHub repositories only'}
+            </div>
+            {repo.github && (
+              <>
+                {appsAvailable && (
+                  <button className="btn sm primary" onClick={() => setShowApps((v) => !v)}>
+                    {showApps ? 'Hide your Apps' : 'Choose from your Apps'}
+                  </button>
+                )}
+                <button className="btn sm" onClick={() => requestAppSetup(repo.id)}>
+                  Link by App ID…
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {appsAvailable && (showApps || !!app?.registryId) && (
+          <div className="mt">
+            <RepoAppLink repoId={repo.id} />
+          </div>
+        )}
+      </section>
+
+
+      <button className={`rc-more access-more ${showSetup ? 'on' : ''}`} onClick={() => setShowSetup((v) => !v)} aria-expanded={showSetup}>
+        What’s set up on this computer <span className="rc-caret">▾</span>
+      </button>
+      {showSetup && (
+      <>
       {/* ---------------- push, pull & merge ---------------- */}
       <section className="access-section">
         <header className="access-head">
           <div>
-            <h3>Push, pull &amp; merge</h3>
-            <p className="small muted">The credential these dialogs preselect. You can still pick another one in the dialog.</p>
+            <h3>Default for all remote actions</h3>
           </div>
           <AutoChip
             on={!repo.settings.remoteAuth}
@@ -124,70 +194,11 @@ export function RepoAccess({ appsAvailable }: { appsAvailable: boolean }) {
         </div>
       </section>
 
-      {/* ---------------- GitHub App ---------------- */}
-      <section className="access-section">
-        <header className="access-head">
-          <div>
-            <h3>GitHub App</h3>
-            <p className="small muted">A linked App is preselected before every other method: each operation gets a short-lived token that is revoked right after.</p>
-          </div>
-          <Toggle
-            on={!!app}
-            disabled={!repo.github || saving === 'app'}
-            label={app ? 'Linked' : 'Not linked'}
-            onChange={(next) => {
-              if (!next) void update('app', { githubApp: null }, 'GitHub App unlinked');
-              else if (appsAvailable) setShowApps(true);
-              else requestAppSetup(repo.id);
-            }}
-          />
-        </header>
-        {app ? (
-          <div className="access-app on">
-            <span className="app-logo">🤖</span>
-            <div className="grow">
-              <strong>App {app.appId}</strong> · {app.owner}/{app.repo}
-              {app.installationId && <span className="muted"> · installation {app.installationId}</span>}
-              <div className="small muted">
-                {app.registryId ? 'Linked from your account’s App registry' : 'Set up for this repository'}
-                {o.detected.githubAppKeySaved && ' · key saved (encrypted)'}
-              </div>
-            </div>
-            <span className="badge ok">preselected</span>
-          </div>
-        ) : (
-          <div className="access-app">
-            <span className="app-logo muted">🤖</span>
-            <div className="grow small muted">
-              {repo.github ? 'Not linked. Link an App you already registered — Apps are created on GitHub, not here.' : 'Only available for GitHub repositories.'}
-            </div>
-            {repo.github && (
-              <>
-                {appsAvailable && (
-                  <button className="btn sm primary" onClick={() => setShowApps((v) => !v)}>
-                    {showApps ? 'Hide your Apps' : 'Choose from your Apps'}
-                  </button>
-                )}
-                <button className="btn sm" onClick={() => requestAppSetup(repo.id)}>
-                  Link by App ID…
-                </button>
-              </>
-            )}
-          </div>
-        )}
-        {appsAvailable && (showApps || !!app?.registryId) && (
-          <div className="mt">
-            <RepoAppLink repoId={repo.id} />
-          </div>
-        )}
-      </section>
-
       {/* ---------------- commit signing ---------------- */}
       <section className="access-section">
         <header className="access-head">
           <div>
             <h3>Commit signing</h3>
-            <p className="small muted">What the commit dialog preselects. Keys are set up in Git (user.signingkey), not here.</p>
           </div>
           <AutoChip
             on={!repo.settings.commitSigning}
@@ -225,6 +236,8 @@ export function RepoAccess({ appsAvailable }: { appsAvailable: boolean }) {
           />
         </div>
       </section>
+      </>
+      )}
     </div>
   );
 }
