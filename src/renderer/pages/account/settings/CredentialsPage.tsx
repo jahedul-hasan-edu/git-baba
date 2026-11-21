@@ -39,18 +39,17 @@ export function CredentialsPage() {
       {local.error && <ErrorPanel error={local.error} />}
       <div className="cred-tiles">
         {tiles.map((t) => (
-          <button key={t.id} className={`cred-tile ${focus === t.id ? 'on' : ''} ${t.tone ?? ''}`} onClick={() => setFocus(t.id)}>
+          <button key={t.id} className={`cred-tile ${focus === t.id ? 'on' : ''} ${t.tone ?? ''}`} onClick={() => setFocus(t.id)} title={t.sub || undefined}>
             <span className="cred-ico">{t.icon}</span>
             <span className="cred-val">{t.value}</span>
             <span className="cred-lbl">{t.label}</span>
-            <span className="cred-sub">{t.sub}</span>
           </button>
         ))}
       </div>
       {l && !l.encryptionAvailable && (
         <div className="banner warn small">
           <span className="icon">⚠</span>
-          <div>Secure storage (OS keychain) is unavailable — nothing can be remembered on this computer.</div>
+          <div>No OS keychain — nothing is remembered here.</div>
         </div>
       )}
 
@@ -101,16 +100,11 @@ export function CredentialsPage() {
               ...(l?.repoPats ?? []).map((p) => ({ key: `pat-${p.repo}`, icon: '🎫', title: `Personal access token · ${p.repo}`, sub: `username ${p.username}` })),
               ...(l?.repoAppKeys ?? []).map((p) => ({ key: `app-${p.repo}`, icon: '🧩', title: `GitHub App key · ${p.repo}`, sub: p.appId ? `App ${p.appId}` : 'App key' })),
             ]}
-            hint="Remove them in each repository's Settings → General, or by unticking “Allow saved credentials”."
           />
         )}
         {focus === 'oauth' && (
           <div className="card">
             <h3>Personal access tokens & OAuth apps</h3>
-            <p className="small muted">
-              GitHub does not let applications list or revoke your personal access tokens or OAuth authorisations through its API — a deliberate protection. Review them on github.com, where
-              you can see last use and revoke anything you don’t recognise.
-            </p>
             <div className="handoff-grid">
               {[
                 ['🎫', 'Fine-grained tokens', 'https://github.com/settings/tokens?type=beta'],
@@ -209,10 +203,6 @@ function AppsRegistry({ onChanged }: { onChanged: () => void }) {
           ＋ Register an App
         </button>
       </div>
-      <p className="small muted">
-        Register an App once with its private key (encrypted in your OS keychain). Then link it from any repository’s Settings → GitHub App — no copying keys around. Install it on more
-        repositories with one click.
-      </p>
       {apps.error && <ErrorPanel error={apps.error} />}
       {apps.data?.length === 0 && (
         <div className="empty small">
@@ -405,13 +395,11 @@ function RegisterAppDialog({ onClose, onDone }: { onClose: () => void; onDone: (
         </>
       }
     >
-      <p className="small muted">Git Baba verifies the key with GitHub (signed request to /app), then stores it encrypted with your OS keychain. Only you, on this computer, can use it.</p>
       <div className={`field ${appId && !/^\d+$/.test(appId) ? 'invalid' : ''}`}>
         <label>
           App ID <span className="req">*</span>
         </label>
         <input value={appId} onChange={(e) => setAppId(e.target.value.trim())} placeholder="123456" spellCheck={false} />
-        <div className="hint">On GitHub: Settings → Developer settings → GitHub Apps → your App → “App ID”.</div>
       </div>
       <div className="segmented mb">
         <button className={mode === 'file' ? 'on' : ''} onClick={() => setMode('file')}>

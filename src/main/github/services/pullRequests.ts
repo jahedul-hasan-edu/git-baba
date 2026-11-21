@@ -743,8 +743,9 @@ export async function prCounts(c: GitHubClient, r: RepoCoords): Promise<{ open: 
     { o: r.owner, n: r.name },
     'count pull requests',
   );
-  const x = d.repository;
-  return x ? { open: x.open.totalCount, closed: x.closed.totalCount, merged: x.merged.totalCount } : null;
+  // Parts hidden from this token come back as null (partial data): treat that as "cannot count", not a crash.
+  const x = d.repository as { open: { totalCount: number } | null; closed: { totalCount: number } | null; merged: { totalCount: number } | null } | null;
+  return x?.open && x.closed && x.merged ? { open: x.open.totalCount, closed: x.closed.totalCount, merged: x.merged.totalCount } : null;
 }
 
 /** Does a pull request match the simple qualifiers of a query? (Used when search is unavailable.) */

@@ -6139,3 +6139,47 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .sp-row.on .sp-box, .sp-all.on .sp-box, .sp-all.some .sp-box { border-color: transparent; background: linear-gradient(135deg, var(--brand-a), var(--brand-b)); }
 .sp-row.on .sp-box::after, .sp-all.on .sp-box::after { content: ''; position: absolute; left: 4.5px; top: 1.5px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .sp-all.some .sp-box::after { content: ''; position: absolute; left: 3px; right: 3px; top: 6px; height: 2px; background: #fff; border-radius: 1px; }
+
+/* ---- Manage accounts: one-row identity, compact repository cards ---- */
+.acct-hero.ach { gap: 12px; padding: 10px 14px; border-radius: 12px; }
+.ach-id { display: flex; flex-direction: column; min-width: 0; }
+.ach-id strong { font-size: 16px; }
+.ach-sub { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); }
+.ach-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+.ach-dot.ok { background: var(--ok); }
+.ach-dot.info { background: var(--accent); }
+.ach-dot.warn { background: var(--warn); }
+.ach-stats { display: flex; gap: 14px; margin-left: 10px; font-size: 12px; color: var(--text-3); }
+.ach-stats strong { color: var(--text); font-size: 14px; margin-right: 3px; }
+.ach-ext, .arx-ext { flex: none; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 8px; background: none; color: var(--text-2); cursor: pointer; font: inherit; transition: color .15s, border-color .15s; }
+.ach-ext:hover, .arx-ext:hover { color: var(--accent); border-color: var(--accent); }
+.settings-nav-label { font-size: 13px; }
+
+.arx { display: flex; flex-direction: column; gap: 12px; }
+.arx-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.arx-search { flex: 1 1 260px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text-3); }
+.arx-search input { flex: 1; min-width: 0; border: 0 !important; background: transparent !important; box-shadow: none !important; outline: none; padding: 7px 0; font-size: 13px; }
+.arx-sum { flex: none; font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--bg-3); color: var(--text-2); }
+.arx-pills { display: inline-flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--bg-3); }
+.arx-pills button { font: inherit; font-size: 12px; padding: 4px 10px; border: 0; border-radius: 6px; background: none; color: var(--text-2); cursor: pointer; }
+.arx-pills button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.arx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 8px; }
+.arx-card { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); cursor: pointer; outline: none; transition: border-color .15s, background .15s, transform .15s; }
+.arx-card:hover, .arx-card:focus-visible { border-color: var(--border-2); background: var(--bg-2); transform: translateY(-1px); }
+.arx-card.here { border-left: 3px solid var(--ok); }
+.arx-card.archived { opacity: .6; }
+.arx-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.arx-name { flex: 1; min-width: 0; font-size: 13px; }
+.arx-lock { font-size: 11px; }
+.arx-tag { font-size: 10.5px; padding: 0 6px; border-radius: 999px; background: var(--bg-3); color: var(--text-3); }
+.arx-ext { width: 24px; height: 24px; font-size: 12px; opacity: 0; }
+.arx-card:hover .arx-ext, .arx-card:focus-within .arx-ext { opacity: 1; }
+.arx-desc { font-size: 12px; color: var(--text-3); }
+.arx-meta { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--text-3); }
+.arx-meta .lang-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: 0; }
+.arx-act { position: absolute; right: 10px; bottom: 8px; font-size: 11.5px; padding: 2px 9px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 16%, var(--bg-2)); color: var(--text); opacity: 0; transition: opacity .15s; }
+.arx-act.open { background: color-mix(in srgb, var(--ok) 18%, var(--bg-2)); }
+.arx-card:hover .arx-act, .arx-card:focus-visible .arx-act { opacity: 1; }
+.arx-card:hover .arx-meta > span:last-child { visibility: hidden; }
+.arx-more { align-self: center; font: inherit; font-size: 12.5px; padding: 6px 16px; border: 1px dashed var(--border-2); border-radius: 999px; background: none; color: var(--text-2); cursor: pointer; }
+.arx-more:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }

@@ -379,13 +379,13 @@ export function createGitHubHandlers(ctx: AppContext): HandlerMap {
         res = await prs.listFromRepository(client, r, raw, null).catch(() => res);
       }
       // GraphQL refused pull requests altogether (search and the repository's list): REST may still be allowed.
-      if (!query.after && counts === null && (!res || res.items.length === 0)) {
+      if (!query.after && (!res || (counts === null && res.items.length === 0))) {
         const viaRest = await prs.listFromRest(client, r, raw).catch(() => null);
         if (viaRest) return { ...viaRest, counts: null, notice: `GitHub refuses ${login}'s token GraphQL access to pull requests, so this list comes from the REST API: reviews and checks are not shown. Grant "Pull requests: Read" to the token (or sign in again) for the full view.` };
       }
       // The token cannot see the repository at all: use the user's own GitHub CLI login if it is available.
       let ghProblem: string | null = null;
-      if (!query.after && counts === null && (!res || res.items.length === 0)) {
+      if (!query.after && (!res || (counts === null && res.items.length === 0))) {
         const apiHost = new URL(apiBase).host;
         const host = apiHost === 'api.github.com' ? 'github.com' : apiHost;
         try {
