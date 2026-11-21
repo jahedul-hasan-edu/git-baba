@@ -874,3 +874,46 @@ export function fromGhJson(rows: Json[]): PrListItem[] {
 }
 
 export const GH_LIST_FIELDS = 'id,number,title,state,isDraft,author,assignees,labels,milestone,createdAt,updatedAt,comments,changedFiles,reviewDecision,statusCheckRollup,mergeable,mergeStateStatus,baseRefName,headRefName,reviewRequests,latestReviews';
+
+/**
+ * Lists over the REST API (GET /repos/{o}/{n}/pulls). Used when GraphQL is refused for pull requests but REST is
+ * allowed — the case of tokens whose permissions differ between the two (some fine-grained or app tokens). Fewer
+ * details than GraphQL (no review or check summary), but the list and its filters work.
+ */
+export async function listFromRest(c: GitHubClient, r: RepoCoords, raw: string): Promise<PrListResult> {
+  const st = stateOf(raw);
+  const sort = getQualifier(raw, 'sort') ?? 'created-desc';
+  const rows = await c.get<Json[]>(`/repos/${encodeURIComponent(r.owner)}/${encodeURIComponent(r.name)}/pulls`, {
+    query: { state: st === 'open' ? 'open' : st === 'all' ? 'all' : 'closed', per_page: 100, sort: sort.startsWith('updated') ? 'updated' : 'created', direction: sort.endsWith('asc') ? 'asc' : 'desc' },
+    action: 'load pull requests',
+  });
+  const all: PrListItem[] = (Array.isArray(rows) ? rows : [])
+    .map((p: Json): PrListItem => ({
+      id: String(p.node_id ?? p.id),
+      number: p.number,
+      title: p.title ?? '',
+      state: p.merged_at ? 'MERGED' : p.state === 'open' ? 'OPEN' : 'CLOSED',
+      isDraft: !!p.draft,
+      author: p.user ? { login: p.user.login, avatarUrl: p.user.avatar_url } : null,
+      authorIsBot: p.user?.type === 'Bot',
+      assignees: (p.assignees ?? []).map((u: Json) => ({ login: u.login, avatarUrl: u.avatar_url })),
+      reviewers: (p.requested_reviewers ?? []).map((u: Json) => ({ login: u.login, state: 'REQUESTED' })),
+      labels: (p.labels ?? []).map((l: Json) => ({ name: l.name, color: l.color ?? '888888', description: l.description ?? null })),
+      milestone: p.milestone?.title ?? null,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+      comments: 0,
+      commits: 0,
+      changedFiles: 0,
+      reviewDecision: null,
+      checks: null,
+      mergeable: 'UNKNOWN',
+      mergeStateStatus: 'UNKNOWN',
+      baseRefName: p.base?.ref ?? '',
+      headRefName: p.head?.ref ?? '',
+    }))
+    // "closed" over REST also includes merged ones: keep the state the query asked for.
+    .filter((p) => st === 'all' || p.state === st.toUpperCase());
+  const items = all.filter((p) => matchesQuery(p, raw));
+  return { items, total: items.length, endCursor: null, hasNextPage: false, source: 'rest', notice: null, query: raw };
+}

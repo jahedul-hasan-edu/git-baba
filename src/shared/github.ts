@@ -51,6 +51,20 @@ export interface GhRepoContext {
   via?: 'token' | 'gh';
 }
 
+/** What the account behind a repository may do with it on GitHub (probed when the repository opens). */
+export interface RepoAccess {
+  login: string;
+  /** The account's token, or the user's GitHub CLI login. */
+  via: 'token' | 'gh';
+  role: 'admin' | 'maintain' | 'write' | 'triage' | 'read' | null;
+  /** The credential can see the repository at all. */
+  visible: boolean;
+  fineGrained: boolean;
+  pulls: { ok: boolean; why?: string };
+  actions: { ok: boolean; why?: string };
+  checkedAt: string;
+}
+
 // ---------------- Sessions ----------------
 
 /** Why the signed-in token may not create pull requests here, and what the GitHub CLI can do instead. */
@@ -100,7 +114,7 @@ export interface PrListQuery {
   source?: PrListSource;
 }
 
-export type PrListSource = 'search' | 'repository' | 'gh';
+export type PrListSource = 'search' | 'repository' | 'rest' | 'gh';
 
 export type CheckState = 'SUCCESS' | 'FAILURE' | 'PENDING' | 'ERROR' | 'EXPECTED' | null;
 

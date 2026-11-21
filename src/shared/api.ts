@@ -519,6 +519,7 @@ export interface ApiMap {
   'gh:browserLoginWait': { req: { loginId: string }; res: { ok: boolean; message: string; login: string | null } };
   'gh:browserLoginCancel': { req: { loginId: string }; res: void };
   'gh:prAccessDiagnose': { req: R; res: PrAccessDiagnosis };
+  'gh:access': { req: R & { refresh?: boolean }; res: import('./github').RepoAccess };
   'gh:prEdit': { req: R & { number: number; title?: string; body?: string; base?: string }; res: void };
   'gh:prState': { req: R & { number: number; state: 'open' | 'closed'; confirmed: true }; res: void };
   'gh:prComment': { req: R & { number: number; body: string }; res: void };

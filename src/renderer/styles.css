@@ -6105,3 +6105,20 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .skg-row { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 4px; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); opacity: 0; animation: sk-in 0.35s ease-out forwards; }
 .skg-row .skb.h { max-width: 50%; }
 @media (prefers-reduced-motion: reduce) { .sk-wrap *, .sk-wrap { animation: none !important; opacity: 1 !important; stroke-dashoffset: 0 !important; } }
+
+/* Repository tabs: features this account may not use here are hidden; this note says which and why */
+.acn { position: relative; align-self: center; margin-left: auto; margin-right: 8px; }
+.tabs.dock .acn + .tab-compare { margin-left: 0; }
+.acn-btn { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--text-2); cursor: pointer; transition: background .15s, color .15s; }
+.acn-btn:hover, .acn-btn.on { color: var(--text); background: color-mix(in srgb, var(--warn) 18%, transparent); }
+.acn-pop { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; width: 340px; padding: 10px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--bg-2); box-shadow: 0 12px 32px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 8px; }
+.acn-head { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.acn-role { font-size: 11px; padding: 0 8px; border-radius: 999px; background: var(--bg-3); color: var(--text-2); }
+.acn-row { display: flex; gap: 10px; align-items: flex-start; }
+.acn-row .grow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.acn-ico { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 7px; background: var(--bg-3); color: var(--text-3); }
+.acn-foot { display: flex; align-items: center; gap: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
+
+.acn-state { margin-left: 4px; font-size: 10.5px; font-weight: 500; padding: 0 7px; border-radius: 999px; }
+.acn-state.off { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.acn-state.part { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
