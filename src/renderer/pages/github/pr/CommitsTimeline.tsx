@@ -21,7 +21,7 @@ export function CommitsTimeline({ repoId, pr, onOpen, onChecks }: { repoId: stri
   const { toast, showError } = useApp();
   const commits = useGh(() => call('gh:prCommits', { repoId, number: pr.number }), [repoId, pr.number, pr.headRefOid]);
   if (commits.error) return <ErrorPanel error={commits.error} />;
-  if (!commits.data) return <Skeleton rows={5} />;
+  if (!commits.data) return <Skeleton kind="timeline" rows={5} />;
 
   const groups: [string, PrCommit[]][] = [];
   for (const c of commits.data.commits) {

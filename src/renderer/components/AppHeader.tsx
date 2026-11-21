@@ -2,6 +2,7 @@ import type { Theme } from '../services/theme';
 import { useApp } from '../state/AppState';
 import { AppMenus } from './AppMenus';
 import { NotificationBell } from './NotificationBell';
+import { useSidebarHidden } from '../services/sidebarState';
 
 /** The slot RepoView fills with the open repository's name, branch, Fetch and Push. */
 export const HEADER_REPO_SLOT = 'app-header-repo';
@@ -13,6 +14,10 @@ export function AppHeader() {
   const { view, activeRepo } = useApp();
   // With a repository open, the bell sits with its controls (before the branch menu); otherwise here.
   const repoOpen = view === 'repo' && !!activeRepo;
+  // Welcome screen with the sidebar hidden: nothing would be left in the header, so it steps aside
+  // (the bell moves next to the welcome title).
+  const sidebarHidden = useSidebarHidden();
+  if (!repoOpen && sidebarHidden) return <AppMenus />;
   return (
     <header className="app-header">
       <div className="ah-left">

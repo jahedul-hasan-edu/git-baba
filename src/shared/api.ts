@@ -67,6 +67,7 @@ import type {
   ProviderConnection,
   FileBytes,
   GraphCommit,
+  GraphLabel,
   HistoryQuery,
   VerifiedAccount,
   BranchDeletePreview,
@@ -406,6 +407,7 @@ export interface ApiMap {
 
   // ---- Git History (graph) ----
   'graph:log': { req: R & { query: HistoryQuery }; res: { commits: GraphCommit[]; hasMore: boolean; mainRef: string | null } };
+  'graph:decorate': { req: R & { hashes: string[] }; res: Record<string, GraphLabel> };
   /** Commits and combined diff a branch adds on top of a base branch (default: the main branch). */
   'git:transplantPreview': { req: R & { source: string; base: string; target: string }; res: TransplantPreview };
   'git:transplant': { req: R & { target: string; commits: string[]; into: 'new-branch' | 'target'; newBranch?: string; expectedTarget: string; returnToCurrent: boolean; confirmed: true }; res: TransplantResult };

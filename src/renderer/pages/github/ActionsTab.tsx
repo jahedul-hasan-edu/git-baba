@@ -115,7 +115,7 @@ function Actions({ repoId, ctx }: { repoId: string; ctx: GhRepoContext }) {
         <div className={`sub-nav-item ${!wf ? 'active' : ''}`} onClick={() => setWf(null)}>
           All workflows
         </div>
-        {workflows.loading && !workflows.data && <Skeleton rows={4} />}
+        {workflows.loading && !workflows.data && <Skeleton kind="nav" rows={4} />}
         {workflows.error && <div className="small text-danger" style={{ padding: 10 }}>{workflows.error.message}</div>}
         {(workflows.data ?? []).map((w) => {
           const s = wfLast(w);
@@ -206,7 +206,7 @@ function Actions({ repoId, ctx }: { repoId: string; ctx: GhRepoContext }) {
         </div>
 
         {runs.error && <ErrorPanel error={runs.error} />}
-        {runs.loading && !runs.data && <Skeleton rows={6} />}
+        {runs.loading && !runs.data && <Skeleton kind="runs" rows={6} label="Loading workflow runs" />}
         {runs.data && rows.length === 0 && <div className="empty">{list.length ? 'No run matches these filters.' : 'No workflow runs yet.'}</div>}
         <div className="run-list">
           {rows.map(({ r, tags: rt, state }) => {

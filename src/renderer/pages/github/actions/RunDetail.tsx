@@ -88,7 +88,7 @@ export function RunDetail({ repoId, runId, canWrite, tags, onBack, onChanged }: 
       </div>
     );
   }
-  if (!r) return <div className="content"><Skeleton rows={6} /></div>;
+  if (!r) return <div className="content"><Skeleton kind="checks" rows={6} label="Loading jobs" /></div>;
 
   const state = runState(r.status, r.conclusion);
   const done = r.status === 'completed';

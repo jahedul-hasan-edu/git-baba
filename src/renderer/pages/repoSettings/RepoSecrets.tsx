@@ -91,7 +91,7 @@ export function RepoSecrets({ repoId, ctx }: { repoId: string; ctx: GhRepoContex
   };
 
   if (overview.error) return <ErrorPanel error={overview.error} />;
-  if (!overview.data) return <Skeleton rows={6} />;
+  if (!overview.data) return <Skeleton kind="secrets" rows={5} label="Reading secrets" />;
 
   const current = list.find((s) => s.key === active) ?? list[0];
   const names = [...defined].sort();

@@ -58,7 +58,7 @@ export function RepoAccess({ appsAvailable }: { appsAvailable: boolean }) {
 
   if (overview.error) return <ErrorPanel error={overview.error} onAction={() => void overview.reload()} available={['retry']} />;
   const o = overview.data;
-  if (!o) return <Skeleton rows={6} />;
+  if (!o) return <Skeleton kind="settings" rows={6} label="Reading your setup" />;
 
   const accountSignedIn = !!repo.account && !!activeAccount && activeAccount.id === repo.account.id && (!!session?.active || activeAccount.remembered);
   const app = repo.settings.githubApp;

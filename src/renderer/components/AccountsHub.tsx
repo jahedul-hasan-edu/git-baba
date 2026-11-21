@@ -11,7 +11,6 @@ import { CloneDialog } from '../dialogs/CloneDialog';
 import { Avatar } from './github/common';
 import { Modal } from './Modal';
 import { ProviderMono } from './ProviderMono';
-import { ProvidersDialog } from './ProvidersDialog';
 
 type Rail = 'all' | ProviderId;
 
@@ -20,15 +19,17 @@ type Rail = 'all' | ProviderId;
  * each card shows how many repositories belong to it and what can be done with it (sign in or out, manage,
  * remove). There is no "current account" to pick here — opening a repository uses its own account.
  */
-export function AccountsHub({ onClose }: { onClose: () => void }) {
-  const { setAccounts, refreshSession, refreshRepos, setView, showError, toast, bump, selectRepo } = useApp();
+export function AccountsHub({ onClose, focus }: { onClose: () => void; /** Open on this provider, ready to add an account there. */ focus?: ProviderId }) {
+  const { accounts, setAccounts, refreshSession, refreshRepos, setView, showError, toast, bump, selectRepo } = useApp();
   const { all, reload, setConnections } = useAllAccounts();
-  const [rail, setRail] = useState<Rail>('all');
-  const [adding, setAdding] = useState<ProviderId | 'pick' | null>(null);
+  const [rail, setRail] = useState<Rail>(focus ?? 'all');
+  const [adding, setAdding] = useState<ProviderId | 'pick' | null>(
+    // GitHub with accounts already: show them (sign-in stays one click away); otherwise open the connect step.
+    focus && ((focus === 'github' && !accounts?.accounts.length) || (focus !== 'github' && providerInfo(focus).connect)) ? focus : null,
+  );
   const [signIn, setSignIn] = useState<AnyAccount | null>(null);
   const [signOut, setSignOut] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
-  const [compare, setCompare] = useState(false);
   // One account's repositories open at a time; Clone opens over this window with the account preselected.
   const [browsing, setBrowsing] = useState<string | null>(null);
   const [cloning, setCloning] = useState<{ from: string; url?: string } | null>(null);
@@ -176,10 +177,7 @@ export function AccountsHub({ onClose }: { onClose: () => void }) {
               <span className="grow ellipsis">{p.name}</span>
             </button>
           ))}
-          <span className="grow" />
-          <button className="acx-rail-link small" onClick={() => setCompare(true)}>
-            Compare providers →
-          </button>
+
         </nav>
 
         <section className="acx-main">
@@ -208,8 +206,8 @@ export function AccountsHub({ onClose }: { onClose: () => void }) {
                     <span className="acx-n">{list.length}</span>
                     <span className="grow" />
                     {(pid === 'github' || p.connect) && list.length > 0 && (
-                      <button className="btn sm ghost" onClick={() => startAdding(pid)}>
-                        ＋ another
+                      <button className="acx-another" onClick={() => startAdding(pid)} title={`Add another ${p.name} account`}>
+                        ＋ Add another
                       </button>
                     )}
                   </div>
@@ -232,7 +230,7 @@ export function AccountsHub({ onClose }: { onClose: () => void }) {
                   {list.length ? (
                     list.map(card)
                   ) : adding === pid && pid !== 'github' ? null : (
-                    <button className="acx-empty" onClick={() => (pid === 'github' || p.connect ? startAdding(pid) : setCompare(true))}>
+                    <button className={`acx-empty ${pid === 'github' || p.connect ? '' : 'static'}`} onClick={() => (pid === 'github' || p.connect ? startAdding(pid) : undefined)}>
                       <ProviderMono id={pid} size={36} />
                       <span>
                         <strong>{pid === 'github' || p.connect ? `Connect ${p.name}` : `${p.name} works without an account`}</strong>
@@ -263,7 +261,6 @@ export function AccountsHub({ onClose }: { onClose: () => void }) {
         />
       )}
       {signOut && <SignOutDialog initial={signOut} onClose={() => setSignOut(null)} />}
-      {compare && <ProvidersDialog onClose={() => setCompare(false)} />}
       {cloning && (
         <CloneDialog
           from={cloning.from}

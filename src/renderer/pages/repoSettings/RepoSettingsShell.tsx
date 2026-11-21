@@ -77,7 +77,7 @@ export function RepoSettingsShell() {
             <div className="settings-nav-group">
               GitHub · {repo.github.owner}/{repo.github.repo}
             </div>
-            {loading && !ctx && <Skeleton rows={3} />}
+            {loading && !ctx && <Skeleton kind="nav" rows={3} />}
             {visible
               .filter((i) => i.needs)
               .map((i) => (

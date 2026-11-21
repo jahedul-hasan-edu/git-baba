@@ -258,7 +258,7 @@ export function Sidebar() {
 
   // The title lives in the header, above the sidebar (the space the account switcher used to take).
   const [sideSlot, setSideSlot] = useState<HTMLElement | null>(null);
-  useLayoutEffect(() => setSideSlot(document.getElementById(HEADER_SIDE_SLOT)), []);
+  useLayoutEffect(() => setSideSlot(document.getElementById(HEADER_SIDE_SLOT)), [hidden, view, activeRepoId]); // the header can unmount (welcome + hidden sidebar)
 
   return (
     <aside className={`sidebar ${hidden ? 'hidden' : ''}`} aria-hidden={hidden} inert={hidden ? true : undefined}>

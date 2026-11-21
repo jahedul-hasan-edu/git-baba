@@ -314,7 +314,7 @@ function AppCard({ app, open, onToggle, onRemove }: { app: RegisteredApp; open: 
           </div>
           <h4>Installations</h4>
           {installs.error && <ErrorPanel error={installs.error} />}
-          {!installs.data && !installs.error && <Skeleton rows={2} />}
+          {!installs.data && !installs.error && <Skeleton kind="list" rows={2} />}
           {installs.data?.length === 0 && <div className="small muted">Not installed anywhere yet.</div>}
           {installs.data?.map((i) => {
             const rs = repos[i.id];
@@ -335,7 +335,7 @@ function AppCard({ app, open, onToggle, onRemove }: { app: RegisteredApp; open: 
                     Configure ↗
                   </button>
                 </div>
-                {rs === 'loading' && <Skeleton rows={1} />}
+                {rs === 'loading' && <Skeleton kind="line" rows={1} />}
                 {Array.isArray(rs) && (
                   <div className="repo-chips">
                     {rs.map((r) => (

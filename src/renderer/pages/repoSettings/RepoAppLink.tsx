@@ -16,7 +16,7 @@ export function RepoAppLink({ repoId }: { repoId: string }) {
   const legacy = activeRepo?.settings.githubApp && !activeRepo.settings.githubApp.registryId ? activeRepo.settings.githubApp : null;
 
   if (status.error) return <ErrorPanel error={status.error} />;
-  if (!status.data) return <Skeleton rows={3} />;
+  if (!status.data) return <Skeleton kind="list" rows={2} />;
   const { linked, apps } = status.data;
   const reload = () => {
     void status.reload();

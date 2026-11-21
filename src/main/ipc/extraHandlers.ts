@@ -55,6 +55,7 @@ export type ExtraChannels =
   | 'clone:cancel'
   | 'clone:removeLeftover'
   | 'graph:log'
+  | 'graph:decorate'
   | 'graph:refs'
   | 'graph:recentTags'
   | 'graph:authors'
@@ -306,8 +307,14 @@ export function createExtraHandlers(
         search: asOptionalString(q.search, 'search', { max: 200 }),
         skip: q.skip === undefined ? 0 : asInt(q.skip, 'skip', 0, 10_000_000),
         limit: q.limit === undefined ? 300 : asInt(q.limit, 'limit', 1, 2000),
+        decorate: q.decorate === undefined ? true : q.decorate === true,
       };
       return graphGit(p).graphLogDecorated(query);
+    },
+    'graph:decorate': async (payload) => {
+      const p = asObject(payload);
+      if (!Array.isArray(p.hashes) || p.hashes.length > 2000) throw new AppError({ code: 'invalid-input', title: 'Invalid Request', message: 'Up to 2000 commits at a time.' });
+      return graphGit(p).graphDecorate(p.hashes.map((h, i) => asHash(h, `commit ${i + 1}`)));
     },
     'graph:branchChanges': async (payload) => {
       const p = asObject(payload);

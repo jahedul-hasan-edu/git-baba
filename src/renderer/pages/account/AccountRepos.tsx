@@ -151,7 +151,7 @@ export function AccountRepos() {
       </div>
 
       {error && <ErrorPanel error={error} />}
-      {loading && list.length === 0 && <Skeleton rows={6} />}
+      {loading && list.length === 0 && <Skeleton kind="cards" rows={6} label="Loading repositories" />}
       {!loading && shown.length === 0 && <div className="empty">No repository matches.</div>}
 
       {view === 'cards' ? (

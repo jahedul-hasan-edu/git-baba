@@ -95,7 +95,7 @@ export function BranchChangesDialog({ repoId, branch, candidates, branchInfo, on
       }
     >
       {error && <ErrorPanel error={error} />}
-      {loading && !data && <Skeleton rows={6} />}
+      {loading && !data && <Skeleton kind="files" rows={6} />}
       {data && (
         <div className={`fade-in ${loading ? 'is-loading' : ''}`}>
           <div className="stat-strip mb">

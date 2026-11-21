@@ -24,6 +24,7 @@ import type {
   CodeLastCommit,
   CodeSearchHit,
   GraphCommit,
+  GraphLabel,
   TagInfo,
   HistoryQuery,
   FileDiff,
@@ -1483,10 +1484,27 @@ export class GitService {
     return { commits: commits.slice(0, limit), hasMore: commits.length > limit };
   }
 
+  /**
+   * Git's commit-graph file makes `--topo-order` incremental: without it git must walk the whole history before
+   * printing the first commit, which is what makes large repositories slow. Written once in the background
+   * (the same file `git gc` / `git maintenance` keep up to date); the first load does not wait for it.
+   */
+  private static graphWrites = new Set<string>();
+  private async ensureCommitGraph(): Promise<void> {
+    const common = path.resolve(this.root, (await this.gitOut(['rev-parse', '--git-common-dir'])).trim());
+    if (GitService.graphWrites.has(common)) return;
+    GitService.graphWrites.add(common);
+    const info = path.join(common, 'objects', 'info');
+    const have = await Promise.all([fs.stat(path.join(info, 'commit-graph')), fs.stat(path.join(info, 'commit-graphs', 'commit-graph-chain'))].map((p) => p.then(() => true, () => false)));
+    if (have.some(Boolean)) return;
+    void this.git(['commit-graph', 'write', '--reachable', '--changed-paths'], { timeoutMs: LONG_LOCAL_TIMEOUT }).catch(() => undefined);
+  }
+
   /** graphLog plus, for every commit, the branch it was made on and whether main already contains it. */
   async graphLogDecorated(q: HistoryQuery): Promise<{ commits: GraphCommit[]; hasMore: boolean; mainRef: string | null }> {
-    const res = await this.graphLog(q);
-    const main = await this.mainRef();
+    void this.ensureCommitGraph().catch(() => undefined);
+    const [res, main] = await Promise.all([this.graphLog(q), this.mainRef()]);
+    if (q.decorate === false) return { ...res, mainRef: main };
     if (res.commits.length) {
       // Labels are a convenience: a failure here must never hide the history itself.
       await Promise.all([
@@ -1511,15 +1529,34 @@ export class GitService {
     return null;
   }
 
-  private mergedCache: { oid: string; set: Set<string> } | null = null;
+  /** Branch, merged-into-main and release labels for commits already on screen (see `decorate: false`). */
+  async graphDecorate(hashes: string[]): Promise<Record<string, GraphLabel>> {
+    if (!hashes.length) return {};
+    const out = await this.gitOut(['show', '-s', `--format=%H%x1f%cI`, ...hashes, '--']);
+    const stubs: GraphCommit[] = out
+      .split('\n')
+      .map((l) => l.split('\x1f'))
+      .filter(([h]) => !!h)
+      .map(([hash, date]) => ({ hash, shortHash: hash.slice(0, 7), parents: [], author: '', email: '', date, subject: '', refs: [] }));
+    const main = await this.mainRef();
+    await Promise.all([this.labelBranches(stubs).catch(() => undefined), this.markMerged(stubs, main).catch(() => undefined), this.labelTags(stubs).catch(() => undefined)]);
+    const res: Record<string, GraphLabel> = {};
+    for (const c of stubs) res[c.hash] = { branch: c.branch, merged: c.merged, releasedIn: c.releasedIn };
+    return res;
+  }
+
+  private mergedCache: { oid: string; since: number; set: Set<string> } | null = null;
 
   private async markMerged(commits: GraphCommit[], main: string | null): Promise<void> {
     if (!main) return;
     const oid = await this.tryRevParse(`${main}^{commit}`);
     if (!oid) return;
-    if (this.mergedCache?.oid !== oid) {
-      const out = await this.gitOut(['rev-list', '--max-count=400000', oid, '--'], { maxBufferBytes: 64 * 1024 * 1024 });
-      this.mergedCache = { oid, set: new Set(out.split('\n').filter(Boolean)) };
+    // Only walk main back to (a day before) the oldest commit asked about, instead of its whole history.
+    const oldest = Math.min(...commits.map((c) => Date.parse(c.date)).filter((t) => !Number.isNaN(t)));
+    const since = Number.isFinite(oldest) ? Math.floor(oldest / 1000) - 86_400 : 0;
+    if (this.mergedCache?.oid !== oid || this.mergedCache.since > since) {
+      const out = await this.gitOut(['rev-list', '--max-count=400000', ...(since > 0 ? [`--since=${since}`] : []), oid, '--'], { maxBufferBytes: 64 * 1024 * 1024 });
+      this.mergedCache = { oid, since, set: new Set(out.split('\n').filter(Boolean)) };
     }
     const set = this.mergedCache.set;
     for (const c of commits) c.merged = set.has(c.hash);
@@ -2185,7 +2222,8 @@ export class GitService {
 
   async graphAuthors(): Promise<{ name: string; email: string; commits: number }[]> {
     if (!(await this.hasHead())) return [];
-    const out = await this.gitOut(['shortlog', '-sne', '--all', '--no-merges']);
+    // The most recent 20,000 commits are plenty for author suggestions and keep huge repositories quick.
+    const out = await this.gitOut(['shortlog', '-sne', '--all', '--no-merges', '--max-count=20000']);
     return out
       .split('\n')
       .map((l) => /^\s*(\d+)\t(.*?) <(.*)>$/.exec(l))

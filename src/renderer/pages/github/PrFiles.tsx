@@ -69,7 +69,7 @@ export function PrFiles({ repoId, pr, pending, setPending, onChanged, onFinishRe
   }, [visiblePaths]);
 
   if (files.error) return <div className="content"><ErrorPanel error={files.error} /></div>;
-  if (!files.data) return <div className="content"><Skeleton rows={6} /></div>;
+  if (!files.data) return <div className="content"><Skeleton kind="files" rows={8} label="Loading changes" /></div>;
 
   const jump = (p: string) => {
     setActive(p);

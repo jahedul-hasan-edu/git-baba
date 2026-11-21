@@ -28,7 +28,7 @@ export function PublicProfile() {
   }, [profile.data]);
 
   if (profile.error) return <ErrorPanel error={profile.error} />;
-  if (!profile.data || !form) return <Skeleton rows={6} />;
+  if (!profile.data || !form) return <Skeleton kind="form" rows={6} />;
   const orig = fromProfile(profile.data);
   const changed = (Object.keys(form) as (keyof Form)[]).filter((k) => form[k] !== orig[k]);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => (f ? { ...f, [k]: v } : f));

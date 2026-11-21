@@ -430,7 +430,7 @@ export function CodePage() {
   if (!info) {
     return (
       <div className="content">
-        <Skeleton rows={8} />
+        <Skeleton kind="code" rows={8} label="Reading the repository" />
       </div>
     );
   }
@@ -659,7 +659,7 @@ export function CodePage() {
               {changes.get(view.path) && <span className={`change-tag ${changes.get(view.path)}`}>{changes.get(view.path) === 'added' ? 'new' : changes.get(view.path)}</span>}
             </div>
             {fileError && <ErrorPanel error={fileError} />}
-            {!file && !fileError && <Skeleton rows={6} />}
+            {!file && !fileError && <Skeleton kind="source" rows={6} />}
             {file && file.path === view.path && (
               <>
                 {file.hash === 'WORKTREE' && (
@@ -737,7 +737,7 @@ export function CodePage() {
                   </button>
                 </div>
               ) : !shownEntries ? (
-                <Skeleton rows={6} />
+                <Skeleton kind="code" rows={6} />
               ) : (
                 <div className="file-table">
                   {dir && (

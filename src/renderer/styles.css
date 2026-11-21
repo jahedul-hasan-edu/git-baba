@@ -6000,3 +6000,108 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 
 .acx-add { margin: 0 2px 8px; padding: 8px 10px; border: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--border)); border-radius: 9px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; transition: background .15s, border-color .15s; }
 .acx-add:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); border-style: solid; }
+
+/* History search: one clean field, chips only for real filters, facet buttons on the right. */
+.hq { min-height: 32px; padding: 3px 4px 3px 10px; border-radius: 16px; background: var(--bg-2); }
+.hq-chip { height: 22px; border: 0; padding-left: 6px; background: color-mix(in srgb, var(--accent) 16%, var(--bg-3)); color: var(--text); }
+.hq-chip.author { background: color-mix(in srgb, #a371f7 18%, var(--bg-3)); }
+.hq-chip.since { background: color-mix(in srgb, var(--warn) 16%, var(--bg-3)); }
+.hq-chip[style] { background: color-mix(in srgb, var(--c) 18%, var(--bg-3)); }
+.hq-chip-ico { font-style: normal; font-size: 11px; color: var(--text-3); }
+.hq input::placeholder { color: var(--text-3); }
+.hq-facets { flex: none; display: inline-flex; gap: 2px; padding-left: 4px; margin-left: 2px; border-left: 1px solid var(--border); }
+.hq-facet { position: relative; width: 26px; height: 24px; border: 0; border-radius: 12px; background: transparent; color: var(--text-3); font: inherit; font-size: 13px; cursor: pointer; transition: background 0.15s, color 0.15s; }
+.hq-facet:hover { color: var(--text); background: var(--bg-4); }
+.hq-facet.cur { color: #fff; background: linear-gradient(135deg, var(--brand-a), var(--brand-b)); }
+.hq-facet.on:not(.cur)::after { content: ''; position: absolute; top: 3px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+/* Accounts window: adding another account on a provider is an invitation, not a footnote */
+.acx-another { --c: var(--pc, var(--accent)); display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border: 1px solid color-mix(in srgb, var(--c) 60%, var(--border)); border-radius: 999px; background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s, transform .15s, box-shadow .15s; }
+.acx-another:hover { background: color-mix(in srgb, var(--c) 24%, transparent); transform: translateY(-1px); box-shadow: 0 4px 12px color-mix(in srgb, var(--c) 25%, transparent); }
+.acx-empty.static { cursor: default; }
+.acx-empty.static:hover { border-color: var(--border-2); background: none; }
+
+/* Repository header: nothing above a collapsed sidebar, so the name starts at the left edge; provider logo as the tile. */
+.ah-left:not(:has(.ah-side-title)):not(:has(> :not(.ah-side))) { display: none; }
+.deck-logo { flex: none; display: inline-flex; transition: transform 0.2s; }
+.deck-id:hover .deck-logo { transform: rotate(-4deg) scale(1.05); }
+.deck-tile.local { font-size: 15px; }
+
+.lp-title { display: flex; align-items: center; gap: 14px; }
+.lp-title .nb-pop { left: 0; right: auto; }
+/* No header (welcome screen, sidebar hidden): the page takes the freed row, not the footer. */
+.shell:not(:has(> .app-header)) { grid-template-rows: auto 1fr auto; }
+/* Bell beside the welcome title: the panel starts lower, so it is shorter, and sits above the footer. */
+.lp-title .nb-pop { max-height: calc(100vh - 270px); z-index: 60; }
+.lp-hero, .lp-title { position: relative; z-index: 20; }
+/* Full-height windows: children with their own backgrounds stay inside the rounded corners. */
+.modal.wide:has(.wip-modal), .modal.wide:has(.hist-modal-split), .modal.wide:has(.acx) { overflow: hidden; }
+
+/* ===== Shaped skeletons: each loading state looks like the content it stands in for ===== */
+.sk-wrap { position: relative; padding: 6px 2px; --sk: color-mix(in srgb, var(--text) 9%, transparent); --sk-hi: color-mix(in srgb, var(--text) 17%, transparent); }
+.sk-wrap .skb, .sk-wrap .skc, .sk-wrap .skfield { display: block; flex: none; background: linear-gradient(90deg, var(--sk) 0%, var(--sk-hi) 45%, var(--sk) 90%) 0 0 / 300% 100%; animation: sk-shine 1.6s ease-in-out infinite; }
+@keyframes sk-shine { 0% { background-position: 100% 0; } 100% { background-position: -50% 0; } }
+.skb { height: 9px; border-radius: 5px; }
+.skb.h { height: 11px; }
+.skb.xl { height: 18px; border-radius: 6px; }
+.skb.sm { height: 7px; opacity: 0.75; }
+.skb.mono { height: 10px; border-radius: 3px; }
+.skb.pill { height: 16px; border-radius: 8px; }
+.skb.tab { height: 28px; border-radius: 14px; }
+.skb.muted { opacity: 0.55; }
+.skb.grow-bar { flex: 1 1 auto; max-width: 60%; }
+.skc { border-radius: 50%; }
+.skc.av { width: 26px; height: 26px; border: 2px solid var(--bg-2); }
+.skc.av.sm { width: 18px; height: 18px; }
+.skc.av.xl { width: 72px; height: 72px; }
+.skc.dot { width: 14px; height: 14px; }
+.skc.ico { width: 22px; height: 22px; border-radius: 6px; }
+.skc.ico.sm { width: 14px; height: 14px; border-radius: 4px; }
+.skr { display: flex; align-items: center; gap: 10px; padding: 11px 10px; border-bottom: 1px solid var(--border); opacity: 0; animation: sk-in 0.35s ease-out forwards; }
+.skr.flat { padding: 7px 10px; }
+.skr.box { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 6px; background: var(--bg-2); }
+.skr.head { background: var(--bg-3); border-radius: 8px 8px 0 0; }
+.sk-wrap > .skr:nth-child(2) { animation-delay: 60ms; } .sk-wrap > .skr:nth-child(3) { animation-delay: 120ms; } .sk-wrap > .skr:nth-child(4) { animation-delay: 180ms; }
+.sk-wrap > .skr:nth-child(5) { animation-delay: 240ms; } .sk-wrap > .skr:nth-child(6) { animation-delay: 300ms; } .sk-wrap > .skr:nth-child(n + 7) { animation-delay: 360ms; }
+@keyframes sk-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.skr:hover .skb, .skr:hover .skc { --sk: color-mix(in srgb, var(--accent) 14%, transparent); --sk-hi: color-mix(in srgb, var(--accent) 26%, transparent); }
+.skcol { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.skcol.gap { gap: 14px; }
+.skrow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.skcard { display: flex; flex-direction: column; gap: 9px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-2); }
+.skcard.flush { padding: 0; gap: 0; overflow: hidden; }
+.skgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.skgrid.four { grid-template-columns: repeat(4, 1fr); }
+.skfield { height: 32px; border-radius: 8px; }
+.sktable { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.sktl { position: relative; }
+.sktl::before { content: ''; position: absolute; left: 16px; top: 10px; bottom: 10px; width: 2px; background: var(--border-2); }
+.skc.tl { width: 12px; height: 12px; margin-left: 1px; position: relative; z-index: 1; }
+.skfiles { display: grid; grid-template-columns: minmax(160px, 30%) 1fr; gap: 12px; }
+.skfiles > .skcol:first-child { gap: 2px; }
+.skfiles .skrow { padding: 5px 6px; }
+.skdiff { gap: 0; border: 1px solid var(--border); border-radius: 10px; padding: 6px 0; font-size: 0; }
+.skline { display: flex; align-items: center; gap: 14px; height: 20px; padding: 0 10px; }
+.skline.add { background: color-mix(in srgb, var(--ok) 8%, transparent); }
+.skline.del { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.sk-note { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--text-3); animation: sk-in 0.3s ease-out; }
+.sk-pulse { width: 8px; height: 8px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-a), var(--brand-b)); animation: sk-pulse 1.2s ease-in-out infinite; }
+@keyframes sk-pulse { 50% { transform: scale(1.6); opacity: 0.5; } }
+.sk-time { font-variant-numeric: tabular-nums; padding: 0 6px; border-radius: 8px; background: var(--bg-3); }
+
+/* Commit graph skeleton: lanes draw downwards, commits pop in along them. */
+.sk-graph { display: grid; grid-template-columns: 96px 1fr; padding: 0; }
+.sk-graph .sk-note { grid-column: 1 / -1; padding-bottom: 10px; }
+.skg-lane { fill: none; stroke-width: 2; stroke-dasharray: 2000; stroke-dashoffset: 2000; animation: skg-draw 1.6s ease-out forwards; }
+.skg-lane.l0 { stroke: color-mix(in srgb, var(--brand-a) 45%, transparent); }
+.skg-lane.l1 { stroke: color-mix(in srgb, var(--ok) 40%, transparent); animation-delay: 0.25s; }
+.skg-lane.l2 { stroke: color-mix(in srgb, var(--warn) 40%, transparent); animation-delay: 0.45s; }
+@keyframes skg-draw { to { stroke-dashoffset: 0; } }
+.skg-dot { fill: var(--bg); stroke-width: 2; transform-box: fill-box; transform-origin: center; opacity: 0; animation: skg-dot 0.4s ease-out forwards, skg-breathe 2.4s 0.6s ease-in-out infinite; }
+.skg-dot.l0 { stroke: var(--brand-a); } .skg-dot.l1 { stroke: var(--ok); } .skg-dot.l2 { stroke: var(--warn); }
+@keyframes skg-dot { from { opacity: 0; transform: scale(0.2); } to { opacity: 0.85; transform: scale(1); } }
+@keyframes skg-breathe { 50% { opacity: 0.4; } }
+.skg-rows { min-width: 0; }
+.skg-row { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 4px; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); opacity: 0; animation: sk-in 0.35s ease-out forwards; }
+.skg-row .skb.h { max-width: 50%; }
+@media (prefers-reduced-motion: reduce) { .sk-wrap *, .sk-wrap { animation: none !important; opacity: 1 !important; stroke-dashoffset: 0 !important; } }

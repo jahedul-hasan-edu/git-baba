@@ -113,7 +113,7 @@ export function AboutPanel({ repoId, info, isGitHub, providerName = null }: { re
           )}
         </div>
         {ghLoading && !gh ? (
-          <Skeleton rows={3} />
+          <Skeleton kind="about" rows={3} />
         ) : gh ? (
           <div className="fade-in">
             <div className="ab-stats">
@@ -251,7 +251,7 @@ export function AboutPanel({ repoId, info, isGitHub, providerName = null }: { re
         <div className="ab-head">
           <span className="ab-k">Languages</span>
         </div>
-        {langs ? <LanguageRing languages={langs} /> : <Skeleton rows={1} />}
+        {langs ? <LanguageRing languages={langs} /> : <Skeleton kind="line" rows={1} />}
         {!(gh && Object.keys(gh.languages).length) && info && <div className="small muted mt">Measured on {info.ref}</div>}
       </section>
     </aside>

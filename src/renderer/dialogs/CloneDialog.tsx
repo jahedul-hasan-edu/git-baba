@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AccountCredentialInput, AccountSummary, AuthInput, CloneState, DirectoryCheck, FriendlyError, RemoteRepoEntry, RepoSummary, SshKeyInput } from '../../shared/types';
-import { detectProvider, providerInfo, type ProviderId, type RepoProvider } from '../../shared/providers';
+import { detectProvider, providerInfo, type RepoProvider } from '../../shared/providers';
 import { ProviderMono } from '../components/ProviderMono';
 import { useAllAccounts } from '../hooks/useAllAccounts';
 import { openAccountsHub } from '../services/accountsHub';
-import { ProvidersDialog } from '../components/ProvidersDialog';
 import { AccountCredentialFields } from '../components/AccountCredentialFields';
 import { ErrorPanel } from '../components/ErrorPanel';
 import { Modal } from '../components/Modal';
@@ -154,9 +153,8 @@ export function CloneDialog({ onClose, onCloned, initialRepository, from: fromPr
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   // Other providers (GitLab, Bitbucket, Azure DevOps, CodeCommit, Gitea, any Git server): their own sign-ins.
-  const { all: everyAccount, connections, reload: loadConnections } = useAllAccounts();
+  const { all: everyAccount, connections } = useAllAccounts();
   const [connId, setConnId] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState<ProviderId | null>(null);
   // "Clone from": one chip per account (any provider) plus "Any URL". It sets the source and the sign-in together.
   const [from, setFrom] = useState<string>(() => fromProp ?? (initialRepository ? 'url' : activeAccount ? `gh:${activeAccount.id}` : 'url'));
   const pickFrom = useCallback(
@@ -497,7 +495,7 @@ export function CloneDialog({ onClose, onCloned, initialRepository, from: fromPr
               <button role="radio" aria-checked={from === 'url'} className={`from-chip url ${from === 'url' ? 'on' : ''}`} onClick={() => pickFrom('url')} disabled={locked}>
                 🔗 Any URL
               </button>
-              <button className="from-add" onClick={openAccountsHub} disabled={locked} title="Add an account" aria-label="Add an account">
+              <button className="from-add" onClick={() => openAccountsHub()} disabled={locked} title="Add an account" aria-label="Add an account">
                 ＋
               </button>
             </div>
@@ -661,7 +659,7 @@ export function CloneDialog({ onClose, onCloned, initialRepository, from: fromPr
                       </button>
                     ))}
                     {otherInfo.connect && (
-                      <button className="cl-prov-opt add" onClick={() => setConnecting(other.id)} disabled={locked}>
+                      <button className="cl-prov-opt add" onClick={() => openAccountsHub(other.id)} disabled={locked}>
                         <span className="cl-av">＋</span>
                         <span>Connect</span>
                       </button>
@@ -832,15 +830,6 @@ export function CloneDialog({ onClose, onCloned, initialRepository, from: fromPr
               setError(toFriendly(err));
             }
             setConfirmRemove(false);
-          }}
-        />
-      )}
-      {connecting && (
-        <ProvidersDialog
-          focus={connecting}
-          onClose={() => {
-            setConnecting(null);
-            loadConnections();
           }}
         />
       )}

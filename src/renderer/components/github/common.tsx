@@ -265,18 +265,7 @@ export function BodyText({ text, empty = 'No description provided.' }: { text: s
   return <div className="md-text">{text}</div>;
 }
 
-export function Skeleton({ rows = 5 }: { rows?: number }) {
-  return (
-    <div className="skeleton-list">
-      {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="skeleton-row">
-          <div className="sk sk-a" />
-          <div className="sk sk-b" />
-        </div>
-      ))}
-    </div>
-  );
-}
+export { Skeleton } from '../Skeleton';
 
 export function Unavailable({ text }: { text: string }) {
   return (

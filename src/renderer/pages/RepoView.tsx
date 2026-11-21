@@ -381,11 +381,19 @@ function RepoIdentity() {
   const mainRepo = activeRepo.worktreeOf ? repos.find((r) => r.id === activeRepo.worktreeOf) : undefined;
   const c = deckColor(activeRepo.identity ?? activeRepo.name);
   const remote = activeRepo.remoteUrl ?? activeRepo.identity;
+  // The provider's logo stands in for the repository tile; a repository with no remote gets a folder.
+  const provId = activeRepo.github ? 'github' : (activeRepo.provider?.id ?? null);
   return (
     <div className="deck-id">
-      <div className="deck-tile" style={{ ['--rc' as string]: c }}>
-        {activeRepo.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '⎇'}
-      </div>
+      {provId ? (
+        <span className="deck-logo" title={`${providerInfo(provId).name}${remote ? ` · ${remote}` : ''}`}>
+          <ProviderMono id={provId} size={30} />
+        </span>
+      ) : (
+        <div className="deck-tile local" style={{ ['--rc' as string]: c }} title="Local repository — no remote">
+          📁
+        </div>
+      )}
       <div className="deck-main">
         <div className="deck-title">
           <h1 className="deck-name ellipsis" title={activeRepo.name}>
@@ -395,12 +403,6 @@ function RepoIdentity() {
             <span className={`deck-vis ${vis}`} title={vis === 'private' ? 'Private repository: only people with access can see it' : 'Public repository: anyone can see it'}>
               <Ic d={vis === 'private' ? ICONS.lock : ICONS.globe} />
               {vis === 'private' ? 'Private' : 'Public'}
-            </span>
-          )}
-          {activeRepo.provider && activeRepo.provider.id !== 'github' && (
-            <span className="deck-vis provider" title={`${providerInfo(activeRepo.provider.id).name} · ${activeRepo.provider.host}${activeRepo.provider.path ? `/${activeRepo.provider.path}` : ''}`}>
-              <ProviderMono id={activeRepo.provider.id} size={16} />
-              {providerInfo(activeRepo.provider.id).name}
             </span>
           )}
           {!remote && (

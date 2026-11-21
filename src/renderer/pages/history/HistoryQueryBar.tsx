@@ -146,14 +146,16 @@ export function HistoryQueryBar(p: Props) {
   const chips: { key: string; kind: string; label: string; title: string; color?: string; remove?: () => void }[] = [];
   const scopeRef = p.scope.startsWith('ref:') ? p.scope.slice(4) : null;
   const scopeInfo = SCOPES.find(([v]) => v === p.scope);
-  chips.push({
-    key: 'scope',
-    kind: 'scope',
-    label: scopeRef ?? (p.scope === 'current' && p.refs?.current ? p.refs.current : scopeInfo?.[2] ?? p.scope),
-    title: scopeRef ? `Only ${scopeRef} — × to show everything` : p.scope === 'all' ? 'Showing every branch, remote and tag — type to narrow' : `${scopeInfo?.[2]} — × to show everything`,
-    color: scopeRef ? branchColor(scopeRef) : undefined,
-    remove: p.scope === 'all' ? undefined : () => p.onScope('all'),
-  });
+  // Everything is the default, so it needs no chip; only a narrower scope shows one.
+  if (p.scope !== 'all')
+    chips.push({
+      key: 'scope',
+      kind: 'scope',
+      label: scopeRef ?? (p.scope === 'current' && p.refs?.current ? p.refs.current : scopeInfo?.[2] ?? p.scope),
+      title: `${scopeRef ? `Only ${scopeRef}` : scopeInfo?.[2]} — × to show everything`,
+      color: scopeRef ? branchColor(scopeRef) : undefined,
+      remove: () => p.onScope('all'),
+    });
   if (p.author) {
     const a = p.authors.find((x) => x.email === p.author);
     chips.push({ key: 'author', kind: 'author', label: `@${a?.name ?? p.author}`, title: `Only commits by ${a?.name ?? p.author} <${p.author}>`, remove: () => p.onAuthor('') });
@@ -224,7 +226,7 @@ export function HistoryQueryBar(p: Props) {
       </span>
       {chips.map((c) => (
         <span key={c.key} className={`hq-chip ${c.kind}`} title={c.title} style={c.color ? ({ ['--c' as string]: c.color } as React.CSSProperties) : undefined}>
-          {c.color && <i className="hq-dot" />}
+          {c.color ? <i className="hq-dot" /> : <i className="hq-chip-ico">{c.kind === 'author' ? '@' : c.kind === 'since' ? '◷' : '⎇'}</i>}
           <button
             className="hq-chip-l"
             onClick={() => {
@@ -253,7 +255,8 @@ export function HistoryQueryBar(p: Props) {
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKey}
-        placeholder={removable.length ? 'Refine…' : p.textMode === 'find' ? 'Find commits, or type @ author  # tag  on: branch  - lane' : 'Filter commits, or type @ author  # tag  on: branch'}
+        placeholder={removable.length ? 'Refine…' : 'Search commits'}
+        title="Message, sha or author · press / to focus"
         spellCheck={false}
         aria-label="Query history"
       />
@@ -274,20 +277,33 @@ export function HistoryQueryBar(p: Props) {
           ×
         </button>
       )}
-      <kbd className="hq-kbd">/</kbd>
+      <span className="hq-facets" onMouseDown={(e) => e.preventDefault()}>
+        {(
+          [
+            ['on:', '⎇', 'Branch or tag', p.scope !== 'all'],
+            ['@', '@', 'Author', !!p.author],
+            ['since:', '◷', 'Time', !!p.sinceDays],
+            ...(p.lanes ? ([['-', '◐', 'Lanes', p.lanes.hidden.size > 0 || !!p.lanes.solo]] as const) : []),
+          ] as const
+        ).map(([pre, ico, label, on]) => (
+          <button
+            key={pre}
+            className={`hq-facet ${on ? 'on' : ''} ${prefix === pre ? 'cur' : ''}`}
+            title={label}
+            aria-label={label}
+            onClick={() => {
+              p.onText(prefix === pre ? '' : pre);
+              setOpen(true);
+              input.current?.focus();
+            }}
+          >
+            {ico}
+          </button>
+        ))}
+      </span>
 
-      {open && (
+      {open && (sugs.length > 0 || !!raw) && (
         <div className="hq-pop" onMouseDown={(e) => e.preventDefault()}>
-          {!prefix && !raw && (
-            <div className="hq-tips">
-              <button onClick={() => p.onText('on:')}><b>on:</b> branch</button>
-              <button onClick={() => p.onText('@')}><b>@</b> author</button>
-              <button onClick={() => p.onText('#')}><b>#</b> tag</button>
-              <button onClick={() => p.onText('since:')}><b>since:</b> date</button>
-              {p.lanes && <button onClick={() => p.onText('-')}><b>-</b> hide lane</button>}
-              {p.lanes && <button onClick={() => p.onText('+')}><b>+</b> only lane</button>}
-            </div>
-          )}
           {!prefix && raw && (
             <div className="hq-find-row">
               <span className="muted small">↵</span> {p.textMode === 'find' ? 'Find' : 'Filter'} commits matching <b>“{raw.trim()}”</b>

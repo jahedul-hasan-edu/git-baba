@@ -18,7 +18,7 @@ export function ProfileOverview({ onProfile }: { onProfile?: (p: AccountProfile)
 
   if (profile.error) return <ErrorPanel error={profile.error} />;
   const p = profile.data;
-  if (!p) return <Skeleton rows={8} />;
+  if (!p) return <Skeleton kind="profile" rows={4} label="Loading profile" />;
   const c = p.contributions;
 
   return (

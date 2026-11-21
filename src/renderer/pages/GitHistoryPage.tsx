@@ -6,6 +6,7 @@ import { CleanSlate } from './changes/CleanSlate';
 import { relative } from '../components/FileDiffList';
 import { ErrorPanel } from '../components/ErrorPanel';
 import { Spinner } from '../components/Modal';
+import { Skeleton } from '../components/Skeleton';
 import { CompareStudio } from './history/CompareStudio';
 import { announceFilter, CLEAR_EVENT, JUMP_EVENT, takeJump } from '../services/jump';
 import { call, toFriendly } from '../services/api';
@@ -404,19 +405,32 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     return { scope: (ref ? 'ref' : kind) as HistoryScope, ref, author: author || undefined, sinceDays: sinceDays ?? undefined, search: search || undefined, limit: 300 };
   }, [scope, author, sinceDays, search]);
 
+  /** Bumped by every new query: answers to an older one are dropped instead of overwriting the list. */
+  const loadSeq = useRef(0);
   const load = useCallback(
     async (append: boolean) => {
+      const seq = append ? loadSeq.current : ++loadSeq.current;
       setLoading(true);
       setError(null);
       try {
-        const r = await call('graph:log', { repoId, query: { ...query, skip: append ? commits.length : 0 } });
+        // Fast path: the commits alone (a small first page so the graph appears at once), labels afterwards.
+        const r = await call('graph:log', { repoId, query: { ...query, limit: append ? 400 : 120, skip: append ? commits.length : 0, decorate: false } });
+        if (seq !== loadSeq.current) return;
         setCommits((c) => (append ? [...c, ...r.commits] : r.commits));
         setHasMore(r.hasMore);
         setMainRef(r.mainRef);
+        if (r.commits.length) {
+          void call('graph:decorate', { repoId, hashes: r.commits.map((c) => c.hash) })
+            .then((labels) => {
+              if (seq !== loadSeq.current) return;
+              setCommits((list) => list.map((c) => (labels[c.hash] ? { ...c, ...labels[c.hash] } : c)));
+            })
+            .catch(() => undefined);
+        }
       } catch (err) {
-        setError(toFriendly(err));
+        if (seq === loadSeq.current) setError(toFriendly(err));
       } finally {
-        setLoading(false);
+        if (seq === loadSeq.current) setLoading(false);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -528,7 +542,21 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     if (f && !loading && openFocus(f)) pendingFocus.current = null;
   }, [commits, loading, openFocus]);
 
+  // Pop-up placement: the working-changes window is only for changes. Once everything is committed it closes on its
+  // own, and with nothing to commit it does not open (a short note says so instead).
+  const wsClean = !!ws?.status && ws.status.staged.length + ws.status.unstaged.length + ws.status.untracked.length + ws.status.conflicted.length === 0;
+  useEffect(() => {
+    if (placement === 'modal' && modalOpen && wip && wsClean) setModalOpen(false);
+  }, [placement, modalOpen, wip, wsClean]);
+
   const openWip = () => {
+    if (placement === 'modal' && wsClean && !(wip && modalOpen)) {
+      setWip(true);
+      setSelected(null);
+      setComparison(null);
+      toast(`Nothing to commit on ${ws?.status?.branch ?? 'this branch'}`, 'info');
+      return;
+    }
     // Clicking the active working-changes pill again hides the panel.
     if (wip && (placement === 'sidebar' ? sideOpen : modalOpen)) {
       setSideOpen(false);
@@ -1009,6 +1037,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               <ErrorPanel error={error} />
             </div>
           )}
+          {loading && commits.length === 0 && !error && <Skeleton kind="graph" rows={16} label="Reading history" />}
           {!loading && commits.length === 0 && !error && (ws && !ws.status?.headOid ? (
             <div className="ws-genesis">
               <div className="ws-genesis-dot" aria-hidden />
@@ -1151,18 +1180,8 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               </div>
             </div>
           ))}
-          {loading && (
-            <div style={{ padding: 12 }}>
-              <Spinner label="Loading history…" />
-            </div>
-          )}
-          {hasMore && !loading && (
-            <div style={{ padding: 12 }}>
-              <button className="btn block" onClick={() => load(true)}>
-                Load more commits
-              </button>
-            </div>
-          )}
+          {loading && commits.length > 0 && <Skeleton kind="graph" rows={4} label="Loading older commits" />}
+          {hasMore && !loading && <AutoMore root={listRef} onMore={() => void load(true)} />}
           </>}
         </div>
         {/* A changed file (working or committed) opens here, over the graph, so the diff gets the room it needs. */}
@@ -1245,5 +1264,26 @@ export function GitHistoryPage({ workspace }: Props = {}) {
       )}
     </div>
     </RefActionsContext.Provider>
+  );
+}
+
+/** Loads the next page as soon as the end of the list scrolls into view; the button is the fallback. */
+function AutoMore({ root, onMore }: { root: React.RefObject<HTMLDivElement | null>; onMore: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const more = useRef(onMore);
+  more.current = onMore;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((e) => e.some((x) => x.isIntersecting) && more.current(), { root: root.current, rootMargin: '600px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [root]);
+  return (
+    <div ref={ref} style={{ padding: 12 }}>
+      <button className="btn block cancel" onClick={onMore}>
+        Load older commits
+      </button>
+    </div>
   );
 }

@@ -1103,6 +1103,15 @@ export interface HistoryQuery {
   search?: string;
   skip?: number;
   limit?: number;
+  /** false: return the commits straight away and leave branch / merged / release labels to `graph:decorate`. */
+  decorate?: boolean;
+}
+
+/** Labels for one commit, fetched after the commits themselves so the graph can draw first. */
+export interface GraphLabel {
+  branch?: string | null;
+  merged?: boolean;
+  releasedIn?: { tag: string; exact: boolean } | null;
 }
 
 export interface GraphCommit {
