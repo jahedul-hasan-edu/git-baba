@@ -41,6 +41,20 @@ export class AccountSessions {
     private readonly fetchImpl?: FetchLike,
   ) {}
 
+  /**
+   * Remembered by default: every account that has no saved credential yet (one detected on this PC) adopts the
+   * sign-in this PC already holds — GitHub CLI or Git's credential store, read without prompting — and keeps it
+   * in the OS keychain, so it shows as remembered without waiting for one of its repositories to open.
+   */
+  async rememberDetected(): Promise<void> {
+    const deps = this.deps();
+    if (!deps.accountSecrets.available()) return;
+    for (const a of deps.accounts.list()) {
+      if (deps.accountSecrets.has(a.id)) continue;
+      await this.signIn({ accountId: a.id, useMachine: true }).catch(() => void this.machineMiss.set(a.id, Date.now()));
+    }
+  }
+
   async signIn(credential: AccountCredentialInput): Promise<SessionStatus> {
     const auth = await authenticateAccount(this.deps(), credential);
     this.end(auth.account.id);

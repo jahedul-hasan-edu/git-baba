@@ -77,9 +77,8 @@ export async function verifyToken(gh: GitHubService, token: string): Promise<Ver
 }
 
 /**
- * Authenticates ONE operation as a specific GitHub account. The token is either entered
- * now or — only if the user explicitly chose "Remember this credential" earlier — read from
- * the OS keychain. The token must belong to the selected account: a token of another
+ * Authenticates ONE operation as a specific GitHub account. The token is entered now, read from
+ * the OS keychain (accounts are remembered by default), or adopted from this PC's own sign-in. The token must belong to the selected account: a token of another
  * account is refused, so an unrelated account can never be used by accident.
  */
 export async function authenticateAccount(deps: AccountAuthDeps, input: AccountCredentialInput): Promise<AuthenticatedAccount> {

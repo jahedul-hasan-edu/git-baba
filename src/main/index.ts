@@ -300,6 +300,8 @@ app.whenReady().then(() => {
     .catch(() => undefined);
   createWindow();
   mainWindow?.on('focus', () => mainWindow?.flashFrame(false));
+  // Accounts are remembered by default: adopt sign-ins this PC already has for accounts with none saved.
+  void ctx.sessions.rememberDetected().catch(() => undefined);
 
   // Activity notifications for the repositories of every account and provider connection.
   const appCtx = ctx;
