@@ -72,7 +72,6 @@ export function RefChip({ name, kind, color, head, remotes = [], title }: Props)
     setOpen(false);
     fn();
   };
-  const branchName = kind === 'remote' ? name : name;
   const isCurrent = !!actions?.current && (kind === 'local' || kind === 'made-on') && actions.current === name;
 
   return (
@@ -81,14 +80,17 @@ export function RefChip({ name, kind, color, head, remotes = [], title }: Props)
         ref={btn}
         className={`rchip ${kind} ${head ? 'head' : ''} ${open ? 'open' : ''}`}
         style={{ ['--lc' as string]: color }}
-        title={title ?? `${LABEL[kind]} ${name}${remotes.length ? `\n☁ also on ${remotes.map((r) => `${r}/${name}`).join(', ')}` : ''} — click for actions`}
+        title={title ?? `${LABEL[kind]} ${name}${remotes.length ? `\n☁ also on ${remotes.map((r) => `${r}/${name}`).join(', ')}` : ''}\nClick for actions · double-click to ${kind === 'tag' ? 'show its history' : 'check out'}`}
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
         }}
         onDoubleClick={(e) => {
           e.stopPropagation();
-          actions?.filter(kind === 'tag' ? name : branchName);
+          setOpen(false);
+          // Branches check out on double-click; a tag still narrows the history to it.
+          if (kind === 'tag') actions?.filter(name);
+          else actions?.switchTo(name, kind === 'remote' ? 'remote' : 'local');
         }}
       >
         <span className="rchip-ico">{head ? '✓' : ICON[kind]}</span>
@@ -112,16 +114,16 @@ export function RefChip({ name, kind, color, head, remotes = [], title }: Props)
               </div>
             </div>
             <button onClick={run(() => actions.filter(name))}>
-              <span>◎</span> Show only {kind === 'tag' ? 'history up to this tag' : 'this branch’s history'} <kbd>dbl-click</kbd>
+              <span>◎</span> Show only {kind === 'tag' ? 'history up to this tag' : 'this branch’s history'} {kind === 'tag' && <kbd>dbl-click</kbd>}
             </button>
             {(kind === 'local' || kind === 'made-on') && !isCurrent && !name.includes(' ') && (
               <button onClick={run(() => actions.switchTo(name, 'local'))}>
-                <span>⇆</span> Switch to this branch…
+                <span>⇆</span> Switch to this branch… <kbd>dbl-click</kbd>
               </button>
             )}
             {kind === 'remote' && (
               <button onClick={run(() => actions.switchTo(name, 'remote'))}>
-                <span>⤓</span> Check out locally…
+                <span>⤓</span> Check out locally… <kbd>dbl-click</kbd>
               </button>
             )}
             {remotes.length > 0 && (

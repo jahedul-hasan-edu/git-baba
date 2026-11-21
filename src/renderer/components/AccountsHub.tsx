@@ -101,25 +101,17 @@ export function AccountsHub({ onClose, focus }: { onClose: () => void; /** Open 
         <span className="acx-repos" title={`${a.repos} repositor${a.repos === 1 ? 'y' : 'ies'} in the sidebar`}>
           {a.repos} repo{a.repos === 1 ? '' : 's'}
         </span>
-        {a.inUse && (
-          <span className="acx-inuse" title="Used by the repository that is open now">
-            in use
-          </span>
-        )}
       </span>
       <span className="acx-acts">
-        {a.kind === 'github' || LISTABLE.has(a.provider) ? (
-          <button className={`btn sm ${browsing === a.key ? 'primary' : ''}`} onClick={() => (a.kind === 'github' ? setCloning({ from: a.key }) : setBrowsing((b) => (b === a.key ? null : a.key)))} title={a.kind === 'github' ? 'Browse and clone its repositories' : 'Its repositories on the server'}>
-            {a.kind === 'github' ? '⤓ Clone…' : browsing === a.key ? 'Repos ▴' : 'Repos ▾'}
-          </button>
-        ) : (
-          <button className="btn sm" onClick={() => setCloning({ from: a.key })} title="Clone a repository from this server by its address">
-            ⤓ Clone…
+        {a.kind !== 'github' && LISTABLE.has(a.provider) && (
+          <button className={`btn sm ${browsing === a.key ? 'primary' : ''}`} onClick={() => setBrowsing((b) => (b === a.key ? null : a.key))} title="Its repositories on the server">
+            {browsing === a.key ? 'Repos ▴' : 'Repos ▾'}
           </button>
         )}
         {a.kind === 'github' ? (
           <>
-            {a.status.tone !== 'ok' && (
+            {/* A remembered account signs itself in when one of its repositories opens; only a real gap needs a button. */}
+            {(a.status.tone === 'muted' || a.status.tone === 'warn') && (
               <button className="btn sm" onClick={() => setSignIn(a)}>
                 {a.github?.method === 'ssh' ? '⬆ Upgrade' : 'Sign in'}
               </button>

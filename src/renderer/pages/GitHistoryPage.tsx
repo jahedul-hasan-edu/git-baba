@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { layoutGraph } from '../../shared/graphLayout';
 import type { CommitDetails, CommitStatFile, CompareResult, FriendlyError, GraphCommit, HistoryQuery, HistoryScope, RepoStatus } from '../../shared/types';
 import { ChangesPage } from './ChangesPage';
@@ -25,6 +25,8 @@ import { SwitchBranchDialog } from '../dialogs/BranchDialogs';
 import { onCompareRequest } from '../services/compareRequest';
 
 const ROW_H = 58;
+/** One-line commit rows. */
+const CROW_H = 38;
 const LANE_W = 20;
 const COLORS = ['#5b8cff', '#3ecf8e', '#f5b84a', '#ff6b6b', '#b18cff', '#6cc4ff', '#ff9f6b', '#9fd36b'];
 const laneX = (i: number) => i * LANE_W + LANE_W / 2;
@@ -80,9 +82,17 @@ function TagChips({ refs, max = 2 }: { refs: string[]; max?: number }) {
 
 /** The release a commit first shipped in (nearest tag containing it). Hidden when the tag sits on the commit itself. */
 function ReleaseChip({ info, full }: { info: GraphCommit['releasedIn']; full?: boolean }) {
+  const actions = useContext(RefActionsContext);
   if (!info || (info.exact && !full)) return null;
   return (
-    <span className="release-chip" title={info.exact ? `Tagged ${info.tag}` : `First released in ${info.tag} — the nearest tag that contains this commit`}>
+    <span
+      className="release-chip copyable"
+      title={`${info.exact ? `Tagged ${info.tag}` : `First released in ${info.tag}`} — click to copy`}
+      onClick={(e) => {
+        e.stopPropagation();
+        actions?.copy(info.tag, 'Tag');
+      }}
+    >
       📦 {info.exact ? info.tag : `in ${info.tag}`}
     </span>
   );
@@ -261,6 +271,28 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     }
   };
   const [commits, setCommits] = useState<GraphCommit[]>([]);
+  /** Branch runs folded away in the commit list, by the hash of the run's first commit. */
+  const [foldedRuns, setFoldedRuns] = useState<Set<string>>(new Set());
+  /** For every commit: the run of consecutive commits made on the same branch that it belongs to. */
+  const runs = useMemo(() => {
+    const out: { key: string; start: number; len: number; allMerged: boolean }[] = [];
+    for (let i = 0; i < commits.length; ) {
+      const key = commits[i].branch ?? '';
+      let j = i;
+      while (j < commits.length && (commits[j].branch ?? '') === key) j++;
+      const r = { key, start: i, len: j - i, allMerged: commits.slice(i, j).every((x) => x.merged) };
+      for (let k = i; k < j; k++) out.push(r);
+      i = j;
+    }
+    return out;
+  }, [commits]);
+  const toggleRun = (h: string) =>
+    setFoldedRuns((s) => {
+      const n = new Set(s);
+      if (n.has(h)) n.delete(h);
+      else n.add(h);
+      return n;
+    });
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<FriendlyError | null>(null);
@@ -664,7 +696,10 @@ export function GitHistoryPage({ workspace }: Props = {}) {
 
   const refActions: RefActions = {
     filter: (r) => setScope(`ref:${r}`),
-    switchTo: (name, kind) => setSwitching({ target: name, kind }),
+    switchTo: (name, kind) => {
+      if (kind === 'local' && !head.detached && head.branch === name) return toast(`Already on ${name}`, 'info');
+      setSwitching({ target: name, kind });
+    },
     copy: (text, what) => void copy(text, what),
     current: head.detached ? null : head.branch,
   };
@@ -1064,7 +1099,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               onSelect={(h) => clickCommit(h)}
               onMenu={(c, x, y) => setMenu({ x, y, commit: c })}
               onLoadMore={() => load(true)}
-              onSwitch={(b) => setSwitching({ target: b, kind: 'local' })}
+              onSwitch={(b) => refActions.switchTo(b, refs?.remotes.includes(b) && !refs.branches.includes(b) ? 'remote' : 'local')}
               find={/^\s*(on:|in:|@|#|-|\+|since:)/i.test(searchInput) ? '' : searchInput}
               findStep={findStep}
               hidden={bxHidden}
@@ -1094,12 +1129,40 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               </div>
             </div>
           )}
-          {commits.map((c, i) => (
+          {commits.map((c, i) => {
+            // Consecutive commits made on the same branch form a run: its name is shown once, in a header
+            // that folds the run away, and a rail in the branch colour runs down its rows.
+            const run = runs[i];
+            const runKey = run.key;
+            const runStart = run.start === i;
+            const runLen = run.len;
+            const startHash = commits[run.start].hash;
+            const folded = !!runKey && foldedRuns.has(startHash);
+            const lastInRun = i === run.start + run.len - 1;
+            const lc = runKey ? branchColor(runKey) : color(rows[i].lane);
+            return (
+            <Fragment key={c.hash}>
+            {runStart && runKey && (
+              <button
+                className={`run-head ${folded ? 'folded' : ''}`}
+                style={{ ['--lc' as string]: lc }}
+                onClick={() => toggleRun(startHash)}
+                onDoubleClick={() => refActions.switchTo(runKey, refs?.remotes.includes(runKey) && !refs.branches.includes(runKey) ? 'remote' : 'local')}
+                title={`${folded ? 'Click to show' : 'Click to fold'} · double-click to check out ${runKey}`}
+              >
+                <span className="run-caret">▾</span>
+                <BranchChip name={runKey} />
+                {run.allMerged && mainRef && !onMain(c) && <MergedMark main={mainRef} />}
+                <span className="run-n">
+                  {runLen} commit{runLen === 1 ? '' : 's'}
+                </span>
+              </button>
+            )}
+            {!folded && (
             <div
-              key={c.hash}
               data-hash={c.hash}
               className={`commit-row ${c.hash === head.oid ? 'is-head' : ''} ${hoverBranch && c.branch === hoverBranch ? 'lane-hl' : ''} ${selected === c.hash ? 'selected' : ''} ${pair.includes(c.hash) ? 'paired' : ''} ${range && i >= range.lo && i <= range.hi ? 'in-range' : ''} ${dragging === c.hash ? 'drag-src' : ''} ${dropOn === c.hash ? 'drop-on' : ''}`}
-              style={{ height: ROW_H }}
+              style={{ height: CROW_H, ['--lc' as string]: lc }}
               onClick={() => clickCommit(c.hash)}
               draggable
               onDragStart={(e) => {
@@ -1135,51 +1198,55 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               onMouseEnter={() => c.branch && setHoverBranch(c.branch)}
               onMouseLeave={() => setHoverBranch(null)}
             >
-              <div className="commit-text">
-                <div className="commit-subject ellipsis">
-                  {compareMode && (slots[0] === c.hash || slots[1] === c.hash) && <span className={`cmp-letter sm ${slots[0] === c.hash ? 'A' : 'B'}`}>{slots[0] === c.hash ? 'A' : 'B'}</span>}
-                  {c.refs.length > 0 && (
-                    <span className="ref-group">
-                      <RefPills refs={c.refs} laneColor={color(rows[i].lane)} remotes={remoteNames} />
-                      <TagChips refs={c.refs} />
+              <span className={`cr-rail ${runStart ? 'first' : ''} ${lastInRun ? 'last' : ''}`} aria-hidden>
+                <i className={c.parents.length > 1 ? 'merge' : ''} />
+              </span>
+              <div className="cr">
+                {compareMode && (slots[0] === c.hash || slots[1] === c.hash) && <span className={`cmp-letter sm ${slots[0] === c.hash ? 'A' : 'B'}`}>{slots[0] === c.hash ? 'A' : 'B'}</span>}
+                {c.refs.length > 0 && (
+                  <span className="ref-group">
+                    <RefPills refs={c.refs} laneColor={color(rows[i].lane)} remotes={remoteNames} />
+                    <TagChips refs={c.refs} />
+                  </span>
+                )}
+                <span className="cr-subject" title={c.subject}>
+                  {c.subject}
+                </span>
+                <span className="cr-meta">
+                  {c.merged && mainRef && !onMain(c) && !run.allMerged && (
+                    <span className="cr-merged" title={`Already merged into ${mainRef}`}>
+                      ✓
                     </span>
                   )}
-                  <span className="subject-text">{c.subject}</span>
-                </div>
-                <div className="small muted commit-meta">
-                  {/* The tip already carries the branch as a ref chip: no second chip for the same name. */}
-                  {c.branch && !c.refs.some((r) => r.replace(/^HEAD -> /, '') === c.branch) && <BranchChip name={c.branch} />}
-                  {c.merged && mainRef && !onMain(c) && <MergedMark main={mainRef} />}
                   <ReleaseChip info={c.releasedIn} />
-                  <span className="ellipsis">
-                    {c.author} · {relative(c.date)}
+                  {c.parents.length > 1 && (
+                    <span className="cr-merge" title="Merge commit">
+                      ⑂
+                    </span>
+                  )}
+                  <span className="cr-av" style={{ background: authorColor(c.email || c.author) }} title={`${c.author} <${c.email}>`}>
+                    {initials(c.author)}
                   </span>
-                  {c.parents.length > 1 && <span className="badge">merge</span>}
-                  <span className="mono commit-sha">{c.shortHash}</span>
-                </div>
-              </div>
-              <div className="row-actions" onClick={(e) => e.stopPropagation()}>
-                <button title={`Cherry-pick onto ${head.branch ?? 'HEAD'} (P)`} disabled={c.hash === head.oid} onClick={() => runAction('cherry-pick', c)}>
-                  🍒
-                </button>
-                <button title="Compare with HEAD" disabled={c.hash === head.oid || !head.oid} onClick={() => compareFromMenu('head', c)}>
-                  ⇄
-                </button>
-                <button title="Copy SHA (C)" onClick={() => runAction('copy-sha', c)}>
-                  ⧉
-                </button>
-                <button
-                  title="More actions (right-click)"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setMenu({ x: r.left - 200, y: r.bottom + 4, commit: c });
-                  }}
-                >
-                  ⋯
-                </button>
+                  <span className="cr-time" title={new Date(c.date).toLocaleString()}>
+                    {shortAgo(c.date)}
+                  </span>
+                  <span
+                    className="mono cr-sha copyable"
+                    title="Click to copy the full commit id"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void copy(c.hash, 'Commit id');
+                    }}
+                  >
+                    {c.shortHash}
+                  </span>
+                </span>
               </div>
             </div>
-          ))}
+            )}
+            </Fragment>
+            );
+          })}
           {loading && commits.length > 0 && <Skeleton kind="graph" rows={4} label="Loading older commits" />}
           {hasMore && !loading && <AutoMore root={listRef} onMore={() => void load(true)} />}
           </>}
@@ -1286,4 +1353,19 @@ function AutoMore({ root, onMore }: { root: React.RefObject<HTMLDivElement | nul
       </button>
     </div>
   );
+}
+
+/** "now", "8m", "3h", "2d", "5w", then the date — compact enough for a one-line row. */
+function shortAgo(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return '';
+  const m = Math.max(0, Math.round((Date.now() - t) / 60_000));
+  if (m < 1) return 'now';
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.round(h / 24);
+  if (d < 14) return `${d}d`;
+  if (d < 70) return `${Math.round(d / 7)}w`;
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(d > 330 ? { year: '2-digit' } : {}) });
 }

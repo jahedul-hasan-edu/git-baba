@@ -58,14 +58,16 @@ export function ErrorPanel({ error, onAction, available, onSwitched }: Props) {
       <h3>⚠ {error.title}</h3>
       <p>{error.message}</p>
       {error.reasons.length > 0 && (
-        <>
-          <div className="small muted">Possible reasons:</div>
+        <details className="ep-why">
+          <summary>
+            Why? <span className="ep-n">{error.reasons.length}</span>
+          </summary>
           <ul>
             {error.reasons.map((r) => (
               <li key={r}>{r}</li>
             ))}
           </ul>
-        </>
+        </details>
       )}
       {error.switchAccount && (
         <div className="row wrap mt">

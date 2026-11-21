@@ -72,6 +72,7 @@ export type ExtraChannels =
   | 'code:lastCommits'
   | 'code:file'
   | 'code:bytes'
+  | 'code:remoteImage'
   | 'code:search'
   | 'code:writeFile'
   | 'code:deleteFile'
@@ -355,6 +356,29 @@ export function createExtraHandlers(
       const p = asObject(payload);
       const ref = p.ref === null ? null : asString(p.ref, 'ref', { max: 255 });
       return graphGit(p).fileBytes(ref, asString(p.path, 'path', { trim: false }));
+    },
+    /**
+     * An image a Markdown file links from the web (README badges, screenshots). The window may only show images it
+     * was handed as data, so the main process fetches it: https only, images only, at most 5 MB, no credentials.
+     */
+    'code:remoteImage': async (payload) => {
+      const url = asString(asObject(payload).url, 'url', { max: 2048 });
+      let u: URL;
+      try {
+        u = new URL(url);
+      } catch {
+        return null;
+      }
+      if (u.protocol !== 'https:' || u.username || u.password) return null;
+      const res = await fetch(u, { redirect: 'follow', signal: AbortSignal.timeout(15_000), headers: { Accept: 'image/*', 'User-Agent': 'GitBaba' } }).catch(() => null);
+      if (!res || !res.ok) return null;
+      const mime = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+      if (!/^image\/(png|jpe?g|gif|webp|svg\+xml|bmp|x-icon|vnd\.microsoft\.icon|avif)$/.test(mime)) return null;
+      const len = Number(res.headers.get('content-length') ?? '0');
+      if (len > 5 * 1024 * 1024) return null;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length > 5 * 1024 * 1024) return null;
+      return { mime, base64: buf.toString('base64') };
     },
     'graph:blame': async (payload) => {
       const p = asObject(payload);

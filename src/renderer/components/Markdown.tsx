@@ -1,13 +1,46 @@
-import { Fragment, useMemo, type ReactNode } from 'react';
+import { createContext, Fragment, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 /**
  * A small, safe Markdown renderer for README files. It builds React elements only — raw HTML in
  * the document is never injected (tags are stripped to their text), and links are handed to
  * `onLink` instead of navigating the app window.
  */
-export function Markdown({ source, onLink }: { source: string; onLink: (href: string) => void }) {
+export function Markdown({ source, onLink, image }: { source: string; onLink: (href: string) => void; /** Turns an image address into something the window may show (a data: URL), or null. */ image?: ImageResolver }) {
   const blocks = useMemo(() => parseBlocks(source.replace(/\r\n?/g, '\n')), [source]);
-  return <div className="markdown">{blocks.map((b, i) => renderBlock(b, i, onLink))}</div>;
+  return (
+    <ImageCtx.Provider value={image ?? null}>
+      <div className="markdown">{blocks.map((b, i) => renderBlock(b, i, onLink))}</div>
+    </ImageCtx.Provider>
+  );
+}
+
+export type ImageResolver = (src: string) => Promise<string | null>;
+const ImageCtx = createContext<ImageResolver | null>(null);
+
+/** An image in the document: loaded through the resolver (repository file or web image); alt text while loading or if it fails. */
+function MdImage({ src, alt }: { src: string; alt: string }) {
+  const resolve = useContext(ImageCtx);
+  const [url, setUrl] = useState<string | null>(src.startsWith('data:image/') ? src : null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (url) return;
+    if (!resolve || !src) return setFailed(true);
+    let live = true;
+    resolve(src)
+      .then((u) => {
+        if (live) (u ? setUrl(u) : setFailed(true));
+      })
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [src, resolve, url]);
+  if (url) return <img className="md-image" src={url} alt={alt} title={alt || undefined} draggable={false} onError={() => (setUrl(null), setFailed(true))} />;
+  return (
+    <span className={`md-img ${failed ? 'failed' : 'loading'}`} title={src}>
+      🖼 {alt || 'image'}
+    </span>
+  );
 }
 
 type Block =
@@ -30,7 +63,11 @@ const splitRow = (l: string) =>
 /** Text content of an HTML fragment (tags dropped; <img alt> and <br> kept as text). */
 function stripHtml(s: string): string {
   return s
-    .replace(/<img\b[^>]*\balt=["']([^"']*)["'][^>]*>/gi, (_, alt: string) => (alt ? `![${alt}]()` : ''))
+    .replace(/<img\b[^>]*>/gi, (tag: string) => {
+      const src = /\bsrc=["']([^"']*)["']/i.exec(tag)?.[1] ?? '';
+      const alt = /\balt=["']([^"']*)["']/i.exec(tag)?.[1] ?? '';
+      return src || alt ? `![${alt}](${src.replace(/\s/g, '%20')})` : '';
+    })
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<a\b[^>]*\bhref=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href: string, text: string) => `[${text}](${href})`)
     .replace(/<\/?[A-Za-z][^>]*>/g, '')
@@ -229,12 +266,7 @@ function inline(text: string, onLink: (href: string) => void, depth = 0): ReactN
     if (m.index > 0) out.push(rest.slice(0, m.index));
     const key = k++;
     if (m[1]) out.push(<code key={key}>{m[2].trim()}</code>);
-    else if (m[3] !== undefined && m[0].startsWith('!'))
-      out.push(
-        <span key={key} className="md-img" title={m[4] ? `Image: ${m[4]}` : 'Image'}>
-          🖼 {m[3] || 'image'}
-        </span>,
-      );
+    else if (m[3] !== undefined && m[0].startsWith('!')) out.push(<MdImage key={key} src={m[4]} alt={m[3]} />);
     else if (m[6])
       out.push(
         <a key={key} onClick={() => onLink(m[6])} title={m[6]}>

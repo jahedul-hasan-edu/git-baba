@@ -18,7 +18,7 @@ import { JUMP_EVENT, takeJump } from '../../services/jump';
 import { call, toFriendly } from '../../services/api';
 import { useApp } from '../../state/AppState';
 import { AboutPanel } from './AboutPanel';
-import { CodeEditor, FileView, formatBytes } from './FileView';
+import { CodeEditor, FileView, formatBytes, resolveMdImage } from './FileView';
 import { RefPicker } from './RefPicker';
 
 type View =
@@ -786,7 +786,7 @@ export function CodePage() {
                   )}
                 </div>
                 <div className="readme-body">
-                  {/\.(md|markdown)$/i.test(readme.path) ? <Markdown source={readme.content} onLink={onLink(parentOf(readme.path))} /> : <pre>{readme.content}</pre>}
+                  {/\.(md|markdown)$/i.test(readme.path) ? <Markdown source={readme.content} onLink={onLink(parentOf(readme.path))} image={(src) => resolveMdImage(src, readme.path, { repoId, ref: readme.hash === 'WORKTREE' ? null : viewRef })} /> : <pre>{readme.content}</pre>}
                 </div>
               </div>
             )}

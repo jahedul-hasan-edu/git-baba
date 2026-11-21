@@ -451,7 +451,7 @@ export function BranchExplorer({ commits, headOid, headBranch, mainRef, selected
                     className={`bx-label ${isHead ? 'head' : ''}`}
                     style={{ height: LANE, ['--c' as string]: l.color }}
                     title={`${l.name} · ${l.commits.length} commit${l.commits.length === 1 ? '' : 's'}\nDouble-click to switch · right-click for more`}
-                    onDoubleClick={() => l.name !== OTHER && !isHead && onSwitch(l.name)}
+                    onDoubleClick={() => l.name !== OTHER && onSwitch(l.name)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       if (l.name !== OTHER) requestRailAction({ kind: 'branch-menu', name: l.name, x: e.clientX, y: e.clientY });
@@ -602,6 +602,12 @@ export function BranchExplorer({ commits, headOid, headBranch, mainRef, selected
                     className={`bx-node ${selected === c.hash ? 'sel' : ''} ${isHead ? 'head' : ''} ${q && !matchSet.has(c.hash) ? 'dim' : ''} ${matchSet.has(c.hash) ? 'hit' : ''}`}
                     transform={`translate(${x} ${y})`}
                     onClick={() => !drag.current?.moved && onSelect(c.hash)}
+                    onDoubleClick={() => {
+                      // A branch tip checks out its branch.
+                      const names = c.refs.filter((r) => !r.startsWith('tag: ') && r !== 'HEAD' && !r.endsWith('/HEAD')).map((r) => r.replace(/^HEAD -> /, ''));
+                      // git lists the local branch before its remote counterpart; the handler tells local from remote.
+                      if (names[0]) onSwitch(names[0]);
+                    }}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       onMenu(c, e.clientX, e.clientY);

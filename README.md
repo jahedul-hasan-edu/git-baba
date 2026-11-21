@@ -16,7 +16,7 @@ Nothing is committed, pushed or merged silently: every change goes **Review → 
 
 [Screenshots](#-a-quick-tour) · [Why Git Baba](#-why-git-baba) · [Roadmap](#-roadmap) · [Download](#️-download--try-it) · [Get started](#installation) · [Contribute](#-contributing)
 
-<img src="docs/screenshots/changes.png" alt="Git Baba — Changes tab with commit graph, staged files and diff" width="900" />
+<img src="docs/screenshots/changes.png" alt="Git Baba — Changes workspace with working changes, interactive diff and commit composer" width="900" />
 
 </div>
 
@@ -27,18 +27,28 @@ Nothing is committed, pushed or merged silently: every change goes **Review → 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/screenshots/history-graph.png" alt="Commit graph with commit details" /><br/>
-      <b>Commit graph</b>: branch lanes, tags and ref chips you can act on, plus a compact commit card with only the changed files.
+      <img src="docs/screenshots/explorer.png" alt="Branch Explorer: one lane per branch over time" /><br/>
+      <b>Branch Explorer</b>: every branch as a lane over time, with tags as flags, an overview strip and a zoom.
     </td>
     <td width="50%" valign="top">
-      <img src="docs/screenshots/diff.png" alt="Diff opened in the centre pane" /><br/>
-      <b>Diffs where you look</b>: click a changed file and its diff opens in the centre, with ↑/↓ to step through files.
+      <img src="docs/screenshots/history-graph.png" alt="Commit details beside the graph" /><br/>
+      <b>Commit details</b>: pick a commit to see its author, refs and changed files as a tree.
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <img src="docs/screenshots/push.png" alt="Push Changes dialog" /><br/>
-      <b>Push review</b>: the route, every outgoing commit (undo any of them before it leaves) and who you push as.
+      <img src="docs/screenshots/diff.png" alt="Diff opened over the graph" /><br/>
+      <b>Diffs where you look</b>: a changed file opens over the graph, with line authors on hover.
+    </td>
+    <td valign="top">
+      <img src="docs/screenshots/push.png" alt="Push review" /><br/>
+      <b>Push review</b>: the route, every outgoing commit (undo any of them first) and who you push as.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <img src="docs/screenshots/branch-picker.png" alt="Branch picker" /><br/>
+      <b>Branch picker</b>: search, local and remote branches by folder, and branch, merge or stash in one place.
     </td>
     <td valign="top">
       <img src="docs/screenshots/switch-branch.png" alt="Safe branch switching" /><br/>
@@ -52,14 +62,17 @@ Nothing is committed, pushed or merged silently: every change goes **Review → 
     </td>
     <td valign="top">
       <img src="docs/screenshots/merge-check.png" alt="Merge pre-check" /><br/>
-      <b>Checked first</b>: blockers and remote state explained, merge / squash / rebase, and "Merge as" per operation.
+      <b>Checked first</b>: the route and readiness, merge / squash / rebase, and who you merge as.
     </td>
   </tr>
 </table>
 
 <details>
-<summary><b>More screens</b>: conflict resolution</summary>
+<summary><b>More screens</b>: welcome and conflict resolution</summary>
 <br/>
+
+<img src="docs/screenshots/welcome.png" alt="Welcome screen with every Git provider" /><br/>
+**Every Git, one place**: paste any clone URL or folder, or connect GitHub, GitLab, Bitbucket, Azure DevOps, CodeCommit, Gitea or any Git server.
 
 <img src="docs/screenshots/conflicts.png" alt="Conflict resolution" /><br/>
 **Conflicts, explained**: current vs incoming side by side with branch names, per block or per file, bulk actions and undo.

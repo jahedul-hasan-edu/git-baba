@@ -4,10 +4,46 @@ import type { BlameInfo, FileAtCommit } from '../../../shared/types';
 import { loadBlame, whenText } from '../../components/DiffViewer';
 import { authorColor, initials } from '../history/graphStyle';
 import { Markdown } from '../../components/Markdown';
-import { BinaryView, ImageStage, isViewablePath } from './BinaryView';
+import { BinaryView, ImageStage, imageMime, isViewablePath } from './BinaryView';
+import { call } from '../../services/api';
 import { langFor, tokenize } from './syntax';
 
 export const isMarkdown = (p: string) => /\.(md|markdown|mdx)$/i.test(p);
+
+/**
+ * An image a Markdown file refers to, as a data: URL the window may show. Relative paths are read from the same
+ * branch or commit as the document (or the working copy); "/x.png" is the repository root; web images (https)
+ * are fetched by the main process. GitHub "blob" links to an image in this repository are not rewritten.
+ */
+export async function resolveMdImage(src: string, docPath: string, source: { repoId: string; ref: string | null }): Promise<string | null> {
+  const addr = src.trim();
+  if (!addr) return null;
+  if (/^data:image\//i.test(addr)) return addr;
+  if (/^https:\/\//i.test(addr)) {
+    const r = await call('code:remoteImage', { url: addr }).catch(() => null);
+    return r ? `data:${r.mime};base64,${r.base64}` : null;
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(addr) || addr.startsWith('//')) return null; // http:, file:, mailto:, … not loaded
+  let rel: string;
+  try {
+    rel = decodeURIComponent(addr.split(/[?#]/)[0]);
+  } catch {
+    rel = addr.split(/[?#]/)[0];
+  }
+  const parts = rel.startsWith('/') ? [] : docPath.split('/').slice(0, -1);
+  for (const seg of rel.replace(/^\/+/, '').split('/')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') {
+      if (!parts.length) return null; // outside the repository
+      parts.pop();
+    } else parts.push(seg);
+  }
+  const path = parts.join('/');
+  const mime = imageMime(path);
+  if (!mime) return null;
+  const b = await call('code:bytes', { repoId: source.repoId, ref: source.ref, path }).catch(() => null);
+  return b && !b.tooLarge && b.base64 ? `data:${mime};base64,${b.base64}` : null;
+}
 
 export function formatBytes(n: number | null | undefined): string {
   if (n === null || n === undefined) return '';
@@ -222,7 +258,7 @@ export function FileView({ file, line, term, onLink, toolbar, menu, blame, sourc
         <ImageStage src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(file.content)}`} size={new Blob([file.content]).size} name={file.path} />
       ) : mode === 'preview' ? (
         <div className="file-panel-md cv-scroll">
-          <Markdown source={file.content} onLink={onLink} />
+          <Markdown source={file.content} onLink={onLink} image={source ? (src) => resolveMdImage(src, file.path, source) : undefined} />
         </div>
       ) : (
         <div className="cv-frame">
