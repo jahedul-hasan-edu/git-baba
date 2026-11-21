@@ -17,9 +17,11 @@ interface Props {
   children: ReactNode;
   /** Prevent closing with Escape while an operation is running. */
   locked?: boolean;
+  /** While set, an animated "working" overlay covers the dialog body (see `Working`). */
+  working?: ReactNode;
 }
 
-export function Modal({ title, icon, onClose, footer, size = 'normal', children, locked }: Props) {
+export function Modal({ title, icon, onClose, footer, size = 'normal', children, locked, working }: Props) {
   const backdrop = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -43,12 +45,14 @@ export function Modal({ title, icon, onClose, footer, size = 'normal', children,
             ✕
           </button>
         </div>
-        <div className="modal-body">
+        <div className={`modal-body ${working ? 'is-working' : ''}`}>
           <ModalCloseContext.Provider value={onClose}>{children}</ModalCloseContext.Provider>
+          {working && <div className="modal-working">{working}</div>}
         </div>
         {footer && <div className="modal-footer">{footer}</div>}
       </div>
-    </div>,
+    </div>
+,
     document.body,
   );
 }
@@ -58,5 +62,27 @@ export function Spinner({ label }: { label?: string }) {
     <span className="row muted">
       <span className="spinner" /> {label}
     </span>
+  );
+}
+
+/**
+ * The animated "in progress" scene shown over a dialog while Git works: two ends joined by a wire with
+ * packets travelling along it, and one short line of what is happening.
+ */
+export function Working({ from, to, label, icon = '⬆' }: { from?: ReactNode; to?: ReactNode; label: ReactNode; icon?: ReactNode }) {
+  return (
+    <div className="wk" role="status" aria-live="polite">
+      <div className="wk-scene">
+        {from != null && <span className="wk-end">{from}</span>}
+        <span className="wk-wire">
+          <i />
+          <i />
+          <i />
+          <span className="wk-orb">{icon}</span>
+        </span>
+        {to != null && <span className="wk-end to">{to}</span>}
+      </div>
+      <div className="wk-label">{label}</div>
+    </div>
   );
 }

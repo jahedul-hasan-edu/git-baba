@@ -39,7 +39,7 @@ export function useAuthState() {
 export function Footer({ auth, busy, disabled, label, busyLabel, onCancel, onRun, danger }: { auth: AuthSelection; busy: boolean; disabled: boolean; label: string; busyLabel: string; onCancel: () => void; onRun: () => void; danger?: boolean }) {
   return (
     <>
-      <span className="small muted grow">{auth.input ? `Credential: ${auth.summary}` : 'Choose and fill in an authentication method to continue.'}</span>
+      <span className={`pu-foot-auth grow ellipsis ${auth.input ? 'ok' : ''}`}>{auth.input ? <>✓ {auth.summary}</> : 'Pick how to sign in'}</span>
       <button className="btn cancel" onClick={onCancel} disabled={busy}>
         Cancel
       </button>
@@ -52,7 +52,7 @@ export function Footer({ auth, busy, disabled, label, busyLabel, onCancel, onRun
 
 export function Result({ title, ok, children, onDone }: { title: string; ok: boolean; children: ReactNode; onDone: () => void }) {
   return (
-    <Modal title={title} icon={ok ? '✓' : '⚠'} onClose={onDone} footer={<button className="btn primary" onClick={onDone}>Done</button>}>
+    <Modal title={title} icon={ok ? '✓' : '⚠'} size="narrow" onClose={onDone} footer={<button className="btn primary" onClick={onDone}>Done</button>}>
       {children}
     </Modal>
   );

@@ -178,14 +178,7 @@ export function DiffViewer({ diff, emptyText = 'Select a file to see its changes
         {modeChange && <span className="badge warn">{modeChange}</span>}
         <span className="badge ok">+{diff.additions}</span>
         <span className="badge danger">−{diff.deletions}</span>
-        <div className="row">
-          <button className={`btn sm ${mode === 'unified' ? 'primary' : ''}`} onClick={() => setMode('unified')}>
-            Unified
-          </button>
-          <button className={`btn sm ${mode === 'split' ? 'primary' : ''}`} onClick={() => setMode('split')}>
-            Side-by-side
-          </button>
-        </div>
+        <ViewMenu mode={mode} onMode={setMode} />
       </div>
       {diff.binary && <div className="empty">Binary file — contents cannot be shown as text.</div>}
       {!diff.binary && diff.hunks.length === 0 && <div className="empty">{diff.truncated ? 'File is too large to display.' : modeChange ? 'Only the file mode changed.' : 'No content changes.'}</div>}
@@ -281,6 +274,47 @@ export function DiffViewer({ diff, emptyText = 'Select a file to see its changes
           <button className="btn sm" onClick={() => setShowAll(true)}>
             Show all
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The ⋮ menu holding the Unified / Side-by-side choice. */
+function ViewMenu({ mode, onMode }: { mode: 'unified' | 'split'; onMode: (m: 'unified' | 'split') => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && (e.stopPropagation(), setOpen(false));
+    window.addEventListener('mousedown', down);
+    window.addEventListener('keydown', key, true);
+    return () => {
+      window.removeEventListener('mousedown', down);
+      window.removeEventListener('keydown', key, true);
+    };
+  }, [open]);
+  return (
+    <div className="hd-more" ref={ref}>
+      <button className={`hd-more-btn ${open ? 'on' : ''}`} onClick={() => setOpen((o) => !o)} title="View options" aria-haspopup="menu" aria-expanded={open}>
+        ⋮
+      </button>
+      {open && (
+        <div className="hd-menu" role="menu">
+          <div className="hd-menu-h">View</div>
+          {(
+            [
+              ['unified', '☰', 'Unified'],
+              ['split', '◫', 'Side-by-side'],
+            ] as const
+          ).map(([m, ico, label]) => (
+            <button key={m} role="menuitemradio" aria-checked={mode === m} className={`hd-mi ${mode === m ? 'on' : ''}`} onClick={() => (onMode(m), setOpen(false))}>
+              <span className="hd-mi-ico">{ico}</span>
+              <span className="grow">{label}</span>
+              {mode === m && <span className="hd-mi-hint">✓</span>}
+            </button>
+          ))}
         </div>
       )}
     </div>

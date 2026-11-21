@@ -3,7 +3,6 @@ import type { GraphCommit } from '../../../shared/types';
 import { branchColor } from '../../components/BranchPicker';
 import { relative } from '../../components/FileDiffList';
 import { requestRailAction } from '../../services/railActions';
-import { PaneIcon } from '../../components/PaneIcon';
 
 /** Width of one commit column at 100% zoom, height of one branch lane. */
 const COL = 34;
@@ -38,29 +37,24 @@ interface Props {
   onMenu: (c: GraphCommit, x: number, y: number) => void;
   onLoadMore: () => void;
   onSwitch: (branch: string) => void;
+  /** Text from the query bar: matching commits light up, the rest dim. */
+  find: string;
+  /** Bumped by the query bar on Enter: jump to the next (or previous) match. */
+  findStep: { n: number; back: boolean };
+  /** Lanes the query bar has hidden, or the one lane it isolates. */
+  hidden: Set<string>;
+  solo: string | null;
+  onLanes: (hidden: Set<string>, solo: string | null) => void;
+  /** Reports the lane names and the match count back to the query bar. */
+  onInfo: (info: { lanes: string[]; matches: number }) => void;
 }
-
-const readSet = (key: string): Set<string> => {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(key) ?? '[]') as string[]);
-  } catch {
-    return new Set();
-  }
-};
-const writeSet = (key: string, s: Set<string>) => {
-  try {
-    localStorage.setItem(key, JSON.stringify([...s]));
-  } catch {
-    /* per-viewer convenience */
-  }
-};
 
 /**
  * Branch Explorer: history laid out in time, left (oldest) to right (newest), one horizontal lane per branch.
  * Branch starts and merges are drawn between lanes, tags fly as flags, a date ruler runs on top and an
  * overview map sits at the bottom. Zoom, pan, find, solo / hide lanes and keyboard navigation included.
  */
-export function BranchExplorer({ commits, headOid, headBranch, mainRef, selected, pair, hasMore, loading, onSelect, onMenu, onLoadMore, onSwitch }: Props) {
+export function BranchExplorer({ commits, headOid, headBranch, mainRef, selected, pair, hasMore, loading, onSelect, onMenu, onLoadMore, onSwitch, find, findStep, hidden, solo, onLanes, onInfo }: Props) {
   const [zoom, setZoom] = useState(() => {
     try {
       return Math.min(2, Math.max(0.25, Number(localStorage.getItem('gb.bx.zoom')) || 1));
@@ -68,10 +62,7 @@ export function BranchExplorer({ commits, headOid, headBranch, mainRef, selected
       return 1;
     }
   });
-  const [hidden, setHidden] = useState<Set<string>>(() => readSet('gb.bx.hidden'));
-  const [solo, setSolo] = useState<string | null>(null);
-  const [find, setFind] = useState('');
-  const [findAt, setFindAt] = useState(0);
+  const findAt = useRef(0);
   const tip = useRef<(t: TipState | null) => void>(() => undefined);
   const [labelW, setLabelW] = useState(() => {
     try {
@@ -193,6 +184,22 @@ export function BranchExplorer({ commits, headOid, headBranch, mainRef, selected
     [q, commits, laneIndex],
   );
   const matchSet = useMemo(() => new Set(matches.map((c) => c.hash)), [matches]);
+  useEffect(() => {
+    findAt.current = 0;
+  }, [q]);
+  useEffect(() => {
+    if (!findStep.n || !matches.length) return;
+    // Enter: next match, Shift+Enter: previous; wraps around.
+    const i = (((findStep.back ? findAt.current - 2 : findAt.current) % matches.length) + matches.length) % matches.length;
+    onSelect(matches[i].hash);
+    findAt.current = i + 1;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findStep]);
+  const laneKey = allLanes.map((l) => l.name).join('|');
+  useEffect(() => {
+    onInfo({ lanes: allLanes.map((l) => l.name), matches: matches.length });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [laneKey, matches.length]);
 
   // ---- scrolling ----
   const scrollTo = useCallback(
@@ -272,18 +279,8 @@ export function BranchExplorer({ commits, headOid, headBranch, mainRef, selected
   };
 
   // ---- lanes: hide / solo ----
-  const hide = (name: string) => {
-    const s = new Set(hidden);
-    s.add(name);
-    setHidden(s);
-    writeSet('gb.bx.hidden', s);
-    if (solo === name) setSolo(null);
-  };
-  const showAll = () => {
-    setHidden(new Set());
-    writeSet('gb.bx.hidden', new Set());
-    setSolo(null);
-  };
+  const hide = (name: string) => onLanes(new Set(hidden).add(name), solo === name ? null : solo);
+  const setSolo = (name: string | null) => onLanes(hidden, name);
 
   // ---- keyboard: ← → along the lane, ↑ ↓ to the nearest commit in the lane above / below ----
   const onKey = (e: React.KeyboardEvent) => {
@@ -391,7 +388,6 @@ export function BranchExplorer({ commits, headOid, headBranch, mainRef, selected
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commits, n, laneIndex, colW, laneName]);
-  const hiddenCount = solo ? allLanes.length - lanes.length : hidden.size;
 
   // ---- overview map ----
   const onMap = (e: React.MouseEvent) => {
@@ -413,37 +409,6 @@ export function BranchExplorer({ commits, headOid, headBranch, mainRef, selected
   return (
     <div className="bx" ref={wrapRef} tabIndex={0} onKeyDown={onKey} aria-label="Branch Explorer">
       <div className="bx-tools">
-        <button className={`bx-btn bx-names-btn ${namesOpen ? 'on' : ''}`} onClick={toggleNames} title={namesOpen ? 'Hide branch names' : 'Show branch names'} aria-pressed={namesOpen}>
-          <PaneIcon />
-        </button>
-        <div className="bx-find">
-          <span aria-hidden>⌕</span>
-          <input
-            value={find}
-            onChange={(e) => {
-              setFind(e.target.value);
-              setFindAt(0);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && matches.length) {
-                e.preventDefault();
-                // Enter: next match, Shift+Enter: previous; wraps around.
-                const i = ((e.shiftKey ? findAt - 2 : findAt) % matches.length + matches.length) % matches.length;
-                onSelect(matches[i].hash);
-                setFindAt(i + 1);
-              } else if (e.key === 'Escape') setFind('');
-            }}
-            placeholder="Find commit, author, sha, tag"
-            spellCheck={false}
-          />
-          {q && <span className="bx-find-n">{matches.length}</span>}
-        </div>
-        {hiddenCount > 0 && (
-          <button className="bx-chip" onClick={showAll} title="Show every branch lane again">
-            {solo ? `Only ${solo.split('/').pop()}` : `${hiddenCount} hidden`} · show all
-          </button>
-        )}
-        <span className="grow" />
         <button className="bx-btn" onClick={() => headOid && onSelect(headOid)} disabled={!headOid || !byHash.has(headOid)} title="Go to HEAD">
           ⌖ HEAD
         </button>
@@ -549,6 +514,11 @@ export function BranchExplorer({ commits, headOid, headBranch, mainRef, selected
         )}
 
         <div className="bx-main" style={{ position: 'relative' }}>
+          {!namesOpen && (
+            <button className="bx-names-tab" onClick={toggleNames} title="Show branch names" aria-label="Show branch names">
+              ›
+            </button>
+          )}
           {/* Date ruler (follows the horizontal scroll) */}
           <div className="bx-ruler" style={{ height: RULER_H }}>
             <div ref={rulerRef} style={{ transform: `translateX(${-live.current.left}px)`, width }}>

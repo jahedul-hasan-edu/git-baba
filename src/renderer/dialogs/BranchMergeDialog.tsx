@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { providerInfo, providerLinks } from '../../shared/providers';
 import type { BranchMergePreview, BranchMergeResult, ErrorAction, FriendlyError, MergeConflictStrategy, MergeIssue, MergeIssueCategory } from '../../shared/types';
 import { ErrorPanel } from '../components/ErrorPanel';
-import { Modal, Spinner } from '../components/Modal';
+import { Modal, Spinner, Working } from '../components/Modal';
 import { ResultCard } from '../components/ResultCard';
 import { call, toFriendly } from '../services/api';
 import { useApp } from '../state/AppState';
@@ -13,9 +13,9 @@ import { Hourglass } from '../components/Hourglass';
 
 /** What each method does to the target, in local terms. */
 const LOCAL_METHOD: Record<MergeMethod, string> = {
-  merge: 'Keeps every commit and joins the histories with a merge commit (fast-forwards when possible).',
-  squash: 'Combines all the changes into one new commit on the target — tidy history, single undo point.',
-  rebase: 'Replays each commit on top of the target one by one — a straight, linear history, no merge commit.',
+  merge: 'Keeps every commit, joined by a merge commit.',
+  squash: 'All changes become one new commit.',
+  rebase: 'Replays each commit on top — straight history.',
 };
 
 /** Plain-language categories, so the user always knows what kind of problem it is. */
@@ -180,13 +180,13 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
       <ResultCard
         tone={conflicts ? 'warn' : 'ok'}
         title={conflicts ? `${result.conflicted.length} file${result.conflicted.length === 1 ? '' : 's'} need your decision` : <>Merged {source} into {into}</>}
-        subtitle={result.message}
+        subtitle={conflicts ? undefined : result.returnedTo ? `You're back on ${result.returnedTo}` : undefined}
+        details={result.message}
         chips={[
           <>
             ⎇ {source} → {into}
           </>,
-          ...(result.verifiedRemoteOid ? [<>☁ published &amp; verified</>] : []),
-          ...(result.returnedTo ? [<>back on {result.returnedTo}</>] : []),
+          ...(result.verifiedRemoteOid ? [<>☁ published ✓</>] : []),
           ...(conflicts ? result.conflicted.slice(0, 3).map((f) => (
             <span key={f} className="mono" title={f}>
               ! {f.split('/').pop()}
@@ -195,8 +195,8 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
         ]}
         sha={conflicts ? null : result.newOid}
         actions={[
-          ...(conflicts ? [{ label: 'Resolve conflicts now', primary: true, run: () => (onDone(), setRepoTab('conflicts')) }] : []),
-          ...(result.bridge && result.pushed ? [{ label: `⇄ Open pull request → ${target}`, primary: true, run: () => openPullRequest(result.bridge!) }] : []),
+          ...(conflicts ? [{ label: 'Resolve conflicts', primary: true, run: () => (onDone(), setRepoTab('conflicts')) }] : []),
+          ...(result.bridge && result.pushed ? [{ label: '⇄ Open pull request', title: `${result.bridge} → ${target}`, primary: true, run: () => openPullRequest(result.bridge!) }] : []),
           // Merged locally into the branch you are on, not published yet: push it from here.
           ...(!conflicts && !result.pushed && !result.bridge && preview?.remote && preview.currentBranch === target
             ? [{ label: `⬆ Push ${target}`, primary: true, run: () => (onDone(), window.dispatchEvent(new CustomEvent('gb:repo-dialog', { detail: 'push' }))) }]
@@ -217,10 +217,7 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
           <span className="icon">{result.outcome === 'conflicts' ? '⚠' : '✓'}</span>
           <div>
             <strong>{result.message}</strong>
-            {result.newOid && <div className="small mono">HEAD of {result.bridge ?? target}: {result.newOid.slice(0, 12)}</div>}
-            {result.verifiedRemoteOid && <div className="small">Remote verified at {result.verifiedRemoteOid.slice(0, 12)}.</div>}
-            {result.returnedTo && <div className="small">You are back on {result.returnedTo}.</div>}
-            <div className="small">Authentication: {result.authDescription}</div>
+            {result.newOid && <div className="small mono muted">{result.bridge ?? target} @ {result.newOid.slice(0, 8)}</div>}
           </div>
         </div>
         {result.outcome === 'conflicts' && (
@@ -248,7 +245,7 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
               <span className="muted">{pe.hint}</span>
             </div>
             <ErrorPanel error={result.pushError} />
-            <p className="small muted">The merge commit stays on {result.bridge ?? target} locally. Fix the problem, then publish it with ⬆ Push….</p>
+            <p className="small muted">The merge is kept locally — fix this, then ⬆ Push.</p>
             {pe.category === 'github-restriction' && !result.bridge && (
               <button
                 className="btn primary"
@@ -258,14 +255,14 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
                   void load();
                 }}
               >
-                Merge into a new branch &amp; open a pull request instead
+                ⇄ Use a new branch + pull request
               </button>
             )}
           </>
         )}
         {result.bridge && result.pushed && (
           <button className="btn primary" onClick={() => openPullRequest(result.bridge!)}>
-            Open pull request {result.bridge} → {target}
+            ⇄ Open pull request
           </button>
         )}
       </Result>
@@ -322,6 +319,7 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
       title={`${queue ? `Step ${queue.index + 1} of ${queue.total} · ` : ''}Merge ${source} → ${target}`}
       onClose={onClose}
       locked={!!busy}
+      working={busy === 'merge' ? <Working icon="⤵" from={source} to={mode === 'bridge' ? bridge : target} label={method === 'rebase' ? 'Rebasing' : method === 'squash' ? 'Squashing' : 'Merging'} /> : busy === 'fetch' ? <Working icon="↻" from="☁ remote" to="⎇ local" label="Fetching" /> : null}
       footer={
         <Footer
           auth={auth}
@@ -347,7 +345,7 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
             </>
           );
         })()}
-      {!preview && !error && <Spinner label="Analysing both branches: history, merge base, conflicts and remote state…" />}
+      {!preview && !error && <Spinner label="Checking both branches…" />}
       {preview && (
         <div className="bm">
           {/* What happens, in one line: source —(commits)→ target, plus the history shape. */}
@@ -376,7 +374,7 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
 
           {issues.length === 0 ? (
             <div className="bm-ready small">
-              <span className="text-ok">✓</span> {preview.state === 'up-to-date' ? `${target} already contains everything from ${source}. Nothing to merge.` : 'No problems found — ready to merge.'}
+              <span className="text-ok">✓</span> {preview.state === 'up-to-date' ? `${target} is already up to date.` : 'Ready to merge.'}
               {preview.account && <span className="muted"> · as {preview.account.login}</span>}
             </div>
           ) : (
@@ -399,9 +397,8 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
                     {i.fix === 'merge-anyway' && (
                       <label className="check">
                         <input type="checkbox" checked={mergeAnyway} onChange={(e) => setMergeAnyway(e.target.checked)} />
-                        <span>
-                          <strong>Merge anyway</strong> — I understand the histories are unrelated: files that exist on both sides with different content become conflicts I decide, and
-                          the result joins two separate histories.
+                        <span title="Files on both sides with different content become conflicts you decide.">
+                          <strong>Merge anyway</strong> — join the two histories
                         </span>
                       </label>
                     )}
@@ -427,13 +424,13 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
           <div className="bm-modes" role="radiogroup" aria-label="How to merge">
             <button role="radio" aria-checked={mode === 'direct'} className={`bm-mode ${mode === 'direct' ? 'on' : ''}`} onClick={() => setMode('direct')}>
               <strong>⤵ Into {target}</strong>
-              <span className="small muted">{preview.remote ? 'merge, then publish (verified)' : 'local only — no remote'}</span>
+              <span className="small muted">{preview.remote ? 'merge & publish' : 'local only'}</span>
             </button>
             <button role="radio" aria-checked={mode === 'bridge'} className={`bm-mode ${mode === 'bridge' ? 'on' : ''}`} disabled={!preview.remote} onClick={() => setMode('bridge')}>
               <strong>
                 ⇄ New branch + PR {(preview.state === 'unrelated' || (preview.remote?.behindRemote ?? 0) > 0) && <span className="badge ok">recommended</span>}
               </strong>
-              <span className="small muted">{target} untouched; reviewed on GitHub</span>
+              <span className="small muted">{target} stays untouched</span>
             </button>
           </div>
           )}
@@ -483,12 +480,12 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
           {needsConflictChoice && (
             <div className="bm-conf">
               <div className="small">
-                <strong className="text-warn">⚠ {preview.predictedConflicts!.length} conflicting file{preview.predictedConflicts!.length === 1 ? '' : 's'}</strong> — when a part conflicts:
+                <strong className="text-warn">⚠ {preview.predictedConflicts!.length} conflicting file{preview.predictedConflicts!.length === 1 ? '' : 's'}</strong> — on conflict:
               </div>
               <div className="segmented">
                 {(
                   [
-                    ['stop', 'Ask me', 'Stop and open the Conflicts tab: decide per block, per file or in the editor. Nothing is published until you finish.'],
+                    ['stop', 'Ask me', 'Stop and let me decide in the Conflicts tab. Nothing is published until I finish.'],
                     ['prefer-target', `Keep ${target}`, `Conflicting parts silently keep ${target}'s lines; other changes from ${source} are still merged.`],
                     ['prefer-source', `Take ${source}`, `Conflicting parts silently take ${source}'s lines, replacing ${target}'s.`],
                   ] as [MergeConflictStrategy, string, string][]
@@ -498,7 +495,7 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
                   </button>
                 ))}
               </div>
-              {strategy !== 'stop' && <div className="small text-warn">Automatic resolution can drop changes without showing them — review the result before publishing important branches.</div>}
+              {strategy !== 'stop' && <div className="small text-warn">Picks lines silently — review the result.</div>}
             </div>
           )}
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { MergeAuthInput, MergeMethod, MergeResult, PreMergeReport, RequirementState } from '../../../shared/github';
 import type { FriendlyError, KeyHandleInfo } from '../../../shared/types';
 import { ErrorPanel } from '../../components/ErrorPanel';
-import { Modal, Spinner } from '../../components/Modal';
+import { Modal, Spinner, Working } from '../../components/Modal';
 import { HoldToConfirm, ResultCard } from '../../components/ResultCard';
 import { call, toFriendly } from '../../services/api';
 import { useApp } from '../../state/AppState';
@@ -140,14 +140,14 @@ export function MergeDialog({ repoId, number, onClose, onMerged }: Props) {
       <ResultCard
         tone={result.merged ? 'ok' : 'warn'}
         title={result.merged ? <>Merged #{number} into {report?.baseRefName ?? 'the base branch'}</> : 'Merge not completed'}
-        subtitle={result.merged ? `${METHOD_TEXT[method][0]} on GitHub. Your local copy is unchanged until you pull.` : result.message}
+        subtitle={result.merged ? METHOD_TEXT[method][0] : result.message}
         chips={report ? [<>⎇ {report.headRefName} → {report.baseRefName}</>] : []}
         sha={result.sha}
         actions={[
           ...(result.merged ? [{ label: '⬇ Pull into local', primary: true, run: () => (onClose(), window.dispatchEvent(new CustomEvent('gb:repo-dialog', { detail: 'pull' }))) }] : []),
           ...(gh ? [{ label: 'View on GitHub ↗', run: () => void call('shell:openExternal', { url: `https://github.com/${gh.owner}/${gh.repo}/pull/${number}` }).catch(() => undefined) }] : []),
         ]}
-        note={`Signed in with ${result.authDescription}`}
+        note={`Signed in with ${result.authDescription}. Your local copy updates when you pull.`}
         onClose={onClose}
       />
     );
@@ -164,6 +164,7 @@ export function MergeDialog({ repoId, number, onClose, onMerged }: Props) {
       title={`Merge pull request #${number}`}
       onClose={onClose}
       locked={busy}
+      working={busy && report ? <Working icon="⤵" from={report.headRefName} to={report.baseRefName} label="Merging on GitHub" /> : null}
       footer={
         <>
           <span className="small muted grow ellipsis mg-sum">
@@ -235,7 +236,7 @@ export function MergeDialog({ repoId, number, onClose, onMerged }: Props) {
                 </div>
               ))}
               {!report.rulesReadable && <div className="small muted">Branch rules could not be read with this account; GitHub still enforces them.</div>}
-              {failed.length > 0 && <div className="small text-warn">You can still try — if GitHub refuses, its exact reason appears here and nothing changes.</div>}
+              {failed.length > 0 && <div className="small text-warn">You can still try — GitHub has the final say.</div>}
             </div>
           )}
 
@@ -314,9 +315,7 @@ export function MergeDialog({ repoId, number, onClose, onMerged }: Props) {
                   </div>
                 )}
                 {keyMode === 'paste' && <textarea className="code" rows={4} value={pem} onChange={(e) => setPem(e.target.value)} placeholder="-----BEGIN RSA PRIVATE KEY-----" spellCheck={false} autoComplete="off" />}
-                <p className="small muted mt">
-                  A token for <strong>{report.githubApp ? `${report.githubApp.owner}/${report.githubApp.repo}` : 'this repository'}</strong> only (contents + pull requests: write) is generated, used for this merge, and revoked immediately.
-                </p>
+                <p className="small muted mt">One-time token, revoked right after the merge.</p>
               </div>
             )}
 
@@ -328,7 +327,7 @@ export function MergeDialog({ repoId, number, onClose, onMerged }: Props) {
 }
 
 /** Tiny history diagrams for the three merge methods. */
-export function MethodGlyph({ m }: { m: MergeMethod }) {
+export function MethodGlyph({ m }: { m: MergeMethod | 'ff' }) {
   const dot = (x: number, y: number, k: string) => <circle key={k} cx={x} cy={y} r="2.6" />;
   return (
     <svg className="mg-glyph" viewBox="0 0 44 20" width="44" height="20" aria-hidden>
@@ -347,6 +346,12 @@ export function MethodGlyph({ m }: { m: MergeMethod }) {
         </>
       )}
       {m === 'rebase' && <>{[dot(8, 14, 'a'), dot(20, 14, 'b'), dot(28, 14, 'c'), dot(36, 14, 'd')]}</>}
+      {m === 'ff' && (
+        <>
+          <path d="M26 6 H34 M31 3 L34 6 L31 9" className="side" />
+          {[dot(8, 14, 'a'), dot(20, 14, 'b'), dot(34, 14, 'c')]}
+        </>
+      )}
     </svg>
   );
 }

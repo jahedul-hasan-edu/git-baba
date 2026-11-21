@@ -28,12 +28,14 @@ interface Props {
 }
 
 /**
- * Compact outcome window for push / merge: an animated check, one line of what happened, copyable commit
- * and the next useful steps. Raw git output stays folded away. Esc or Enter closes it.
+ * Outcome window for commit / push / pull / merge: an animated check, one headline, the route and commit as
+ * chips, and equal-size next steps. Sign-in notes and raw git output fold behind one "Details" toggle.
+ * Esc closes; Enter runs the focused (primary) button.
  */
 export function ResultCard({ tone, title, subtitle, chips = [], sha, actions = [], note, details, onClose }: Props) {
   const { toast } = useApp();
   const [copied, setCopied] = useState(false);
+  const [more, setMore] = useState(false);
   const first = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -55,58 +57,66 @@ export function ResultCard({ tone, title, subtitle, chips = [], sha, actions = [
   };
 
   const primaryIdx = actions.findIndex((a) => a.primary);
+  const hasMore = !!note || !!details;
   return (
     <div className="modal-backdrop rc-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`rc ${tone}`} role="dialog" aria-modal="true" aria-live="polite">
+        <button className="rc-x" onClick={onClose} aria-label="Close">
+          ✕
+        </button>
         <div className="rc-burst" aria-hidden>
-          <svg viewBox="0 0 52 52" width="44" height="44">
+          <span className="rc-halo" />
+          <svg viewBox="0 0 52 52" width="56" height="56">
             <circle className="rc-ring" cx="26" cy="26" r="23" fill="none" />
             {tone === 'ok' ? <path className="rc-tick" fill="none" d="M15 27 l7 7 l15 -16" /> : <path className="rc-tick" fill="none" d="M26 14 v16 M26 37 v1" />}
           </svg>
           {tone === 'ok' && (
             <span className="rc-sparks">
-              {Array.from({ length: 8 }, (_, i) => (
-                <i key={i} style={{ ['--r' as string]: `${i * 45}deg` }} />
+              {Array.from({ length: 10 }, (_, i) => (
+                <i key={i} style={{ ['--r' as string]: `${i * 36}deg` }} />
               ))}
             </span>
           )}
         </div>
-        <div className="rc-body">
-          <div className="rc-title">{title}</div>
-          {subtitle && <div className="rc-sub">{subtitle}</div>}
-          {(chips.length > 0 || sha) && (
-            <div className="rc-chips">
-              {chips.map((c, i) => (
-                <span key={i} className="rc-chip">
-                  {c}
-                </span>
-              ))}
-              {sha && (
-                <button className={`rc-chip mono rc-sha ${copied ? 'copied' : ''}`} onClick={copy} title="Copy the full commit id">
-                  {copied ? '✓ copied' : `⧉ ${sha.slice(0, 8)}`}
-                </button>
-              )}
-            </div>
-          )}
-          {note && <div className="rc-note">{note}</div>}
-          {details && (
-            <details className="rc-details">
-              <summary>Git output</summary>
-              <pre>{details}</pre>
-            </details>
-          )}
-          <div className="rc-actions">
-            {actions.map((a, i) => (
-              <button key={a.label} ref={i === (primaryIdx < 0 ? -1 : primaryIdx) ? first : undefined} className={`btn sm ${a.primary ? 'primary' : ''}`} onClick={a.run} title={a.title}>
-                {a.label}
-              </button>
+        <div className="rc-title">{title}</div>
+        {subtitle && <div className="rc-sub">{subtitle}</div>}
+        {(chips.length > 0 || sha) && (
+          <div className="rc-chips">
+            {chips.map((c, i) => (
+              <span key={i} className="rc-chip">
+                {c}
+              </span>
             ))}
-            <span className="spacer" />
-            <button ref={primaryIdx < 0 ? first : undefined} className={`btn sm ${primaryIdx < 0 ? 'primary' : 'ghost'}`} onClick={onClose}>
-              Done
-            </button>
+            {sha && (
+              <button className={`rc-chip mono rc-sha ${copied ? 'copied' : ''}`} onClick={copy} title="Copy the full commit id">
+                {copied ? '✓ copied' : <>⧉ {sha.slice(0, 7)}</>}
+              </button>
+            )}
           </div>
+        )}
+        <div className="rc-actions">
+          {actions.map((a, i) => (
+            <button key={a.label} ref={i === primaryIdx ? first : undefined} className={`btn rc-btn ${a.primary ? 'primary' : 'cancel'}`} onClick={a.run} title={a.title}>
+              {a.label}
+            </button>
+          ))}
+          <button ref={primaryIdx < 0 ? first : undefined} className={`btn rc-btn ${primaryIdx < 0 ? 'primary' : 'cancel'}`} onClick={onClose}>
+            Done
+          </button>
         </div>
+        {hasMore && (
+          <>
+            <button className={`rc-more ${more ? 'on' : ''}`} onClick={() => setMore((v) => !v)} aria-expanded={more}>
+              Details <span className="rc-caret">▾</span>
+            </button>
+            {more && (
+              <div className="rc-fold">
+                {note && <div className="rc-note">{note}</div>}
+                {details && <pre>{details}</pre>}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

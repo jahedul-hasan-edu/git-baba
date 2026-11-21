@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RepoSummary } from '../../shared/types';
+import { ProviderMono } from './ProviderMono';
+import { providerInfo } from '../../shared/providers';
 import { CloneDialog } from '../dialogs/CloneDialog';
 import { CreateRepoWizard } from '../dialogs/CreateRepoWizard';
 import { ContributorsDialog, DuplicateRepoDialog, hueOf, LastCommitDialog, RemoveRepoDialog } from '../dialogs/RepoActionDialogs';
@@ -308,6 +310,15 @@ export function Sidebar() {
                       title={`${r.path}\nRight-click for more actions`}
                     >
                       <div className="name">
+                        {r.provider ? (
+                          <span className="repo-prov" title={`${providerInfo(r.provider.id).name} · ${r.provider.host}`}>
+                            <ProviderMono id={r.provider.id} size={16} />
+                          </span>
+                        ) : (
+                          <span className="repo-prov local" title={r.remoteUrl ? 'Remote on this computer or network' : 'Local only — no remote'}>
+                            {r.remoteUrl ? '🖧' : '💻'}
+                          </span>
+                        )}
                         <span className="ellipsis grow">{r.name}</span>
                         {r.changeCount > 0 && <span className="repo-changes" title={`${r.changeCount} uncommitted change(s)`}>{r.changeCount}</span>}
                         {r.hasConflicts && <span className="dot danger" title="Merge conflicts" />}

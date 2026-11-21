@@ -4,7 +4,7 @@ import { AuthMethodPicker, type AuthSelection } from '../components/AuthMethodPi
 import { ErrorPanel } from '../components/ErrorPanel';
 import { PushRulesPanel } from '../components/PushRulesPanel';
 import { PublishBranchDialog } from './BranchDialogs';
-import { Modal, Spinner } from '../components/Modal';
+import { Modal, Spinner, Working } from '../components/Modal';
 import { ResultCard, type ResultAction } from '../components/ResultCard';
 import { call, toFriendly } from '../services/api';
 import { ownerRepoFromUrl } from '../services/format';
@@ -32,7 +32,6 @@ export function PushDialog({ repoId, onClose, onDone, onRequestPull }: Props) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ summary: string; authDescription: string; tokenRevoked: boolean | null } | null>(null);
   const [tab, setTab] = useState<'commits' | 'files'>('commits');
-  const [showMore, setShowMore] = useState(false);
   const [showLeft, setShowLeft] = useState(false);
 
   const load = useCallback(async () => {
@@ -102,12 +101,11 @@ export function PushDialog({ repoId, onClose, onDone, onRequestPull }: Props) {
       <ResultCard
         tone={left || result.tokenRevoked === false ? 'warn' : 'ok'}
         title={isNew ? <>Published {branch}</> : <>Pushed {n} commit{n === 1 ? '' : 's'}</>}
-        subtitle={n === 0 ? 'No new commits were uploaded — the remote branch now points to a commit that was already there.' : left ? `${left} uncommitted file${left === 1 ? ' was' : 's were'} not included — commit ${left === 1 ? 'it' : 'them'} and push again.` : undefined}
+        subtitle={n === 0 ? 'Branch pointer moved — no new commits to upload.' : left ? `${left} uncommitted file${left === 1 ? '' : 's'} left behind` : undefined}
         chips={[
           <>
-            ⎇ {branch} → {preview?.remote}/{preview?.remoteBranch}
+            ⎇ {branch} → ☁ {preview?.remote}/{preview?.remoteBranch}
           </>,
-          ...(n ? [<>{n} commit{n === 1 ? '' : 's'} · {preview?.files.length ?? 0} file{preview?.files.length === 1 ? '' : 's'}</>] : []),
         ]}
         sha={preview?.headOid}
         actions={actions}
@@ -115,7 +113,7 @@ export function PushDialog({ repoId, onClose, onDone, onRequestPull }: Props) {
           <>
             Signed in with {result.authDescription}
             {result.tokenRevoked === true && ' · temporary token revoked ✓'}
-            {result.tokenRevoked === false && ' · the temporary token could not be revoked; it expires within 1 hour (recorded in Operation History)'}
+            {result.tokenRevoked === false && ' · temporary token not revoked — it expires within 1 hour'}
           </>
         }
         details={result.summary}
@@ -126,21 +124,20 @@ export function PushDialog({ repoId, onClose, onDone, onRequestPull }: Props) {
 
   return (
     <Modal
-      title="Push Changes"
+      title="Push"
       icon="⬆"
       onClose={onClose}
       locked={busy}
+      working={busy && preview ? <Working from={`⎇ ${preview.branch}`} to={`☁ ${preview.remote}/${preview.remoteBranch}`} label={preview.isNewRemoteBranch ? 'Publishing' : `Pushing ${preview.commits.length} commit${preview.commits.length === 1 ? '' : 's'}`} /> : null}
       size="wide"
       footer={
         <>
-          <span className={`pu-foot-auth grow ${auth.input ? 'ok' : ''}`}>{auth.input ? <>✓ {auth.summary}</> : '② Choose how to sign in to continue'}</span>
+          <span className={`pu-foot-auth grow ${auth.input ? 'ok' : ''}`}>{auth.input ? <>✓ {auth.summary}</> : 'Pick how to sign in'}</span>
           <button className="btn cancel" onClick={onClose} disabled={busy}>
             Cancel
           </button>
           <button className="btn primary" onClick={push} disabled={!preview || !auth.input || busy}>
-            {busy
-              ? 'Pushing…'
-              : rules
+            {rules
                 ? 'Push again'
                 : preview?.isNewRemoteBranch
                   ? `⬆ Publish ${preview.branch}`
@@ -195,7 +192,7 @@ export function PushDialog({ repoId, onClose, onDone, onRequestPull }: Props) {
           }}
         />
       )}
-      {!preview && !error && <Spinner label="Preparing push review…" />}
+      {!preview && !error && <Spinner label="Preparing…" />}
       {preview && (
         <div className="pu">
           {/* The route: what goes where, at a glance. */}
@@ -218,34 +215,17 @@ export function PushDialog({ repoId, onClose, onDone, onRequestPull }: Props) {
             </div>
           </div>
           <div className="pu-chips">
-            <span className="pu-chip" title="GitHub account">
-              👤 {preview.account ? preview.account.login : 'no GitHub account'}
+            {preview.account && (
+              <span className="pu-chip" title="GitHub account">
+                👤 {preview.account.login}
+              </span>
+            )}
+            <span className="pu-chip ok" title={`${preview.remote}/${preview.remoteBranch} will point to ${preview.headOid.slice(0, 10)} — only this exact commit is pushed, never forced.
+${preview.remoteUrl}`}>
+              🛡 Safe push
             </span>
-            <span className="pu-chip ok" title={`${preview.remote}/${preview.remoteBranch} will point to ${preview.headOid}. Only this exact commit is pushed.`}>
-              🛡 No force push
-            </span>
-            {preview.hooksEnabled && <span className="pu-chip warn">⚙ pre-push hook may run</span>}
-            <button className={`pu-chip btn-chip ${showMore ? 'on' : ''}`} onClick={() => setShowMore((v) => !v)}>
-              {showMore ? 'Less ▴' : 'Details ▾'}
-            </button>
+            {preview.hooksEnabled && <span className="pu-chip warn" title="A pre-push hook from this repository may run">⚙ hooks</span>}
           </div>
-          {showMore && (
-            <div className="pu-more">
-              <span className="pu-k">Repository</span>
-              <span>{preview.repoName}</span>
-              <span className="pu-k">Remote URL</span>
-              <span className="mono ellipsis" title={preview.remoteUrl}>
-                {preview.remoteUrl}
-              </span>
-              <span className="pu-k">Result</span>
-              <span>
-                <span className="mono">
-                  {preview.remote}/{preview.remoteBranch}
-                </span>{' '}
-                → <span className="mono">{preview.headOid.slice(0, 10)}</span>
-              </span>
-            </div>
-          )}
 
           {preview.uncommittedFiles.length > 0 && (
             <div className="pu-left">
@@ -253,9 +233,8 @@ export function PushDialog({ repoId, onClose, onDone, onRequestPull }: Props) {
                 <span className="pu-left-ico">✎</span>
                 <span className="grow">
                   <strong>
-                    {preview.uncommittedFiles.length} uncommitted file{preview.uncommittedFiles.length === 1 ? ' stays' : 's stay'} behind
+                    {preview.uncommittedFiles.length} uncommitted file{preview.uncommittedFiles.length === 1 ? '' : 's'} not included
                   </strong>
-                  <span className="muted"> — push only sends commits</span>
                 </span>
                 <span className="muted">{showLeft ? '▴' : '▾'}</span>
               </button>
@@ -275,7 +254,7 @@ export function PushDialog({ repoId, onClose, onDone, onRequestPull }: Props) {
             <section className="pu-card">
               <div className="pu-card-head">
                 <span className="pu-step">1</span>
-                <strong className="grow">Review what goes out</strong>
+                <strong className="grow">Review</strong>
                 <div className="seg">
                   <button className={tab === 'commits' ? 'on' : ''} onClick={() => setTab('commits')}>
                     Commits {preview.commits.length}
@@ -315,15 +294,14 @@ export function PushDialog({ repoId, onClose, onDone, onRequestPull }: Props) {
               ) : (
                 <div className="uc-empty">
                   <span>☁</span>
-                  <div className="small muted">{preview.isNewRemoteBranch ? 'This creates the branch on the remote. Its commits already exist there, so no files are uploaded.' : 'No file changes.'}</div>
+                  <div className="small muted">{preview.isNewRemoteBranch ? 'Creates the branch — no files to upload.' : 'No file changes.'}</div>
                 </div>
               )}
             </section>
             <section className="pu-card">
               <div className="pu-card-head">
                 <span className={`pu-step ${auth.input ? 'done' : ''}`}>{auth.input ? '✓' : '2'}</span>
-                <strong className="grow">Sign in to push</strong>
-                <span className="small muted">fresh every time</span>
+                <strong className="grow">Sign in</strong>
               </div>
               <div className="pu-auth">
                 <AuthMethodPicker

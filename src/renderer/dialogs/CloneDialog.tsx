@@ -80,11 +80,6 @@ function cleanHost(v: string): string {
   return v.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
 }
 
-function joinPath(parent: string, child: string): string {
-  if (!parent) return child;
-  const sep = parent.includes('/') && !parent.includes('\\') ? '/' : '\\';
-  return parent.endsWith('\\') || parent.endsWith('/') ? `${parent}${child}` : `${parent}${sep}${child}`;
-}
 
 function nodeParent(p: string): string {
   const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
@@ -328,7 +323,6 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
     const q = repoFilter.trim().toLowerCase();
     return (remoteRepos ?? []).filter((r) => !clonedKeys.has(r.fullName.toLowerCase()) && (!q || r.fullName.toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q)));
   }, [remoteRepos, clonedKeys, repoFilter]);
-  const hiddenCloned = (remoteRepos ?? []).filter((r) => clonedKeys.has(r.fullName.toLowerCase())).length;
 
   const authenticateAndClone = async () => {
     setAttempted(true);
@@ -401,12 +395,12 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
           <>
             {state?.leftoverFolder && (
               <button className="btn danger" onClick={() => setConfirmRemove(true)}>
-                Remove incomplete folder…
+                Remove partial folder…
               </button>
             )}
             {attempted && missing.length > 0 && (
               <span className="small text-danger ellipsis" title={missing.map((m) => m.text).join('\n')}>
-                Still needed: {missing.map((m) => m.text).join(' · ')}
+                Needs: {missing.map((m) => m.text).join(' · ')}
               </span>
             )}
             <span className="spacer" />
@@ -440,15 +434,13 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
         )
       }
     >
+      <div className="repo-modal">
       {error && <ErrorPanel error={error} />}
 
       {showSetup && (
         <>
           {/* 1. Where from */}
           <div className="clone-section">
-            <div className="clone-step">
-              <span className="num">1</span> Repository
-            </div>
             <div className="segmented mb" role="tablist">
               {(
                 [
@@ -465,24 +457,18 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
 
             {source === 'enterprise' && (
               <div className={`field ${flag('host') ? 'invalid' : ''}`}>
-                <label>
-                  Enterprise server address <span className="req">*</span>
-                </label>
                 <input value={enterpriseHost} onChange={(e) => setEnterpriseHost(e.target.value)} placeholder="github.example.com" spellCheck={false} disabled={locked} />
-                <Req show={flag('host')}>Enter your GitHub Enterprise server, e.g. github.example.com.</Req>
+                
               </div>
             )}
 
             {source === 'github' ? (
               <div className={`field ${flag('repo') ? 'invalid' : ''}`}>
-                <label>
-                  Your repositories <span className="req">*</span>
-                </label>
                 {hostAccounts.length === 0 ? (
                   <div className="banner info small">
                     <span className="icon">ℹ</span>
                     <div>
-                      Add your GitHub.com account first (header → GitHub Account) to see your repositories here, or use the <a onClick={() => setSource('url')}>URL</a> tab.
+                      No GitHub.com account yet — <a onClick={() => setSource('url')}>paste a URL</a> instead.
                     </div>
                   </div>
                 ) : (
@@ -503,7 +489,6 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                         <button className="btn" onClick={() => void loadRepos()} disabled={!credential || credential.accountId !== accountId || loadingRepos || locked}>
                           {loadingRepos ? 'Loading…' : remoteRepos ? <><Hourglass /> Reload repositories</> : 'Load my repositories'}
                         </button>
-                        {!credential && <span className="small muted">Enter the account's token to list its repositories.</span>}
                       </div>
                     </div>
 
@@ -537,31 +522,26 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                             </div>
                           ))}
                         </div>
-                        <div className="small muted">
-                          {available.length} available{hiddenCloned ? ` · ${hiddenCloned} already cloned (hidden)` : ''}
-                        </div>
                       </div>
                     )}
                   </>
                 )}
-                <Req show={flag('repo')}>Pick the repository you want to clone.</Req>
+                
               </div>
             ) : (
               <>
                 <div className={`field ${flag('repo') ? 'invalid' : ''}`}>
-                  <label>
-                    {source === 'url' ? 'Repository URL' : 'Repository'} <span className="req">*</span>
-                  </label>
                   <input
                     value={typedRepository}
                     onChange={(e) => setTypedRepository(e.target.value)}
-                    placeholder={source === 'url' ? 'https://host/owner/repo.git  ·  git@host:owner/repo.git  ·  C:\\path\\repo.git' : 'owner/repository  or paste a URL'}
+                    placeholder={source === 'url' ? 'Paste a clone URL or folder path' : 'owner/repository'}
+                    autoFocus
                     spellCheck={false}
                     disabled={locked}
                   />
-                  <Req show={flag('repo')}>{typedRepository.trim() ? 'This does not look like owner/repository or a clone URL.' : 'Which repository do you want to clone?'}</Req>
+                  <Req show={flag('repo') && !!typedRepository.trim()}>Not a repository address.</Req>
                   {target && (
-                    <div className="small muted mt-xs">
+                    <div className="clone-target">
                       {local ? (
                         <>
                           📁 Folder on this computer · <strong>{target.repo}</strong>
@@ -574,47 +554,40 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                     </div>
                   )}
                 </div>
-                <div className={`field ${flag('folder') ? 'invalid' : ''}`}>
-                  <label>
-                    Folder name <span className="req">*</span>
-                  </label>
-                  <input
-                    value={folder}
-                    onChange={(e) => {
-                      setFolder(e.target.value);
-                      setFolderTouched(true);
-                    }}
-                    spellCheck={false}
-                    disabled={locked}
-                  />
-                  <Req show={flag('folder')}>Name of the new folder for the repository.</Req>
-                </div>
               </>
             )}
 
-            <div className={`field ${flag('dest') ? 'invalid' : ''}`}>
-              <label>
-                Local path <span className="req">*</span>
-              </label>
-              <div className="row">
+            <div className={`field ${flag('dest') || flag('folder') ? 'invalid' : ''}`}>
+              <label>Save to</label>
+              <div className="clone-dest">
+                <span className="clone-dest-ico" aria-hidden>📁</span>
                 <input
-                  className="grow mono"
+                  className="clone-dest-parent mono"
                   value={state?.summary.destination ? nodeParent(state.summary.destination) : destPath}
                   onChange={(e) => setDestPath(e.target.value)}
-                  placeholder="C:\Workspace\github-repo"
+                  placeholder="C:\\Workspace"
                   spellCheck={false}
                   disabled={locked}
                 />
-                <button className="btn" onClick={browse} disabled={locked}>
-                  Choose…
+                <span className="clone-dest-sep">/</span>
+                <input
+                  className="clone-dest-folder mono"
+                  value={folder}
+                  onChange={(e) => {
+                    setFolder(e.target.value);
+                    setFolderTouched(true);
+                  }}
+                  placeholder="folder"
+                  spellCheck={false}
+                  disabled={locked || source === 'github'}
+                  style={{ width: `${Math.min(28, Math.max(7, folder.length + 2))}ch` }}
+                />
+                <button className="clone-dest-btn" onClick={browse} disabled={locked} title="Choose folder">
+                  …
                 </button>
               </div>
-              {destCheck && !state && destCheck.exists && !destCheck.isDirectory && <div className="field-hint">That path is a file. Enter a folder.</div>}
-              {destCheck && !state && !destCheck.exists && destPath.trim() && <div className="small text-warn mt-xs">This folder doesn't exist yet — it will be created.</div>}
-              <Req show={flag('dest') && !destPath.trim()}>Choose where the repository folder is created.</Req>
-              <div className="small muted mt-xs">
-                The repository is cloned into <span className="mono">{state?.summary.destination ?? (folder ? joinPath(destCheck?.path ?? destPath, folder) : destCheck?.path ?? destPath)}</span>
-              </div>
+              {destCheck && !state && destCheck.exists && !destCheck.isDirectory && <div className="field-hint">That path is a file.</div>}
+              {destCheck && !state && !destCheck.exists && destPath.trim() && <div className="small text-warn mt-xs">New folder — will be created.</div>}
             </div>
           </div>
 
@@ -622,31 +595,21 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
           {local ? (
             <div className="banner info small">
               <span className="icon">📁</span>
-              <div>
-                This repository is a folder on this computer (or a network share), so <strong>no sign-in is needed</strong>. The clone's <span className="mono">origin</span> points
-                to that folder: fetch, pull and push work with it directly.
-              </div>
+              <div>Local folder — no sign-in needed.</div>
             </div>
           ) : (
           <div className="clone-section">
-            <div className="clone-step">
-              <span className="num">2</span> Authentication
-            </div>
-            <div className="proto-cards">
+            <div className="proto-pills" role="radiogroup" aria-label="Authentication">
               {(
                 [
-                  ['https', 'HTTPS', otherInfo ? `Your ${otherInfo.name} connection, or the sign-in already on this computer` : 'Sign in with your GitHub account, or use the Git credentials already on this computer'],
-                  ['pat', otherInfo?.connect ? otherInfo.connect.tokenName : 'Personal access token', otherInfo ? 'Paste a token with read access to the repository' : 'Paste a token (classic or fine-grained) with read access to the repository'],
-                  ['ssh', 'SSH', 'Use an SSH key on this computer, generate one, or provide your public key'],
+                  ['https', 'HTTPS', '🔐'],
+                  ['pat', otherInfo?.connect ? otherInfo.connect.tokenName : 'Token', '🔑'],
+                  ['ssh', 'SSH', '🗝'],
                 ] as [Protocol, string, string][]
-              ).map(([id, label, desc]) => (
-                <label key={id} className={`radio-card ${protocol === id ? 'selected' : ''} ${locked ? 'disabled' : ''}`}>
-                  <input type="radio" checked={protocol === id} onChange={() => setProtocol(id)} disabled={locked} />
-                  <div>
-                    <strong>{label}</strong>
-                    <div className="small muted">{desc}</div>
-                  </div>
-                </label>
+              ).map(([id, label, ico]) => (
+                <button key={id} className={`proto-pill ${protocol === id ? 'on' : ''}`} onClick={() => setProtocol(id)} disabled={locked} aria-pressed={protocol === id}>
+                  <span aria-hidden>{ico}</span> {label}
+                </button>
               ))}
             </div>
 
@@ -684,10 +647,10 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                 <>
                   <div className="segmented mb">
                     <button className={httpsAuth === 'account' ? 'on' : ''} onClick={() => setHttpsAuth('account')} disabled={locked}>
-                      GitHub account
+                      Account
                     </button>
                     <button className={httpsAuth === 'system' ? 'on' : ''} onClick={() => setHttpsAuth('system')} disabled={locked}>
-                      Git credential manager
+                      This computer
                     </button>
                   </div>
                   {httpsAuth === 'account' &&
@@ -695,16 +658,15 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                       <div className="banner info small">
                         <span className="icon">ℹ</span>
                         <div>
-                          No GitHub account for <strong>{host ?? 'this server'}</strong> is added yet. Add one from the header (GitHub Account), or choose <a onClick={() => setProtocol('pat')}>Personal access token</a> or{' '}
-                          <a onClick={() => setHttpsAuth('system')}>Git credential manager</a>.
+                          No account for <strong>{host ?? 'this server'}</strong> — use a <a onClick={() => setProtocol('pat')}>token</a> or <a onClick={() => setHttpsAuth('system')}>this computer</a>.
                         </div>
                       </div>
                     ) : source === 'github' ? (
                       <p className="small muted">
                         {credential && credential.accountId === accountId ? (
-                          <>✓ Signed in as <strong>{account?.login}</strong> above — the same token clones the repository.</>
+                          <>✓ {account?.login}</>
                         ) : (
-                          <>Enter the token for <strong>{account?.login}</strong> in the repository list above.</>
+                          <>Sign in as <strong>{account?.login}</strong> above.</>
                         )}
                       </p>
                     ) : (
@@ -728,9 +690,7 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                       </>
                     ))}
                   {httpsAuth === 'system' && (
-                    <p className="small muted">
-                      Git uses what is already set up on this computer (e.g. Git Credential Manager). Nothing is entered or stored here. If no credential is stored, the clone of a private repository fails — use a token or SSH instead.
-                    </p>
+                    <p className="small muted">Uses the Git sign-in already on this computer.</p>
                   )}
                 </>
               )}
@@ -739,9 +699,7 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                 <>
                   <div className="grid-2">
                     <div className={`field ${flag('auth') ? 'invalid' : ''}`}>
-                      <label>
-                        Personal access token <span className="req">*</span>
-                      </label>
+                      <label>Token</label>
                       <div className="row">
                         <input
                           className="grow mono"
@@ -757,32 +715,26 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                           {showToken ? '🙈' : '👁'}
                         </button>
                       </div>
-                      <Req show={flag('auth')}>Paste a token with read access to {target ? `${target.owner}/${target.repo}` : 'the repository'}.</Req>
+                      
                     </div>
                     <div className="field">
-                      <label>Username (optional)</label>
+                      <label>Username <span className="muted">· optional</span></label>
                       <input value={patUser} onChange={(e) => setPatUser(e.target.value)} placeholder={otherInfo ? (otherInfo.connect?.gitUsername ?? 'your username') : 'your GitHub login'} spellCheck={false} disabled={busy} />
                     </div>
                   </div>
                   <div className="row small">
-                    <span className="muted grow">Used for this clone only, then removed from memory. Not saved.</span>
-                    <a onClick={() => open(tokenUrl)}>Create a token on {host ?? 'GitHub'} ↗</a>
+                    <span className="grow" />
+                    <a onClick={() => open(tokenUrl)}>New token ↗</a>
                   </div>
                 </>
               )}
 
               {protocol === 'ssh' && (
                 <>
-                  {target && (
-                    <div className="small muted mb">
-                      Clones from <span className="mono">{cloneUrl}</span>
-                    </div>
-                  )}
                   <SshKeyFields key={authKey} savedKey={null} onChange={onSsh} />
-                  {flag('auth') && <div className="field-hint">Choose, generate or provide the SSH key to use.</div>}
                   <div className="row small mt">
-                    <span className="muted grow">The public key must be added to your account on {host ?? 'GitHub'}.</span>
-                    <a onClick={() => open(sshUrl)}>Add SSH key ↗</a>
+                    <span className="grow" />
+                    <a onClick={() => open(sshUrl)}>Add key on {host ?? 'GitHub'} ↗</a>
                   </div>
                 </>
               )}
@@ -790,34 +742,19 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
           </div>
           )}
 
-          <div className="card mt">
-            <dl className="kv">
-              <dt>Repository</dt>
-              <dd>{target ? (local ? cloneUrl : `${target.host}/${target.owner}/${target.repo}`) : '—'}</dd>
-              <dt>Clone URL</dt>
-              <dd className="mono small">{cloneUrl || '—'}</dd>
-              <dt>Authentication</dt>
-              <dd>{auth ? (auth.kind === 'account' ? `GitHub account ${account?.login}` : auth.summary) : <span className="muted">not chosen yet</span>}</dd>
-              <dt>Destination</dt>
-              <dd className="mono small">{state?.summary.destination ?? (destPath.trim() ? joinPath(destCheck?.path ?? destPath, folder) : '—')}</dd>
-            </dl>
-          </div>
         </>
       )}
 
       {state && (
         <>
           {state.phase !== 'awaiting-auth' && (
-            <dl className="kv mb">
-              <dt>Repository</dt>
-              <dd>{state.summary.repository}</dd>
-              <dt>Account</dt>
-              <dd>{state.summary.account ?? '—'}</dd>
-              <dt>Authentication</dt>
-              <dd>{state.summary.authentication}</dd>
-              <dt>Destination</dt>
-              <dd className="mono small">{state.summary.destination}</dd>
-            </dl>
+            <div className="clone-run-head">
+              <span className={`clone-run-dot ${state.phase}`} />
+              <strong className="ellipsis">{state.summary.repository}</strong>
+              <span className="mono small muted ellipsis grow" title={state.summary.destination}>
+                → {state.summary.destination}
+              </span>
+            </div>
           )}
           {state.progress && (
             <div className="card">
@@ -836,16 +773,14 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
             <div className="banner ok">
               <span className="icon">✓</span>
               <div>
-                <strong>Repository cloned successfully.</strong> {state.repo.name}
-                {state.summary.account ? ` · account ${state.summary.account}` : ''}
-                {state.summary.owner ? ` · owner ${state.summary.owner}` : ''} — added to your repository list.
+                <strong>{state.repo.name}</strong> cloned.
               </div>
             </div>
           )}
           {state.phase === 'cancelled' && (
             <div className="banner info">
               <span className="icon">ℹ</span>
-              <div>Clone cancelled.{state.leftoverFolder ? ` An incomplete folder remains at ${state.leftoverFolder}. It is not deleted unless you choose to.` : ''}</div>
+              <div>Cancelled.{state.leftoverFolder ? ` Partial folder left at ${state.leftoverFolder}.` : ''}</div>
             </div>
           )}
           <WorkflowSteps steps={state.steps} onReviewAuth={() => setAuthKey((k) => k + 1)} />
@@ -879,6 +814,7 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
           }}
         />
       )}
+      </div>
     </Modal>
   );
 }

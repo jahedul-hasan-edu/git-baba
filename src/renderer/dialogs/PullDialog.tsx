@@ -5,7 +5,8 @@ import { DiffViewer } from '../components/DiffViewer';
 import { Stepper } from '../components/Stepper';
 import { ErrorPanel } from '../components/ErrorPanel';
 import { ResultCard } from '../components/ResultCard';
-import { Modal, Spinner } from '../components/Modal';
+import { Modal, Spinner, Working } from '../components/Modal';
+import { MethodGlyph } from '../pages/github/MergeDialog';
 import { SecurityReportView } from '../components/SecurityReportView';
 import { call, toFriendly } from '../services/api';
 import { ownerRepoFromUrl } from '../services/format';
@@ -19,7 +20,11 @@ interface Props {
 
 type Step = 'auth' | 'fetching' | 'review' | 'pulling' | 'result';
 
-const FLOW = ['Fetch remote changes', 'Inspect incoming changes', 'Run suspicious-code checks', 'Show files + warnings', 'Ask for confirmation', 'Merge / rebase'];
+const STRATEGIES: [PullStrategy, 'ff' | 'merge' | 'rebase', string, string][] = [
+  ['ff-only', 'ff', 'Fast-forward', 'Move your branch forward. Stops if you have your own new commits.'],
+  ['merge', 'merge', 'Merge', 'Join both sides with a merge commit.'],
+  ['rebase', 'rebase', 'Rebase', 'Replay your unpushed commits on top.'],
+];
 
 /** Pull = fetch → scan → review → explicit confirmation → integrate the exact reviewed commit. */
 export function PullDialog({ repoId, onClose, onDone }: Props) {
@@ -101,8 +106,9 @@ export function PullDialog({ repoId, onClose, onDone }: Props) {
       <ResultCard
         tone={conflicts ? 'warn' : 'ok'}
         title={titles[result.outcome] ?? 'Pull finished'}
-        subtitle={result.message}
-        chips={preview ? [<>⎇ {preview.upstream} → {preview.branch}</>] : []}
+        subtitle={conflicts || result.outcome === 'up-to-date' ? undefined : result.message}
+        chips={preview ? [<>☁ {preview.upstream} → ⎇ {preview.branch}</>] : []}
+        details={conflicts || result.outcome === 'up-to-date' ? result.message : undefined}
         sha={conflicts ? null : preview?.targetOid}
         actions={conflicts ? [{ label: 'Resolve conflicts', primary: true, run: () => onDone(result) }] : []}
         onClose={() => onDone(result)}
@@ -117,7 +123,7 @@ export function PullDialog({ repoId, onClose, onDone }: Props) {
           Cancel
         </button>
         <button className="btn primary" onClick={fetchAndReview} disabled={!auth.input || step === 'fetching'}>
-          {step === 'fetching' ? 'Fetching & scanning…' : 'Fetch & Review'}
+          Fetch &amp; review →
         </button>
       </>
     ) : (
@@ -125,26 +131,32 @@ export function PullDialog({ repoId, onClose, onDone }: Props) {
         {needsAck && (
           <label className="check grow">
             <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
-            <span>I reviewed the flagged changes and want to continue</span>
+            <span>I reviewed the flagged changes</span>
           </label>
         )}
         <button className="btn cancel" onClick={cancel} disabled={step === 'pulling'}>
           Cancel
         </button>
-        <button className="btn" onClick={() => setTab('files')} disabled={step === 'pulling'}>
-          Review Changes
-        </button>
         <button className={`btn ${preview?.report.status === 'REVIEW_REQUIRED' ? 'danger solid' : 'primary'}`} onClick={pull} disabled={step === 'pulling' || (needsAck && !ack) || !preview || preview.upToDate}>
-          {step === 'pulling' ? 'Pulling…' : 'Continue Pull'}
+          ⬇ Pull
         </button>
       </>
     );
 
+  const working =
+    step === 'fetching' ? (
+      <Working icon="🔍" from="☁ remote" to="🛡 scan" label="Fetching & scanning" />
+    ) : step === 'pulling' && preview ? (
+      <Working icon="⬇" from={`☁ ${preview.upstream}`} to={`⎇ ${preview.branch}`} label="Pulling" />
+    ) : null;
+  const status = preview?.report.status;
+  const dot = status === 'REVIEW_REQUIRED' ? 'danger' : status === 'REVIEW_RECOMMENDED' ? 'warn' : '';
+
   return (
-    <Modal title="Pull with Security Review" onClose={cancel} size="wide" locked={step === 'fetching' || step === 'pulling'} footer={footer}>
+    <Modal title="Pull" icon="⬇" onClose={cancel} size="wide" locked={step === 'fetching' || step === 'pulling'} footer={footer} working={working}>
       <Stepper
         steps={[
-          { label: 'Authenticate', detail: auth.summary ? auth.summary.slice(0, 28) : undefined },
+          { label: 'Sign in', detail: auth.summary ? auth.summary.slice(0, 28) : undefined },
           { label: 'Fetch & scan', detail: preview ? `${preview.commits.length} commit(s)` : undefined },
           { label: 'Review', detail: preview ? (preview.report.status === 'REVIEW_REQUIRED' ? 'flagged' : 'looks clean') : undefined },
           { label: 'Pull' },
@@ -161,83 +173,76 @@ export function PullDialog({ repoId, onClose, onDone }: Props) {
       {error && <ErrorPanel error={error} onAction={(a: ErrorAction) => a === 'review-auth' && setAuthKey((k) => k + 1)} available={['review-auth']} onSwitched={() => { setError(null); setAuthKey((k) => k + 1); }} />}
 
       {(step === 'auth' || step === 'fetching') && (
-        <div className="grid-2" style={{ gap: 20, alignItems: 'start' }}>
-          <div>
-            <p>Before anything changes in your working copy, Git Baba downloads the remote changes and inspects them.</p>
-            <div className="flow">
-              Pull requested
-              {FLOW.map((f) => (
-                <div key={f}>
-                  {'      ↓'}
-                  <br />
-                  {f}
-                </div>
-              ))}
-            </div>
-            <p className="small muted mt">Fetching does not modify your files. Only the exact commit you review can be merged afterwards.</p>
-          </div>
-          <div>
-            <h3>Authentication for fetch</h3>
-            {!options ? (
-              <Spinner />
-            ) : (
-              <AuthMethodPicker
-                key={authKey}
-                options={options.authOptions}
-                githubApp={options.githubApp}
-                savedSshKey={options.savedSshKey}
-                repoId={repoId}
-                purpose="fetch"
-                remoteOwnerRepo={ownerRepoFromUrl(options.remoteUrl)}
-                canSave={!!repo?.settings.allowSavedCredentials && !!info?.encryptionAvailable}
-                onChange={setAuth}
-              />
-            )}
-          </div>
+        <div className="pl-auth">
+          {!options ? (
+            <Spinner />
+          ) : (
+            <AuthMethodPicker
+              key={authKey}
+              options={options.authOptions}
+              githubApp={options.githubApp}
+              savedSshKey={options.savedSshKey}
+              repoId={repoId}
+              purpose="fetch"
+              remoteOwnerRepo={ownerRepoFromUrl(options.remoteUrl)}
+              canSave={!!repo?.settings.allowSavedCredentials && !!info?.encryptionAvailable}
+              onChange={setAuth}
+            />
+          )}
+          <div className="pl-safe">🛡 Your files stay untouched until you confirm the reviewed changes.</div>
         </div>
       )}
 
       {(step === 'review' || step === 'pulling') && preview && (
-        <>
+        <div className="pl">
           {preview.upToDate ? (
-            <div className="banner ok">
-              <span className="icon">✓</span>
-              <div>
-                <strong>Already up to date.</strong> {preview.branch} already contains {preview.upstream}.
-              </div>
+            <div className="bm-ready small">
+              <span className="text-ok">✓</span> Already up to date — {preview.branch} has everything from {preview.upstream}.
             </div>
           ) : (
             <>
-              <dl className="kv mb">
-                <dt>Repository</dt>
-                <dd>{preview.repoName}</dd>
-                <dt>Integrate</dt>
-                <dd>
-                  <span className="mono">{preview.upstream}</span> @ <span className="mono small">{preview.targetOid.slice(0, 10)}</span> → <strong>{preview.branch}</strong>
-                </dd>
-                <dt>Incoming</dt>
-                <dd>
-                  {preview.commits.length} commit(s), {preview.files.length} file(s)
-                </dd>
-                {preview.localChangeCount > 0 && (
-                  <>
-                    <dt>Local changes</dt>
-                    <dd>
-                      <span className="badge warn">{preview.localChangeCount} uncommitted file(s)</span> Git will stop rather than overwrite them.
-                    </dd>
-                  </>
-                )}
-              </dl>
-              <div className="tabs" style={{ padding: 0, background: 'transparent', marginBottom: 10 }}>
-                <div className={`tab ${tab === 'security' ? 'active' : ''}`} onClick={() => setTab('security')}>
-                  Security <span className={`badge ${preview.report.status === 'REVIEW_REQUIRED' ? 'danger' : preview.report.status === 'REVIEW_RECOMMENDED' ? 'warn' : 'ok'}`}>{preview.report.findings.length}</span>
+              <div className="pu-route">
+                <div className="pu-end">
+                  <span className="pu-k">From</span>
+                  <span className="pu-branch remote" title={preview.targetOid}>
+                    ☁ {preview.upstream}
+                  </span>
                 </div>
-                <div className={`tab ${tab === 'commits' ? 'active' : ''}`} onClick={() => setTab('commits')}>
-                  Commits <span className="badge">{preview.commits.length}</span>
+                <div className="pu-wire">
+                  <span className="pu-wire-label">
+                    {preview.commits.length} commit{preview.commits.length === 1 ? '' : 's'} · {preview.files.length} file{preview.files.length === 1 ? '' : 's'}
+                  </span>
                 </div>
-                <div className={`tab ${tab === 'files' ? 'active' : ''}`} onClick={() => setTab('files')}>
-                  Changed files <span className="badge">{preview.files.length}</span>
+                <div className="pu-end right">
+                  <span className="pu-k">Into</span>
+                  <span className="pu-branch">⎇ {preview.branch}</span>
                 </div>
+              </div>
+              {(preview.localChangeCount > 0 || preview.unrelated) && (
+                <div className="pu-chips">
+                  {preview.localChangeCount > 0 && (
+                    <span className="pu-chip warn" title="Git stops rather than overwrite them">
+                      ✎ {preview.localChangeCount} uncommitted file{preview.localChangeCount === 1 ? '' : 's'}
+                    </span>
+                  )}
+                  {preview.unrelated && (
+                    <span className="pu-chip warn" title="Usually the remote was created with its own first commit (README or license). Merge joins both histories; files on both sides with different content become conflicts.">
+                      ⚠ No shared history — use Merge
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div className="pl-tabs" role="tablist">
+                <button role="tab" className={`pl-tab ${tab === 'security' ? 'on' : ''}`} onClick={() => setTab('security')}>
+                  <span className={`pl-dot ${dot}`} /> Security <span className="pl-n">{preview.report.findings.length}</span>
+                </button>
+                <button role="tab" className={`pl-tab ${tab === 'commits' ? 'on' : ''}`} onClick={() => setTab('commits')}>
+                  Commits <span className="pl-n">{preview.commits.length}</span>
+                </button>
+                <button role="tab" className={`pl-tab ${tab === 'files' ? 'on' : ''}`} onClick={() => setTab('files')}>
+                  Files <span className="pl-n">{preview.files.length}</span>
+                </button>
               </div>
               {tab === 'security' && <SecurityReportView report={preview.report} onOpenFile={openFile} />}
               {tab === 'commits' && (
@@ -276,37 +281,23 @@ export function PullDialog({ repoId, onClose, onDone }: Props) {
                   </div>
                 </div>
               )}
-              <h3 className="mt">Integration strategy</h3>
-              {preview.unrelated && (
-                <div className="banner warn">
-                  <span className="icon">⚠</span>
-                  <div className="small">
-                    <strong>{preview.branch} and {preview.upstream} have no commit in common.</strong> This usually means the remote repository was created with its own first
-                    commit (a README or license) while you started a separate history here. <strong>Merge</strong> joins both histories and keeps every file; files that exist on
-                    both sides with different content become conflicts you can resolve.
-                  </div>
-                </div>
-              )}
-              {(
-                [
-                  ['ff-only', 'Fast-forward only', 'Move your branch forward to the reviewed commit. Fails safely if your branch has its own new commits.', !preview.canFastForward],
-                  ['merge', 'Merge', 'Create a merge commit combining your commits with the incoming ones. Conflicts can be resolved in the app.', false],
-                  ['rebase', 'Rebase', 'Replay your local commits on top of the incoming commits. Rewrites your local (unpushed) commits.', false],
-                ] as [PullStrategy, string, string, boolean][]
-              ).map(([value, label, desc, disabled]) => (
-                <label key={value} className={`radio-card ${strategy === value ? 'selected' : ''}`} style={disabled ? { opacity: 0.5 } : undefined}>
-                  <input type="radio" checked={strategy === value} disabled={disabled} onChange={() => setStrategy(value)} />
-                  <div>
-                    <strong>{label}</strong>
-                    <div className="small muted">{desc}</div>
-                  </div>
-                </label>
-              ))}
+
+              <div className="mg-methods" role="radiogroup" aria-label="How to bring the changes in">
+                {STRATEGIES.map(([value, glyph, label, desc]) => {
+                  const off = value === 'ff-only' && !preview.canFastForward;
+                  return (
+                    <button key={value} role="radio" aria-checked={strategy === value} className={`mg-method ${strategy === value ? 'on' : ''}`} disabled={off} title={off ? 'Your branch has its own new commits' : desc} onClick={() => setStrategy(value)}>
+                      <MethodGlyph m={glyph} />
+                      <span>{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="small muted mg-method-desc">{STRATEGIES.find(([v]) => v === strategy)?.[3]}</div>
             </>
           )}
-        </>
+        </div>
       )}
-      {step === 'pulling' && <Spinner label="Integrating the reviewed commit…" />}
     </Modal>
   );
 }

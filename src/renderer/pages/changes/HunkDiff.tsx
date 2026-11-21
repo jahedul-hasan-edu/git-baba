@@ -32,6 +32,19 @@ export function HunkDiff({ file, diff, busy, onApply, onWhole }: Props) {
   const drag = useRef<{ hunk: number; add: boolean } | null>(null);
   const anchor = useRef<{ hunk: number; line: number } | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const down = (e: MouseEvent) => !menuRef.current?.contains(e.target as Node) && setMenu(false);
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && (e.stopPropagation(), setMenu(false));
+    window.addEventListener('mousedown', down);
+    window.addEventListener('keydown', key, true);
+    return () => {
+      window.removeEventListener('mousedown', down);
+      window.removeEventListener('keydown', key, true);
+    };
+  }, [menu]);
   const staged = file.area === 'staged';
   const splittable = (file.area === 'staged' || file.area === 'unstaged') && !diff.binary && !diff.truncated && diff.status !== 'renamed' && diff.status !== 'copied';
 
@@ -93,22 +106,39 @@ export function HunkDiff({ file, diff, busy, onApply, onWhole }: Props) {
         <span className="small muted">
           {diff.hunks.length} hunk{diff.hunks.length === 1 ? '' : 's'}
         </span>
-        <div className="seg">
-          <button className={view === 'interactive' ? 'on' : ''} onClick={() => setView('interactive')} title="Select lines and hunks to stage">
-            ✋ Interactive
+        <div className="hd-more" ref={menuRef}>
+          <button className={`hd-more-btn ${menu ? 'on' : ''}`} onClick={() => setMenu((m) => !m)} title="View and file actions" aria-haspopup="menu" aria-expanded={menu}>
+            ⋮
           </button>
-          <button className={view === 'split' ? 'on' : ''} onClick={() => setView('split')} title="Read-only side-by-side view">
-            ◫ Side-by-side
-          </button>
+          {menu && (
+            <div className="hd-menu" role="menu">
+              <div className="hd-menu-h">View</div>
+              {(
+                [
+                  ['interactive', '✋', 'Interactive', 'Pick lines and hunks'],
+                  ['split', '◫', 'Side-by-side', 'Read-only'],
+                ] as const
+              ).map(([v, ico, label, hint]) => (
+                <button key={v} role="menuitemradio" aria-checked={view === v} className={`hd-mi ${view === v ? 'on' : ''}`} onClick={() => (setView(v), setMenu(false))}>
+                  <span className="hd-mi-ico">{ico}</span>
+                  <span className="grow">{label}</span>
+                  <span className="hd-mi-hint">{view === v ? '✓' : hint}</span>
+                </button>
+              ))}
+              <div className="hd-menu-sep" />
+              <button role="menuitem" className="hd-mi" disabled={busy} onClick={() => (onWhole(primary), setMenu(false))}>
+                <span className="hd-mi-ico">{staged ? '−' : '+'}</span>
+                <span className="grow">{staged ? 'Unstage file' : 'Stage file'}</span>
+              </button>
+              {!staged && file.area !== 'conflicted' && (
+                <button role="menuitem" className="hd-mi danger" disabled={busy} onClick={() => (onWhole('discard'), setMenu(false))}>
+                  <span className="hd-mi-ico">↺</span>
+                  <span className="grow">Discard all changes</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
-        <button className="btn sm primary" disabled={busy} onClick={() => onWhole(primary)}>
-          {staged ? '− Unstage file' : '+ Stage file'}
-        </button>
-        {!staged && file.area !== 'conflicted' && (
-          <button className="btn sm danger" disabled={busy} onClick={() => onWhole('discard')} title="Discard all changes in this file">
-            ↺
-          </button>
-        )}
       </div>
 
       {view === 'split' ? (

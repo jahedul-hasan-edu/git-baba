@@ -11,11 +11,12 @@ import { announceFilter, CLEAR_EVENT, JUMP_EVENT, takeJump } from '../services/j
 import { call, toFriendly } from '../services/api';
 import { useApp } from '../state/AppState';
 
-import { Select } from '../components/Select';
 import { useCommitActions, type CommitAction } from './history/CommitActions';
 import { CommitFilesExplorer } from './history/CommitFilesExplorer';
 import { CommitMenu, type CompareKind } from './history/CommitMenu';
 import { authorColor, initials } from './history/graphStyle';
+import { CLOSE_DOCK_EVENT } from '../services/dock';
+import { HistoryQueryBar } from './history/HistoryQueryBar';
 import { BranchExplorer } from './history/BranchExplorer';
 import { RefActionsContext, RefChip, type RefActions } from './history/RefChip';
 import { Modal } from '../components/Modal';
@@ -223,11 +224,41 @@ export function GitHistoryPage({ workspace }: Props = {}) {
   // Workspace: the right pane shows the working changes until a commit is opened.
   const [wip, setWip] = useState(!!ws);
   const [diffHost, setDiffHost] = useState<HTMLDivElement | null>(null);
+  // A file diff open over the graph: neither graph view is "on", and picking one closes the diff.
+  const [diffOpen, setDiffOpen] = useState(false);
+  useEffect(() => {
+    if (!diffHost) return;
+    const sync = () => setDiffOpen(diffHost.childElementCount > 0);
+    sync();
+    const mo = new MutationObserver(sync);
+    mo.observe(diffHost, { childList: true });
+    return () => mo.disconnect();
+  }, [diffHost]);
   const pendingFocus = useRef<GraphFocus | null>(null);
   const [author, setAuthor] = useState('');
   const [sinceDays, setSinceDays] = useState<number | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  // Branch Explorer lanes the query bar hides or isolates, and what the Explorer reports back.
+  const [bxHidden, setBxHidden] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('gb.bx.hidden') ?? '[]') as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const [bxSolo, setBxSolo] = useState<string | null>(null);
+  const [bxInfo, setBxInfo] = useState<{ lanes: string[]; matches: number }>({ lanes: [], matches: 0 });
+  const [findStep, setFindStep] = useState({ n: 0, back: false });
+  const setLanes = (h: Set<string>, solo: string | null) => {
+    setBxHidden(h);
+    setBxSolo(solo);
+    try {
+      localStorage.setItem('gb.bx.hidden', JSON.stringify([...h]));
+    } catch {
+      /* per-viewer convenience */
+    }
+  };
   const [commits, setCommits] = useState<GraphCommit[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -281,6 +312,8 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     }
   });
   const [modalOpen, setModalOpen] = useState(false);
+  /** The right-hand sidebar starts hidden; selecting working changes or a commit opens it. */
+  const [sideOpen, setSideOpen] = useState(false);
   const [switching, setSwitching] = useState<{ target: string; kind: 'local' | 'remote' } | null>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const [head, setHead] = useState<{ oid: string | null; dirty: number; branch: string | null; detached: boolean }>({ oid: null, dirty: 0, branch: null, detached: false });
@@ -329,9 +362,11 @@ export function GitHistoryPage({ workspace }: Props = {}) {
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput.trim()), 350);
+    // The Explorer highlights matches in place; the list view filters by the text. Prefixed text is a query being typed.
+    const plain = /^\s*(on:|in:|@|#|-|\+|since:)/i.test(searchInput) || graphView === 'explorer' ? '' : searchInput.trim();
+    const t = setTimeout(() => setSearch(plain), 350);
     return () => clearTimeout(t);
-  }, [searchInput]);
+  }, [searchInput, graphView]);
 
   useEffect(() => {
     call('graph:refs', { repoId })
@@ -494,10 +529,18 @@ export function GitHistoryPage({ workspace }: Props = {}) {
   }, [commits, loading, openFocus]);
 
   const openWip = () => {
+    // Clicking the active working-changes pill again hides the panel.
+    if (wip && (placement === 'sidebar' ? sideOpen : modalOpen)) {
+      setSideOpen(false);
+      setModalOpen(false);
+      return;
+    }
     setWip(true);
+    setSideOpen(placement === 'sidebar');
     setSelected(null);
     setComparison(null);
-    setModalOpen(false);
+    // Pop-up placement: the working changes open in their own window (tree + commit on the left, diff on the right).
+    setModalOpen(placement === 'modal');
   };
 
   const clickCommit = (hash: string) => {
@@ -508,6 +551,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     }
     setSelected(hash);
     setComparison(null);
+    setSideOpen(placement === 'sidebar');
     if (placement === 'modal') setModalOpen(true);
   };
 
@@ -521,6 +565,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
       setComparison(await call('graph:compare', { repoId, from: a, to: b }));
       setSelected(null);
       setWip(false);
+      setSideOpen(placement === 'sidebar');
       if (placement === 'modal') setModalOpen(true);
     } catch (err) {
       showError(err);
@@ -617,7 +662,18 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     />
   );
 
-  const showSide = placement === 'sidebar' || (!!ws && wip);
+  // Picking a graph view puts the working changes away (the ✎ pill goes quiet) until it is opened again.
+  const pickGraph = (v: 'lanes' | 'explorer') => {
+    window.dispatchEvent(new Event(CLOSE_DOCK_EVENT));
+    setGraphView(v);
+    if (ws && wip) {
+      setWip(false);
+      setSideOpen(false);
+      setModalOpen(false);
+    }
+  };
+  const showSide = placement === 'sidebar' && sideOpen;
+  const panelOpen = placement === 'sidebar' ? sideOpen : modalOpen;
   const pane = (
     <>
           {ws && !wip && (comparison || !details) && (
@@ -702,7 +758,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
                   </span>
                 </div>
               </div>
-              <CommitFilesExplorer repoId={repoId} files={comparison.files} diffs={comparison.diffs} atCommit={comparison.to.hash} dockHost={diffHost} context={`Compare ${comparison.from.shortHash} → ${comparison.to.shortHash}`} />
+              <CommitFilesExplorer repoId={repoId} files={comparison.files} diffs={comparison.diffs} atCommit={comparison.to.hash} baseRev={comparison.from.hash} dockHost={placement === 'modal' ? undefined : diffHost} split={placement === 'modal'} context={`Compare ${comparison.from.shortHash} → ${comparison.to.shortHash}`} />
             </>
           )}
           {!comparison && !selected && !wip && <div className="empty">Select a commit to see its details. Use ↑ / ↓ to move between commits.</div>}
@@ -719,7 +775,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
                       <span className="cab-ico">↓</span>
                     </button>
                     <span className="spacer" />
-                    {ws && (
+                    {ws && placement !== 'modal' && (
                       <button className={`cd-wip ${head.dirty ? 'dirty' : ''}`} onClick={openWip} title={`Back to your working changes on ${head.branch ?? 'HEAD'} (W)`}>
                         <span className="cd-wip-ico">←</span>
                         <span className="cd-wip-label">Working changes</span>
@@ -835,7 +891,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
                 </div>
                 </Modal>
               )}
-              <CommitFilesExplorer repoId={repoId} files={details.files} diffs={details.diffs} atCommit={details.hash} dockHost={diffHost} context={`${details.hash.slice(0, 7)} · ${details.subject} — ${details.author}`} />
+              <CommitFilesExplorer repoId={repoId} files={details.files} diffs={details.diffs} atCommit={details.hash} baseRev={commits.find((c) => c.hash === details.hash)?.parents[0] ?? null} dockHost={placement === 'modal' ? undefined : diffHost} split={placement === 'modal'} context={`${details.hash.slice(0, 7)} · ${details.subject} — ${details.author}`} />
             </>
           )}
     </>
@@ -847,63 +903,27 @@ export function GitHistoryPage({ workspace }: Props = {}) {
       <div className={`history-toolbar ${ws ? 'ws-toolbar' : ''}`}>
         {ws?.railToggle}
         {ws && (
-          <button className={`ws-wip-pill ${wip ? 'on' : ''} ${head.dirty ? 'dirty' : ''}`} onClick={openWip} title="Your working changes: stage, review and commit (W)">
-            <span>✎</span> Working changes
+          <button className={`ws-wip-pill ${wip && panelOpen ? 'on' : ''} ${head.dirty ? 'dirty' : ''}`} onClick={openWip} title="Working changes: stage, review and commit (W)" aria-label="Working changes">
+            <span aria-hidden>✎</span>
             {head.dirty > 0 && <span className="ws-wip-count">{head.dirty}</span>}
           </button>
         )}
-        {!ws && <label className="small muted">Branch</label>}
-        <Select kind="ref" value={scope} onChange={(e) => setScope(e.target.value)}>
-          <option value="current">Current branch{refs?.current ? ` (${refs.current})` : ''}</option>
-          <option value="all">All branches, remotes & tags</option>
-          <option value="remotes">Remote branches</option>
-          <option value="tags">Tags</option>
-          {refs?.branches.length ? (
-            <optgroup label="Branches">
-              {refs.branches.map((b) => (
-                <option key={b} value={`ref:${b}`}>
-                  {b}
-                </option>
-              ))}
-            </optgroup>
-          ) : null}
-          {refs?.remotes.length ? (
-            <optgroup label="Remote branches">
-              {refs.remotes.map((b) => (
-                <option key={b} value={`ref:${b}`}>
-                  {b}
-                </option>
-              ))}
-            </optgroup>
-          ) : null}
-          {refs?.tags.length ? (
-            <optgroup label="Tags">
-              {refs.tags.map((t) => (
-                <option key={t} value={`ref:${t}`}>
-                  {t}
-                </option>
-              ))}
-            </optgroup>
-          ) : null}
-        </Select>
-        {!ws && <label className="small muted">Author</label>}
-        <Select kind="account" value={author} onChange={(e) => setAuthor(e.target.value)}>
-          <option value="">All</option>
-          {authors.map((a) => (
-            <option key={a.email} value={a.email}>
-              {a.name} ({a.commits})
-            </option>
-          ))}
-        </Select>
-        {!ws && <label className="small muted">Date</label>}
-        <Select value={sinceDays ?? ''} onChange={(e) => setSinceDays(e.target.value ? Number(e.target.value) : null)}>
-          <option value="">All</option>
-          <option value="1">Last 24 hours</option>
-          <option value="7">Last 7 days</option>
-          <option value="30">Last 30 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="365">Last year</option>
-        </Select>
+        <HistoryQueryBar
+          scope={scope}
+          onScope={setScope}
+          refs={refs}
+          author={author}
+          onAuthor={setAuthor}
+          authors={authors}
+          sinceDays={sinceDays}
+          onSince={setSinceDays}
+          text={searchInput}
+          onText={setSearchInput}
+          textMode={graphView === 'explorer' ? 'find' : 'filter'}
+          onStep={graphView === 'explorer' ? (back) => setFindStep((f) => ({ n: f.n + 1, back })) : undefined}
+          matches={graphView === 'explorer' ? bxInfo.matches : null}
+          lanes={graphView === 'explorer' ? { all: bxInfo.lanes, hidden: bxHidden, solo: bxSolo, onChange: setLanes } : null}
+        />
         <span className="grow" />
         {!ws && (
         <button
@@ -918,10 +938,10 @@ export function GitHistoryPage({ workspace }: Props = {}) {
         </button>
         )}
         <div className="seg graph-view-seg" role="tablist" aria-label="Graph">
-          <button role="tab" aria-selected={graphView === 'lanes'} className={graphView === 'lanes' ? 'on' : ''} onClick={() => setGraphView('lanes')} title="Lanes: a commit list with the branch graph beside it">
+          <button role="tab" aria-selected={!diffOpen && graphView === 'lanes'} className={!diffOpen && graphView === 'lanes' ? 'on' : ''} onClick={() => pickGraph('lanes')} title="Lanes: a commit list with the branch graph beside it">
             ☰ Lanes
           </button>
-          <button role="tab" aria-selected={graphView === 'explorer'} className={graphView === 'explorer' ? 'on' : ''} onClick={() => setGraphView('explorer')} title="Branch Explorer: time left to right, one row per branch">
+          <button role="tab" aria-selected={!diffOpen && graphView === 'explorer'} className={!diffOpen && graphView === 'explorer' ? 'on' : ''} onClick={() => pickGraph('explorer')} title="Branch Explorer: time left to right, one row per branch">
             ⟿ Explorer
           </button>
         </div>
@@ -934,11 +954,18 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           ).map(([v, ico, t]) => (
             <button
               key={v}
-              className={placement === v ? 'on' : ''}
+              className={placement === v && panelOpen ? 'on' : ''}
               title={t}
               onClick={() => {
+                // Clicking the active one hides the details; otherwise show them there.
+                if (placement === v && panelOpen) {
+                  setSideOpen(false);
+                  setModalOpen(false);
+                  return;
+                }
                 setPlacement(v);
-                setModalOpen(v === 'modal' && !!(selected || comparison));
+                setSideOpen(v === 'sidebar');
+                setModalOpen(v === 'modal' && !!(selected || comparison || (ws && wip)));
                 try {
                   localStorage.setItem('gb.history.placement', v);
                 } catch {
@@ -1009,6 +1036,12 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               onMenu={(c, x, y) => setMenu({ x, y, commit: c })}
               onLoadMore={() => load(true)}
               onSwitch={(b) => setSwitching({ target: b, kind: 'local' })}
+              find={/^\s*(on:|in:|@|#|-|\+|since:)/i.test(searchInput) ? '' : searchInput}
+              findStep={findStep}
+              hidden={bxHidden}
+              solo={bxSolo}
+              onLanes={setLanes}
+              onInfo={setBxInfo}
             />
           )}
           {graphView === 'lanes' && <>
@@ -1167,14 +1200,21 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           </>
         )}
       </div>
-      {placement === 'modal' && modalOpen && (comparison || selected) && (
+      {placement === 'modal' && modalOpen && ws && wip && (
+        <Modal title={`Working changes${ws.status?.branch ? ` · ${ws.status.branch}` : ''}`} icon="✎" size="wide" onClose={() => setModalOpen(false)}>
+          <div className="wip-modal">
+            <ChangesPage status={ws.status} reload={ws.reload} error={ws.error} tree />
+          </div>
+        </Modal>
+      )}
+      {placement === 'modal' && modalOpen && !wip && (comparison || selected) && (
         <Modal
           title={comparison ? 'Compare commits' : selectedCommit ? `${selectedCommit.shortHash} · ${selectedCommit.subject}` : 'Commit'}
           icon={comparison ? '⇄' : '◉'}
           size="wide"
           onClose={() => setModalOpen(false)}
         >
-          <div className="hist-modal-body">{pane}</div>
+          <div className="hist-modal-body hist-modal-split">{pane}</div>
         </Modal>
       )}
       {menu && (
