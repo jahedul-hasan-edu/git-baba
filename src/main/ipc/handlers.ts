@@ -1,6 +1,6 @@
 import { app, clipboard, dialog, shell, type BrowserWindow } from 'electron';
 import { detectProvider, providerInfo, type ProviderId } from '../../shared/providers';
-import { asHost, verifyConnection } from '../providers/verify';
+import { asHost, listConnectionRepos, verifyConnection } from '../providers/verify';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -1950,6 +1950,15 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       );
       ctx.recordOperation(null, 'Connect provider', 'SUCCESS', `${info.name} · ${who.username} @ ${host}${org ? `/${org}` : ''}`);
       return rec;
+    },
+    'providers:repos': async (payload) => {
+      const p = asObject(payload);
+      const store = ctx.providerConnections;
+      const c = store?.get(asId(p.id, 'connection'));
+      if (!store || !c) throw new AppError({ code: 'connection-missing', title: 'Connection Not Found', message: 'That connection is no longer available. Connect the account again.' });
+      const token = store.token(c.id);
+      if (!token) throw new AppError({ code: 'connection-token', title: 'Token Unavailable', message: 'The token of this connection could not be read. Connect the account again.' });
+      return listConnectionRepos(c, token);
     },
     'providers:remove': async (payload) => {
       const p = asObject(payload);

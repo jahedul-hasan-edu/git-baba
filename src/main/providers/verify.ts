@@ -90,3 +90,90 @@ export async function verifyConnection(i: ConnectInput): Promise<{ username: str
       throw new AppError({ code: 'connection-unsupported', title: 'No Sign-in For This Provider', message: 'This provider signs in through SSH or your system Git setup; there is nothing to connect.' });
   }
 }
+
+/** A repository the connection can see, with the address Git clones it from (HTTPS). */
+export interface ProviderRepo {
+  fullName: string;
+  owner: string;
+  name: string;
+  private: boolean;
+  fork: boolean;
+  archived: boolean;
+  description: string | null;
+  updatedAt: string | null;
+  cloneUrl: string;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type J = any;
+
+/**
+ * Repositories a provider connection can see (newest activity first, at most 100). Only the connection's own host
+ * is asked. Providers without a repository API (CodeCommit, plain Git servers) are not listed: paste a URL there.
+ */
+export async function listConnectionRepos(c: { provider: ProviderId; host: string; org: string | null; gitUsername: string }, token: string): Promise<ProviderRepo[]> {
+  const basic = (u: string, p: string) => `Basic ${Buffer.from(`${u}:${p}`).toString('base64')}`;
+  const need = (r: { status: number; body: unknown }, who: string) => {
+    if (r.status !== 200 || !r.body) throw refused(who, 'token (it may lack read access to repositories)');
+    return r.body as J;
+  };
+  const split = (full: string) => ({ owner: full.slice(0, full.lastIndexOf('/')), name: full.slice(full.lastIndexOf('/') + 1) });
+  switch (c.provider) {
+    case 'gitlab': {
+      const b = need(await getJson(`https://${c.host}/api/v4/projects?membership=true&simple=true&per_page=100&order_by=last_activity_at`, { 'PRIVATE-TOKEN': token }), c.host);
+      return (Array.isArray(b) ? b : []).map((p: J) => ({
+        fullName: p.path_with_namespace,
+        ...split(String(p.path_with_namespace)),
+        private: p.visibility !== 'public',
+        fork: !!p.forked_from_project,
+        archived: !!p.archived,
+        description: p.description || null,
+        updatedAt: p.last_activity_at ?? null,
+        cloneUrl: p.http_url_to_repo,
+      }));
+    }
+    case 'gitea': {
+      const b = need(await getJson(`https://${c.host}/api/v1/user/repos?limit=100`, { Authorization: `token ${token}` }), c.host);
+      return (Array.isArray(b) ? b : []).map((p: J) => ({
+        fullName: p.full_name,
+        ...split(String(p.full_name)),
+        private: !!p.private,
+        fork: !!p.fork,
+        archived: !!p.archived,
+        description: p.description || null,
+        updatedAt: p.updated_at ?? null,
+        cloneUrl: p.clone_url,
+      }));
+    }
+    case 'bitbucket': {
+      const b = need(await getJson('https://api.bitbucket.org/2.0/repositories?role=member&pagelen=100&sort=-updated_on', { Authorization: basic(c.gitUsername, token) }), 'Bitbucket');
+      return ((b?.values as J[]) ?? []).map((p: J) => ({
+        fullName: p.full_name,
+        ...split(String(p.full_name)),
+        private: !!p.is_private,
+        fork: !!p.parent,
+        archived: false,
+        description: p.description || null,
+        updatedAt: p.updated_on ?? null,
+        cloneUrl: ((p.links?.clone as J[]) ?? []).find((l: J) => l.name === 'https')?.href?.replace(/^https:\/\/[^@/]+@/, 'https://') ?? `https://bitbucket.org/${p.full_name}.git`,
+      }));
+    }
+    case 'azure': {
+      if (!c.org) return [];
+      const b = need(await getJson(`https://dev.azure.com/${encodeURIComponent(c.org)}/_apis/git/repositories?api-version=7.0`, { Authorization: basic('', token) }), `Azure DevOps (${c.org})`);
+      return ((b?.value as J[]) ?? []).map((p: J) => ({
+        fullName: `${c.org}/${p.project?.name}/${p.name}`,
+        owner: `${c.org}/${p.project?.name}`,
+        name: p.name,
+        private: p.project?.visibility !== 'public',
+        fork: !!p.isFork,
+        archived: !!p.isDisabled,
+        description: null,
+        updatedAt: p.project?.lastUpdateTime ?? null,
+        cloneUrl: String(p.remoteUrl ?? '').replace(/^https:\/\/[^@/]+@/, 'https://'),
+      }));
+    }
+    default:
+      return [];
+  }
+}

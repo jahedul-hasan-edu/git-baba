@@ -436,6 +436,8 @@ export interface ApiMap {
   'providers:connections': { req: void; res: ProviderConnection[] };
   'providers:connect': { req: { provider: ProviderId; host?: string; token: string; username?: string; email?: string; org?: string }; res: ProviderConnection };
   'providers:remove': { req: { id: string; confirmed: true }; res: ProviderConnection[] };
+  /** Repositories a connection can see (GitLab, Gitea, Bitbucket, Azure DevOps), with their HTTPS clone address. */
+  'providers:repos': { req: { id: string }; res: (RemoteRepoEntry & { cloneUrl: string })[] };
   'code:fileHistory': { req: R & { ref: string | null; path: string }; res: FileCommit[] };
   'graph:reveal': { req: R & { path: string }; res: void };
   'app:copyText': { req: { text: string }; res: void };

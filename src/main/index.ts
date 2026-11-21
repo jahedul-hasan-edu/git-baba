@@ -36,7 +36,9 @@ import { setGitExecPathForGpg } from './git/gpg';
 import { registerIpc } from './ipc/register';
 import { HistoryStore } from './repositories/HistoryStore';
 import { RepoStore } from './repositories/RepoStore';
-import { NotificationCenter, type WatchedRepo } from './notifications/NotificationCenter';
+import { NotificationCenter, type ProviderWatch, type WatchedRepo } from './notifications/NotificationCenter';
+import { connectionAuth } from './github/authResolver';
+import { detectProvider } from '../shared/providers';
 import { desktopText } from './notifications/desktop';
 import { repoOwnerAccount } from './accounts/repoAccount';
 import { parseRemoteUrl } from './git/remoteUrl';
@@ -222,7 +224,7 @@ function appMenus(theme?: string): Record<AppMenuId, Electron.MenuItemConstructo
           ] as const
         ).map(([id, label]) => ({ label, type: 'radio' as const, checked: theme === id, click: send(`theme:${id}`) })),
       },
-      { label: 'Providers…', click: send('providers') },
+      { label: 'Accounts…', accelerator: 'CmdOrCtrl+Shift+A', click: send('accounts-hub') },
       { type: 'separator' },
       { label: 'Create GitHub App Token', click: send('token') },
       { type: 'separator' },
@@ -299,7 +301,7 @@ app.whenReady().then(() => {
   createWindow();
   mainWindow?.on('focus', () => mainWindow?.flashFrame(false));
 
-  // Activity notifications for the active account's repositories.
+  // Activity notifications for the repositories of every account and provider connection.
   const appCtx = ctx;
   const remoteCache = new Map<string, { at: number; url: string | null }>();
   const originOf = async (repoId: string): Promise<string | null> => {
@@ -317,6 +319,49 @@ app.whenReady().then(() => {
       const id = appCtx.accounts.activeId();
       const a = id ? appCtx.accounts.get(id) : undefined;
       return a ? { id: a.id, login: a.login } : null;
+    },
+    // Every GitHub account is watched: the account in use follows the open repository, so all of them are yours.
+    accounts: () => appCtx.accounts.list().map((a) => ({ id: a.id, login: a.login })),
+    // GitLab, Bitbucket, Azure DevOps, Gitea, …: repositories whose server has a connection, read with its token.
+    providerWatches: async () => {
+      const store = appCtx.providerConnections;
+      const conns = store?.all() ?? [];
+      if (!store || conns.length === 0) return [];
+      const known = store.hostMap();
+      const out: ProviderWatch[] = [];
+      for (const repo of appCtx.repos.list()) {
+        if (!fs.existsSync(repo.path)) continue;
+        const url = await originOf(repo.id);
+        if (!url) continue;
+        const parsed = parseRemoteUrl(url);
+        if (parsed.isGitHub) continue;
+        const p = detectProvider(url, { resolvedHost: parsed.protocol === 'ssh' ? parsed.host : null, known });
+        if (!p || p.id === 'github') continue;
+        const c = conns.find((x) => x.provider === p.id && (x.provider === 'azure' ? (x.org ?? '').toLowerCase() === (p.org ?? '').toLowerCase() : x.host === p.host));
+        if (!c) continue;
+        // A repository and its worktrees share one remote: watch it once.
+        if (out.some((w) => w.provider === p.id && w.label.toLowerCase() === p.path.toLowerCase())) continue;
+        const git = appCtx.git(repo.id).git;
+        const remotes = await git.remotes().catch(() => []);
+        const remoteName = (remotes.find((x) => x.name === 'origin') ?? remotes[0])?.name ?? 'origin';
+        out.push({
+          repo,
+          accountId: `conn:${c.id}`,
+          login: c.username,
+          provider: p.id,
+          label: p.path,
+          refs: async () => {
+            const auth = connectionAuth({ connections: store }, parsed, url, c.id);
+            try {
+              return await git.lsRemoteRefs(remoteName, auth.git, auth.transportUrl);
+            } finally {
+              await auth.cleanup();
+            }
+          },
+          local: (branch) => git.trackingRef(remoteName, branch),
+        });
+      }
+      return out;
     },
     client: async (accountId) => {
       const t = await appCtx.sessions.token(accountId).catch(() => null);

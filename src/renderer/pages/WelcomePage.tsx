@@ -6,6 +6,7 @@ import { ProviderGallery } from '../components/ProvidersDialog';
 import type { RepoSummary } from '../../shared/types';
 import { CloneDialog, isLocalPath } from '../dialogs/CloneDialog';
 import { CreateRepoWizard } from '../dialogs/CreateRepoWizard';
+import { useAddExisting } from '../dialogs/LinkAccountDialog';
 import { call } from '../services/api';
 import { useApp } from '../state/AppState';
 
@@ -46,24 +47,14 @@ const ICON: Record<NonNullable<Detected>['kind'], string> = { github: '🐙', ur
 
 /** Launchpad shown when no repository is open: one smart box, three actions, and recent repositories. */
 export function WelcomePage() {
-  const { info, showError, bump, selectRepo } = useApp();
+  const { info, bump, selectRepo } = useApp();
   const [dialog, setDialog] = useState<'create' | 'clone' | null>(null);
   const [quick, setQuick] = useState('');
   const [cloneFrom, setCloneFrom] = useState<string | undefined>(undefined);
   const box = useRef<HTMLInputElement>(null);
   const detected = detectAny(quick);
 
-  const open = async () => {
-    try {
-      const pick = await call('dialog:pickDirectory', { purpose: 'open' });
-      if (!pick) return;
-      const repo = await call('repo:addExisting', { selectionId: pick.selectionId });
-      bump();
-      selectRepo(repo.id);
-    } catch (err) {
-      showError(err);
-    }
-  };
+  const { openExisting: open, linkPrompt } = useAddExisting();
   const onCreated = (r: RepoSummary) => {
     bump();
     selectRepo(r.id);
@@ -145,6 +136,7 @@ export function WelcomePage() {
 
         <ProviderGallery />
       </div>
+      {linkPrompt}
       {dialog === 'create' && <CreateRepoWizard onClose={() => setDialog(null)} onCreated={onCreated} />}
       {dialog === 'clone' && <CloneDialog initialRepository={cloneFrom} onClose={() => setDialog(null)} onCloned={onCreated} />}
     </div>

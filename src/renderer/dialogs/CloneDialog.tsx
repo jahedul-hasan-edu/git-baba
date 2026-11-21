@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AccountCredentialInput, AccountSummary, AuthInput, CloneState, DirectoryCheck, FriendlyError, ProviderConnection, RemoteRepoEntry, RepoSummary, SshKeyInput } from '../../shared/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { AccountCredentialInput, AccountSummary, AuthInput, CloneState, DirectoryCheck, FriendlyError, RemoteRepoEntry, RepoSummary, SshKeyInput } from '../../shared/types';
 import { detectProvider, providerInfo, type ProviderId, type RepoProvider } from '../../shared/providers';
 import { ProviderMono } from '../components/ProviderMono';
+import { useAllAccounts } from '../hooks/useAllAccounts';
+import { openAccountsHub } from '../services/accountsHub';
 import { ProvidersDialog } from '../components/ProvidersDialog';
 import { AccountCredentialFields } from '../components/AccountCredentialFields';
 import { ErrorPanel } from '../components/ErrorPanel';
@@ -120,7 +122,7 @@ function providerCloneUrl(p: RepoProvider, transport: 'https' | 'ssh', pasted: s
   return `git@${p.host}:${p.path}.git`;
 }
 
-export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose: () => void; onCloned: (r: RepoSummary) => void; initialRepository?: string }) {
+export function CloneDialog({ onClose, onCloned, initialRepository, from: fromProp }: { onClose: () => void; onCloned: (r: RepoSummary) => void; initialRepository?: string; /** Preselect the account to clone from (`gh:<id>` / `conn:<id>` / 'url'). */ from?: string }) {
   const { accounts, activeAccount, repos: appRepos, toast } = useApp();
   const [source, setSource] = useState<Source>('url');
   const [enterpriseHost, setEnterpriseHost] = useState('');
@@ -152,11 +154,42 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   // Other providers (GitLab, Bitbucket, Azure DevOps, CodeCommit, Gitea, any Git server): their own sign-ins.
-  const [connections, setConnections] = useState<ProviderConnection[]>([]);
+  const { all: everyAccount, connections, reload: loadConnections } = useAllAccounts();
   const [connId, setConnId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<ProviderId | null>(null);
-  const loadConnections = useCallback(() => void call('providers:connections').then(setConnections).catch(() => undefined), []);
-  useEffect(loadConnections, [loadConnections]);
+  // "Clone from": one chip per account (any provider) plus "Any URL". It sets the source and the sign-in together.
+  const [from, setFrom] = useState<string>(() => fromProp ?? (initialRepository ? 'url' : activeAccount ? `gh:${activeAccount.id}` : 'url'));
+  const pickFrom = useCallback(
+    (k: string) => {
+      setFrom(k);
+      if (k === 'url') return setSource('url');
+      const a = everyAccount.find((x) => x.key === k);
+      if (!a) return;
+      setProtocol('https');
+      if (a.kind === 'github') {
+        if (a.host === 'github.com') setSource('github');
+        else {
+          setSource('enterprise');
+          setEnterpriseHost(a.host);
+        }
+        setAccountId(a.id);
+        setHttpsAuth('account');
+      } else {
+        setSource('url');
+        setConnId(a.id);
+        setHttpsAuth('connection');
+      }
+    },
+    [everyAccount],
+  );
+  // Apply the starting choice once the accounts are known.
+  const fromApplied = useRef(false);
+  useEffect(() => {
+    if (fromApplied.current) return;
+    if (from !== 'url' && !everyAccount.some((a) => a.key === from)) return;
+    fromApplied.current = true;
+    pickFrom(from);
+  }, [everyAccount, from, pickFrom]);
 
   const defaultHost = source === 'github' ? 'github.com' : source === 'enterprise' ? cleanHost(enterpriseHost) || null : null;
   const target = useMemo(() => parseTarget(repository, defaultHost), [repository, defaultHost]);
@@ -346,8 +379,11 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
       setPatToken('');
       setAuthKey((k) => k + 1);
       if (next.phase === 'done' && next.repo) {
-        toast(`Cloned ${next.repo.name}`);
-        onCloned(next.repo);
+        let repo = next.repo;
+        const want = from.startsWith('gh:') ? from.slice(3) : null;
+        if (want && repo.github && repo.account?.id !== want) repo = await call('repo:setAccount', { repoId: repo.id, accountId: want }).catch(() => repo);
+        toast(`Cloned ${repo.name}`);
+        onCloned(repo);
       }
     } catch (err) {
       setError(toFriendly(err));
@@ -441,26 +477,30 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
         <>
           {/* 1. Where from */}
           <div className="clone-section">
-            <div className="segmented mb" role="tablist">
-              {(
-                [
-                  ['github', 'GitHub.com'],
-                  ['enterprise', 'GitHub Enterprise'],
-                  ['url', 'URL'],
-                ] as [Source, string][]
-              ).map(([id, label]) => (
-                <button key={id} className={source === id ? 'on' : ''} disabled={locked} onClick={() => setSource(id)}>
-                  {label}
+            <div className="from-strip" role="radiogroup" aria-label="Clone from">
+              {everyAccount.map((a) => (
+                <button
+                  key={a.key}
+                  role="radio"
+                  aria-checked={from === a.key}
+                  className={`from-chip ${from === a.key ? 'on' : ''}`}
+                  onClick={() => pickFrom(a.key)}
+                  disabled={locked}
+                  title={`${providerInfo(a.provider).name} · ${a.host}${a.org ? `/${a.org}` : ''}`}
+                  style={{ ['--pc' as string]: providerInfo(a.provider).color }}
+                >
+                  <ProviderMono id={a.provider} size={16} />
+                  <span className="ellipsis">{a.login}</span>
+                  {a.host !== 'github.com' && a.host !== providerInfo(a.provider).host && <span className="from-host">{a.host}</span>}
                 </button>
               ))}
+              <button role="radio" aria-checked={from === 'url'} className={`from-chip url ${from === 'url' ? 'on' : ''}`} onClick={() => pickFrom('url')} disabled={locked}>
+                🔗 Any URL
+              </button>
+              <button className="from-add" onClick={openAccountsHub} disabled={locked} title="Add an account" aria-label="Add an account">
+                ＋
+              </button>
             </div>
-
-            {source === 'enterprise' && (
-              <div className={`field ${flag('host') ? 'invalid' : ''}`}>
-                <input value={enterpriseHost} onChange={(e) => setEnterpriseHost(e.target.value)} placeholder="github.example.com" spellCheck={false} disabled={locked} />
-                
-              </div>
-            )}
 
             {source === 'github' ? (
               <div className={`field ${flag('repo') ? 'invalid' : ''}`}>
@@ -468,22 +508,12 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                   <div className="banner info small">
                     <span className="icon">ℹ</span>
                     <div>
-                      No GitHub.com account yet — <a onClick={() => setSource('url')}>paste a URL</a> instead.
+                      No GitHub.com account yet — <a onClick={() => pickFrom('url')}>paste a URL</a> instead.
                     </div>
                   </div>
                 ) : (
                   <>
                     <div className="repo-browse-auth">
-                      {hostAccounts.length > 1 && (
-                        <Select kind="account" value={accountId ?? ''} onChange={(e) => setAccountId(e.target.value)} disabled={locked} aria-label="GitHub account">
-                          {hostAccounts.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.login}
-                              {a.active ? ' (default)' : ''}
-                            </option>
-                          ))}
-                        </Select>
-                      )}
                       {account && <AccountCredentialFields key={`${authKey}-${account.id}`} account={account} encryptionAvailable={!!accounts?.encryptionAvailable} purpose="list and clone your repositories" onChange={onCred} />}
                       <div className="row mt">
                         <button className="btn" onClick={() => void loadRepos()} disabled={!credential || credential.accountId !== accountId || loadingRepos || locked}>
@@ -534,7 +564,7 @@ export function CloneDialog({ onClose, onCloned, initialRepository }: { onClose:
                   <input
                     value={typedRepository}
                     onChange={(e) => setTypedRepository(e.target.value)}
-                    placeholder={source === 'url' ? 'Paste a clone URL or folder path' : 'owner/repository'}
+                    placeholder={source === 'url' ? (from.startsWith('conn:') ? `https://${everyAccount.find((a) => a.key === from)?.host ?? 'host'}/group/repository` : 'Paste a clone URL or folder path') : 'owner/repository'}
                     autoFocus
                     spellCheck={false}
                     disabled={locked}

@@ -60,13 +60,44 @@ describe('NotificationCenter', () => {
     expect((await t.center.refresh()).items.map((n) => n.actor)).toEqual(['octo']);
   });
 
-  it('marks everything read and shows only the active account', async () => {
+  it('marks everything read and keeps every account in one feed', async () => {
     const t = setup();
     await t.center.refresh();
     t.setData(snap('d4', 12, 'octo'));
     await t.center.refresh();
     expect(t.center.markAllRead().unread).toBe(0);
+    // The account in use follows the open repository: another account being in use hides nothing.
     t.setActive({ id: 'B', login: 'other' });
-    expect(t.center.feed().items).toHaveLength(0);
+    expect(t.center.feed().items).toHaveLength(1);
+    expect(t.center.feed().items[0]).toMatchObject({ accountLogin: 'me', provider: 'github' });
+  });
+
+  it('watches other providers through their branches and tags', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gb-notify-pv-'));
+    const repo = { id: 'r2', name: 'lab', path: dir, addedAt: '', settings: { runHooks: false, allowSystemCredentials: true, allowSavedCredentials: false } } as RepoRecord;
+    let refs: Record<string, string> = { 'refs/heads/main': 'a1', 'refs/heads/old': 'o1' };
+    let local: Record<string, string | null> = { main: 'a1', old: 'o1' };
+    const center = new NotificationCenter({
+      file: path.join(dir, 'n.json'),
+      activeAccount: () => null,
+      accounts: () => [],
+      providerWatches: async () => [{ repo, accountId: 'conn:c1', login: 'lab-user', provider: 'gitlab', label: 'grp/lab', refs: async () => refs, local: async (b) => local[b] ?? null }],
+      client: async () => null,
+      reposFor: async () => [],
+      worktrees: async () => null,
+      desktop: () => undefined,
+      emit: () => undefined,
+      desktopSupported: false,
+    });
+    expect((await center.refresh()).items).toHaveLength(0); // first look: baseline only
+    refs = { 'refs/heads/main': 'b2', 'refs/heads/feat': 'f1', 'refs/tags/v1': 't1' };
+    const feed = await center.refresh();
+    const got = feed.items.map((n) => `${n.kind}:${n.subject}`).sort();
+    expect(got).toEqual(['branch-create:feat', 'branch-delete:old', 'push:main', 'tag:v1']);
+    expect(feed.items[0]).toMatchObject({ provider: 'gitlab', accountLogin: 'lab-user', repo: 'grp/lab' });
+    // A push made from this computer (the tracking ref already points there) is not news.
+    local = { main: 'c3' };
+    refs = { ...refs, 'refs/heads/main': 'c3' };
+    expect((await center.refresh()).total).toBe(4);
   });
 });

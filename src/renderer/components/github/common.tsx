@@ -127,7 +127,7 @@ export function SessionGate({ children, what }: { children: ReactNode; what: str
             onChange={onCred}
           />
           <div className="row mt">
-            <span className="small muted grow">Switch accounts in the header if this repository belongs to another account.</span>
+            <span className="small muted grow">Open a repository of the other account and the app moves to it.</span>
             <button className="btn primary" disabled={!credential || busy} onClick={signIn}>
               {busy ? 'Signing in…' : 'Sign in'}
             </button>

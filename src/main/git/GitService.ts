@@ -1064,6 +1064,30 @@ export class GitService {
     return line ? line.split('\t')[0].trim() : null;
   }
 
+  /** Every branch and tag on the remote (ref → commit), read without fetching. Peeled tag lines are skipped. */
+  async lsRemoteRefs(remote: string, auth: ResolvedGitAuth, transportUrl?: string): Promise<Record<string, string>> {
+    if (!isValidRemoteName(remote)) throw new AppError({ code: 'invalid-remote', title: 'Invalid Remote', message: 'Invalid remote name.' });
+    if (transportUrl) {
+      const v = validateRemoteUrl(transportUrl);
+      if (!v.ok) throw new AppError({ code: 'invalid-url', title: 'Invalid Remote URL', message: v.reason });
+    }
+    const { env, secrets } = await this.authEnv(auth);
+    const out = await this.gitOut(['ls-remote', '--heads', '--tags', '--', transportUrl ?? remote], { env, secrets, timeoutMs: NETWORK_TIMEOUT });
+    const refs: Record<string, string> = {};
+    for (const line of out.split('\n')) {
+      const [sha, ref] = line.trim().split('\t');
+      if (sha && ref && !ref.endsWith('^{}')) refs[ref] = sha;
+    }
+    return refs;
+  }
+
+  /** Where this computer last saw a remote branch (its remote-tracking ref), or null. */
+  async trackingRef(remote: string, branch: string): Promise<string | null> {
+    if (!isValidRemoteName(remote) || !isValidBranchName(branch)) return null;
+    const out = await this.gitOut(['rev-parse', '--verify', '--quiet', `refs/remotes/${remote}/${branch}`]).catch(() => '');
+    return out.trim() || null;
+  }
+
   // ---------------------------------------------------------------------
   // Safe branch switching with uncommitted changes
   // ---------------------------------------------------------------------

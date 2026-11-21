@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { ProvidersDialog } from './ProvidersDialog';
+import { AccountsHub } from './AccountsHub';
+import { ACCOUNTS_HUB_EVENT } from '../services/accountsHub';
 import type { UpdateCheck } from '../../shared/api';
 import { call, onNotify } from '../services/api';
 import { useApp } from '../state/AppState';
@@ -8,9 +9,9 @@ import { AboutDialog, EditionDialog, ShortcutsDialog } from './AppFooter';
 import { Hourglass } from './Hourglass';
 import { Modal } from './Modal';
 
-type Dialog = 'shortcuts' | 'cheatsheet' | 'practices' | 'about' | 'edition' | 'update' | 'providers' | null;
+type Dialog = 'shortcuts' | 'cheatsheet' | 'practices' | 'about' | 'edition' | 'update' | 'accounts-hub' | null;
 
-const MENU_DIALOGS: Dialog[] = ['shortcuts', 'cheatsheet', 'practices', 'about', 'edition', 'update', 'providers'];
+const MENU_DIALOGS: Dialog[] = ['shortcuts', 'cheatsheet', 'practices', 'about', 'edition', 'update', 'accounts-hub'];
 
 /**
  * Shows what the window's File / Help menu asks for (the menu itself is the native one, built in the main
@@ -33,6 +34,13 @@ export function AppMenus() {
       }),
     [setView],
   );
+
+  // Other screens (sidebar, welcome) open the Accounts window too.
+  useEffect(() => {
+    const open = () => setDialog('accounts-hub');
+    window.addEventListener(ACCOUNTS_HUB_EVENT, open);
+    return () => window.removeEventListener(ACCOUNTS_HUB_EVENT, open);
+  }, []);
 
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
@@ -62,7 +70,7 @@ export function AppMenus() {
       {dialog === 'cheatsheet' && <CheatSheetDialog onClose={close} />}
       {dialog === 'practices' && <PracticesDialog onClose={close} />}
       {dialog === 'update' && <UpdateDialog onClose={close} />}
-      {dialog === 'providers' && <ProvidersDialog onClose={close} />}
+      {dialog === 'accounts-hub' && <AccountsHub onClose={close} />}
     </>
   );
 }

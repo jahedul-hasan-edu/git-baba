@@ -6,6 +6,7 @@ import { ConnectFlow } from './ConnectFlow';
 import { useApp } from '../state/AppState';
 import { Modal } from './Modal';
 import { ProviderMono } from './ProviderMono';
+import { openAccountsHub } from '../services/accountsHub';
 
 const SUPPORT: Record<'app' | 'web', { label: string; cls: string }> = {
   app: { label: 'In the app', cls: 'app' },
@@ -166,7 +167,7 @@ export function ProvidersDialog({ onClose, focus }: { onClose: () => void; focus
  * works in the app (●) or on the website (↗) as small marks. A click connects it (or manages GitHub accounts).
  */
 export function ProviderGallery() {
-  const { accounts, setView } = useApp();
+  const { accounts } = useApp();
   const [conns, setConns] = useState<ProviderConnection[]>([]);
   const [open, setOpen] = useState<{ focus?: ProviderId } | null>(null);
   useEffect(() => {
@@ -189,7 +190,7 @@ export function ProviderGallery() {
               key={p.id}
               className={`pvg-tile ${count ? 'on' : ''}`}
               style={{ ['--pc' as string]: p.color, animationDelay: `${i * 45}ms` }}
-              onClick={() => (p.id === 'github' ? setView('accounts') : setOpen({ focus: p.connect ? p.id : undefined }))}
+              onClick={() => (p.id === 'github' ? openAccountsHub() : setOpen({ focus: p.connect ? p.id : undefined }))}
               title={`${p.name} — ${p.blurb}`}
             >
               <span className="pvg-logo">

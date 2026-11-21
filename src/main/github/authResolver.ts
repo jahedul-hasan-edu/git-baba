@@ -288,7 +288,7 @@ function defaultTokenUsername(remoteUrl: string, resolvedHost: string | null): s
  * connection's host (and, for Azure DevOps, the same organization); SSH remotes go over HTTPS for this one
  * operation.
  */
-function connectionAuth(deps: AuthDeps, parsed: ParsedRemote, remoteUrl: string, connectionId: string): ResolvedAuth {
+export function connectionAuth(deps: Pick<AuthDeps, 'connections'>, parsed: ParsedRemote, remoteUrl: string, connectionId: string): ResolvedAuth {
   const c = deps.connections?.get(connectionId);
   if (!c) throw authError('That provider connection is no longer available. Connect the account again.');
   const p = detectProvider(remoteUrl, { resolvedHost: parsed.protocol === 'ssh' ? parsed.host : null, known: deps.connections?.hostMap() });

@@ -1,8 +1,11 @@
+import { createPortal } from 'react-dom';
+import { HEADER_SIDE_SLOT } from './AppHeader';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RepoSummary } from '../../shared/types';
 import { ProviderMono } from './ProviderMono';
 import { providerInfo } from '../../shared/providers';
 import { CloneDialog } from '../dialogs/CloneDialog';
+import { useAddExisting } from '../dialogs/LinkAccountDialog';
 import { CreateRepoWizard } from '../dialogs/CreateRepoWizard';
 import { ContributorsDialog, DuplicateRepoDialog, hueOf, LastCommitDialog, RemoveRepoDialog } from '../dialogs/RepoActionDialogs';
 import { call, onNotify } from '../services/api';
@@ -25,6 +28,8 @@ interface Group {
   label: string;
   kind: 'favorites' | 'personal' | 'org' | 'other';
   repos: RepoSummary[];
+  /** Repositories on another provider (GitLab, Bitbucket, …) are grouped by that provider's owner. */
+  provider?: import('../../shared/providers').ProviderId;
 }
 
 /** Personal accounts first, then organisations alphabetically, then non-GitHub repositories. */
@@ -42,12 +47,17 @@ function groupRepos(list: RepoSummary[]): Group[] {
       key = `org:${r.github.owner.toLowerCase()}`;
       label = r.github.owner;
       kind = 'org';
+    } else if (r.provider && r.provider.id !== 'github') {
+      const owner = r.provider.path.includes('/') ? r.provider.path.slice(0, r.provider.path.lastIndexOf('/')) : r.provider.host;
+      key = `prov:${r.provider.id}:${owner.toLowerCase()}`;
+      label = owner;
+      kind = 'org';
     } else {
       key = 'other';
       label = 'Local & other remotes';
       kind = 'other';
     }
-    const g = groups.get(key) ?? { key, label, kind, repos: [] };
+    const g = groups.get(key) ?? { key, label, kind, repos: [], provider: r.provider && r.provider.id !== 'github' ? r.provider.id : undefined };
     g.repos.push(r);
     groups.set(key, g);
   }
@@ -201,18 +211,8 @@ export function Sidebar() {
   );
   const openExistingRef = useRef<() => Promise<void>>(async () => undefined);
 
-  const openExisting = async () => {
-    try {
-      const pick = await call('dialog:pickDirectory', { purpose: 'open' });
-      if (!pick) return;
-      const repo = await call('repo:addExisting', { selectionId: pick.selectionId });
-      bump();
-      selectRepo(repo.id);
-      toast(`Added ${repo.name}`);
-    } catch (err) {
-      showError(err);
-    }
-  };
+  // Adds the folder, then asks which account it is for when that is not obvious.
+  const { openExisting, linkPrompt } = useAddExisting();
   openExistingRef.current = openExisting;
 
   const onCreated = (repo: RepoSummary) => {
@@ -247,6 +247,7 @@ export function Sidebar() {
   const groupIcon = (g: Group) => {
     if (g.kind === 'favorites') return <span className="group-icon fav">★</span>;
     if (g.kind === 'other') return <span className="group-icon">⌂</span>;
+    if (g.provider) return <ProviderMono id={g.provider} size={20} />;
     const hue = hueOf(g.label);
     return (
       <span className={`group-icon ${g.kind === 'org' ? 'org' : ''}`} style={{ background: `hsl(${hue} 50% 28%)`, color: `hsl(${hue} 90% 86%)` }}>
@@ -255,18 +256,26 @@ export function Sidebar() {
     );
   };
 
+  // The title lives in the header, above the sidebar (the space the account switcher used to take).
+  const [sideSlot, setSideSlot] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => setSideSlot(document.getElementById(HEADER_SIDE_SLOT)), []);
+
   return (
     <aside className={`sidebar ${hidden ? 'hidden' : ''}`} aria-hidden={hidden} inert={hidden ? true : undefined}>
       {!hidden && (
         <>
-      <div className="sidebar-title" style={{ paddingLeft: 18, paddingRight: 14 }}>
-        <span className="row" style={{ gap: 8 }}>
-          Repositories ({mainRepos.length})
-        </span>
-        <button className="sb-hide" onClick={toggleRail} title="Hide sidebar (Ctrl+B)" aria-label="Hide sidebar">
-          <PaneIcon />
-        </button>
-      </div>
+      {sideSlot &&
+        createPortal(
+          <div className="sidebar-title ah-side-title">
+            <span className="row" style={{ gap: 8 }}>
+              Repositories <span className="ah-side-n">{mainRepos.length}</span>
+            </span>
+            <button className="sb-hide" onClick={toggleRail} title="Hide sidebar (Ctrl+B)" aria-label="Hide sidebar">
+              <PaneIcon />
+            </button>
+          </div>,
+          sideSlot,
+        )}
       {mainRepos.length > 5 && (
         <div style={{ padding: '0 12px 8px' }}>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search repositories…" />
@@ -423,6 +432,7 @@ export function Sidebar() {
         </div>
       )}
 
+      {linkPrompt}
       {dialog === 'create' && <CreateRepoWizard onClose={() => setDialog(null)} onCreated={onCreated} />}
       {dialog === 'clone' && <CloneDialog onClose={() => setDialog(null)} onCloned={onCreated} />}
       {repoDialog?.kind === 'duplicate' && (

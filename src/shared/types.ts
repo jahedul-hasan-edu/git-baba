@@ -1370,7 +1370,7 @@ export interface RemoteChangeCheck {
 }
 
 // ---------------------------------------------------------------------------
-// Notifications (activity on the active account's repositories)
+// Notifications (activity on the repositories of every account and provider connection)
 // ---------------------------------------------------------------------------
 
 export type NotificationKind =
@@ -1393,6 +1393,8 @@ export interface AppNotification {
   id: string;
   accountId: string;
   accountLogin: string;
+  /** Where it happened (GitHub, or another provider watched through its connection). Missing on older items: GitHub. */
+  provider?: import('./providers').ProviderId;
   repoId: string;
   /** owner/name, or the folder name for local-only events. */
   repo: string;

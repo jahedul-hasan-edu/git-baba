@@ -32,8 +32,9 @@ import { FILTER_EVENT, requestClearFilter } from '../services/jump';
 const RepoSettingsShell = lazy(() => import('./repoSettings/RepoSettingsShell').then((m) => ({ default: m.RepoSettingsShell })));
 
 export function RepoView() {
-  const { activeRepo, repoTab, setRepoTab, revision, bump, appSetupRepoId, requestAppSetup, activeAccount, accounts, setAccounts, refreshSession, refreshRepos, toast, setView } = useApp();
-  const otherAccount = activeRepo?.account && activeRepo.account.id !== activeAccount?.id ? activeRepo.account : null;
+  const { activeRepo, repoTab, setRepoTab, revision, bump, appSetupRepoId, requestAppSetup, activeAccount, accounts, setAccounts, refreshSession, refreshRepos, toast, setView, switchingAccount } = useApp();
+  // Opening a repository moves to its account on its own; for that moment nothing is shown as locked.
+  const otherAccount = !switchingAccount && activeRepo?.account && activeRepo.account.id !== activeAccount?.id ? activeRepo.account : null;
   // The account this repository belongs to was signed out (or removed): ask to sign in to it again.
   const missingAccount = activeRepo?.missingAccount ?? null;
   const [signInMissing, setSignInMissing] = useState(false);

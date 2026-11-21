@@ -9,19 +9,22 @@ import { useApp } from '../state/AppState';
 import { AddAccountDialog } from './AddAccountDialog';
 
 import { Select } from '../components/Select';
+import { ProviderMono } from '../components/ProviderMono';
+import { providerInfo } from '../../shared/providers';
+import { githubHost } from '../hooks/useAllAccounts';
 type Stage = 'info' | 'summary' | 'workflow';
 
 /**
  * Create Repository: information → summary → authenticate (at the point of creation) →
  * state-machine progress with retry / fix / cancel for each step.
  */
-export function CreateRepoWizard({ onClose, onCreated }: { onClose: () => void; onCreated: (r: RepoSummary) => void }) {
+export function CreateRepoWizard({ onClose, onCreated, from }: { onClose: () => void; onCreated: (r: RepoSummary) => void; /** Preselect: `gh:<id>` or 'local'. */ from?: string }) {
   const { accounts, activeAccount, repos, bump, toast, refreshRepos } = useApp();
   const [stage, setStage] = useState<Stage>('info');
   const [folder, setFolder] = useState<DirectorySelection | null>(null);
   const [subfolder, setSubfolder] = useState('');
-  const [localOnly, setLocalOnly] = useState(false);
-  const [accountId, setAccountId] = useState<string | null>(activeAccount?.id ?? accounts?.accounts[0]?.id ?? null);
+  const [localOnly, setLocalOnly] = useState(from === 'local' || !accounts?.accounts.length);
+  const [accountId, setAccountId] = useState<string | null>(from?.startsWith('gh:') ? from.slice(3) : (activeAccount?.id ?? accounts?.accounts[0]?.id ?? null));
   const [name, setName] = useState('');
   const [owner, setOwner] = useState('');
   const [visibility, setVisibility] = useState<'private' | 'public'>('private');
@@ -133,7 +136,6 @@ export function CreateRepoWizard({ onClose, onCreated }: { onClose: () => void; 
   // ------------------------------------------------------------------
 
   if (stage === 'info' || stage === 'summary') {
-    const where = localOnly ? 'local' : 'github';
     return (
       <Modal
         title="Create Repository"
@@ -154,20 +156,32 @@ export function CreateRepoWizard({ onClose, onCreated }: { onClose: () => void; 
       >
         <div className="repo-modal">
           {error && <ErrorPanel error={error} />}
-          <div className="cr-where" role="radiogroup" aria-label="Where">
-            {(
-              [
-                ['github', '☁', 'GitHub + local'],
-                ['local', '💻', 'Local only'],
-              ] as const
-            ).map(([v, ico, label]) => (
-              <button key={v} className={`cr-where-opt ${where === v ? 'on' : ''}`} onClick={() => setLocalOnly(v === 'local')} aria-pressed={where === v}>
-                <span className="cr-where-ico" aria-hidden>
-                  {ico}
-                </span>
-                {label}
+          {/* Where it lives: one chip per account that can host it, or this computer only. */}
+          <div className="from-strip" role="radiogroup" aria-label="Create on">
+            {(accounts?.accounts ?? []).map((a) => (
+              <button
+                key={a.id}
+                role="radio"
+                aria-checked={!localOnly && accountId === a.id}
+                className={`from-chip ${!localOnly && accountId === a.id ? 'on' : ''}`}
+                onClick={() => {
+                  setLocalOnly(false);
+                  setAccountId(a.id);
+                }}
+                title={`GitHub · ${githubHost(a)}`}
+                style={{ ['--pc' as string]: providerInfo('github').color }}
+              >
+                <ProviderMono id="github" size={16} />
+                <span className="ellipsis">{a.login}</span>
+                {githubHost(a) !== 'github.com' && <span className="from-host">{githubHost(a)}</span>}
               </button>
             ))}
+            <button role="radio" aria-checked={localOnly} className={`from-chip url ${localOnly ? 'on' : ''}`} onClick={() => setLocalOnly(true)}>
+              💻 Local only
+            </button>
+            <button className="from-add" onClick={() => setAddingAccount(true)} title="Add a GitHub account" aria-label="Add a GitHub account">
+              ＋
+            </button>
           </div>
 
           <div className="field">
@@ -182,15 +196,6 @@ export function CreateRepoWizard({ onClose, onCreated }: { onClose: () => void; 
                 <label>Owner</label>
                 {accounts?.accounts.length ? (
                   <div className="row" style={{ gap: 6 }}>
-                    {accounts.accounts.length > 1 && (
-                      <Select kind="account" value={accountId ?? ''} onChange={(e) => setAccountId(e.target.value || null)} aria-label="GitHub account">
-                        {accounts.accounts.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.login}
-                          </option>
-                        ))}
-                      </Select>
-                    )}
                     <Select kind="account" value={owner} onChange={(e) => setOwner(e.target.value)} disabled={!account} aria-label="Owner">
                       {owners.map((o) => (
                         <option key={o} value={o}>
@@ -263,7 +268,7 @@ export function CreateRepoWizard({ onClose, onCreated }: { onClose: () => void; 
             </span>
             <span className={`cr-preview-dot ${infoComplete ? 'ok' : ''}`} />
           </div>
-          {addingAccount && <AddAccountDialog onClose={() => setAddingAccount(false)} onAdded={(a) => setAccountId(a.id)} />}
+          {addingAccount && <AddAccountDialog onClose={() => setAddingAccount(false)} onAdded={(a) => (setAccountId(a.id), setLocalOnly(false))} />}
         </div>
       </Modal>
     );
