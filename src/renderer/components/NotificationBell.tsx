@@ -3,6 +3,9 @@ import type { AppNotification, NotificationFeed, NotificationKind } from '../../
 import { call, onNotify } from '../services/api';
 import { Avatar, relTime } from './github/common';
 import { Hourglass } from './Hourglass';
+import { ProviderMono } from './ProviderMono';
+import { providerInfo, type ProviderId } from '../../shared/providers';
+import { useAllAccounts } from '../hooks/useAllAccounts';
 
 /** Items loaded per step (the feed itself carries the first page). */
 const PAGE = 5;
@@ -40,6 +43,10 @@ const KIND_ICON: Record<NotificationKind, string> = {
  */
 export function NotificationBell() {
   const [feed, setFeed] = useState<NotificationFeed | null>(null);
+  // Every account across providers feeds the bell; the header shows which providers and how many accounts.
+  const { all: everyAccount } = useAllAccounts();
+  const accountCount = everyAccount.length;
+  const providers = useMemo(() => [...new Set(everyAccount.map((a) => a.provider))] as ProviderId[], [everyAccount]);
   const [open, setOpen] = useState(false);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<Filter>('all');
@@ -184,13 +191,18 @@ export function NotificationBell() {
             <div className="grow" style={{ minWidth: 0 }}>
               <div className="nb-title">Notifications</div>
               <div className="nb-sub">
-                {feed?.account ? (
+                {feed && feed.status !== 'signed-out' ? (
                   <>
-                    <Avatar login={feed.account.login} size={14} /> {feed.account.login} · {feed.watching.length} {feed.watching.length === 1 ? 'repository' : 'repositories'}
+                    <span className="nb-provs" aria-hidden>
+                      {providers.map((p) => (
+                        <ProviderMono key={p} id={p} size={13} />
+                      ))}
+                    </span>{' '}
+                    {accountCount} account{accountCount === 1 ? '' : 's'} · {feed.watching.length} {feed.watching.length === 1 ? 'repository' : 'repositories'}
                     {feed.status === 'ok' ? feed.checkedAt && <> · checked {relTime(feed.checkedAt)}</> : <span className="nb-status"> · {feed.status === 'snoozed' ? 'paused' : (feed.message ?? feed.status)}</span>}
                   </>
                 ) : (
-                  'No active account'
+                  'No account yet'
                 )}
               </div>
             </div>
@@ -319,8 +331,8 @@ function Item({ n, isNew, delay }: { n: AppNotification; isNew: boolean; delay: 
               ⎇ {n.ref}
             </span>
           )}
-          <span className="nb-tag acct" title="Account">
-            👤 {n.accountLogin}
+          <span className="nb-tag acct" title={`${providerInfo(n.provider ?? 'github').name} · ${n.accountLogin}`}>
+            <ProviderMono id={n.provider ?? 'github'} size={12} /> {n.accountLogin}
           </span>
           <span className="nb-time" title={new Date(n.at).toLocaleString()}>
             {relTime(n.at)}
@@ -342,7 +354,7 @@ function EmptyState({ feed }: { feed: NotificationFeed | null }) {
         : s === 'snoozed'
           ? ['🌙', 'Notifications are paused', 'Resume them from the settings above.']
           : s === 'error'
-            ? ['⚠', 'Could not reach GitHub', feed?.message ?? '']
+            ? ['⚠', 'Could not reach the servers', feed?.message ?? '']
             : ['✨', 'All quiet', `Other people’s pushes, pull requests, comments, workflow runs and branch changes on ${feed?.watching.length ?? 0} ${feed?.watching.length === 1 ? 'repository' : 'repositories'} appear here.`];
   return (
     <div className="nb-empty">

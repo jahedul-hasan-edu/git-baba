@@ -48,6 +48,29 @@ export class GitHubRequestError extends Error {
  * actions). One instance = one token (one account). Handles REST,
  * GraphQL, pagination, rate limits, retries and error translation.
  */
+/** `... on Team { … }` inside a query: the part that needs read:org. */
+const TEAM_FRAGMENT_ALL = /\.\.\.\s*on\s+Team\s*\{[^{}]*\}/g;
+
+/**
+ * The query without the parts that need the read:org scope: team fragments and `organizations(…) { … }` fields
+ * (balanced braces). Callers read those parts as optional, so the rest of the answer still works.
+ */
+export function withoutOrgFields(query: string): string {
+  let out = query.replace(TEAM_FRAGMENT_ALL, '');
+  const ORGS = /\borganizations\s*[({]/;
+  for (let i = out.search(ORGS); i !== -1; i = out.search(ORGS)) {
+    let j = out.indexOf('{', i);
+    if (j === -1) break;
+    let depth = 0;
+    for (; j < out.length; j++) {
+      if (out[j] === '{') depth++;
+      else if (out[j] === '}' && --depth === 0) break;
+    }
+    out = out.slice(0, i) + out.slice(j + 1);
+  }
+  return out;
+}
+
 export class GitHubClient {
   rateLimit: RateLimitInfo = { limit: null, remaining: null, resetAt: null };
 
@@ -142,6 +165,11 @@ export class GitHubClient {
     }
     const path = new URL(url).pathname;
     const reset = res.headers.get('x-ratelimit-reset');
+    // Secondary ("slow down") limits come as 403 with requests still remaining: recognise them by GitHub's wording
+    // or a Retry-After header, or they would read as a missing permission.
+    const retryAfter = Number(res.headers.get('retry-after') ?? '0');
+    const secondary = /secondary rate limit|abuse detection|exceeded a .*rate limit/i.test(message) || (res.status === 403 && retryAfter > 0);
+    if (secondary) return new GitHubRequestError(res.status, redactSecrets(message, [this.token]), redactSecrets(`${method} ${path} → HTTP ${res.status}\n${message}`, [this.token]), null, retryAfter > 0 ? new Date(Date.now() + retryAfter * 1000).toISOString() : 'soon');
     const exhausted = res.headers.get('x-ratelimit-remaining') === '0' || res.status === 429;
     return new GitHubRequestError(
       res.status,
@@ -201,8 +229,15 @@ export class GitHubClient {
     if (!res.ok) throw mapGitHubError(await this.toError(res, 'POST', this.graphqlUrl), action);
     const json = (await res.json()) as { data?: T; errors?: { type?: string; message: string; path?: string[] }[] };
     if (json.errors?.length) {
+      // Team names need the read:org scope. A token without it (e.g. a Git Credential Manager sign-in: repo, gist,
+      // workflow) gets the WHOLE query refused, so pull requests "need permission" even for an admin. Ask again
+      // without the team parts: user and bot reviewers still show.
+      if (json.errors.some((e) => e.type === 'INSUFFICIENT_SCOPES')) {
+        const lighter = withoutOrgFields(query);
+        if (lighter !== query) return this.graphql<T>(lighter, variables, action);
+      }
       const first = json.errors[0];
-      const status = first.type === 'NOT_FOUND' ? 404 : first.type === 'FORBIDDEN' || first.type === 'INSUFFICIENT_SCOPES' ? 403 : first.type === 'RATE_LIMITED' ? 429 : 422;
+      const status = first.type === 'NOT_FOUND' ? 404 : first.type === 'RATE_LIMITED' || /rate limit/i.test(first.message) ? 429 : first.type === 'FORBIDDEN' || first.type === 'INSUFFICIENT_SCOPES' ? 403 : 422;
       // Partial data with only "not found"/"forbidden" in optional branches is still useful.
       if (json.data && json.errors.every((e) => e.type === 'NOT_FOUND' || e.type === 'FORBIDDEN')) return json.data;
       throw mapGitHubError(
@@ -303,8 +338,13 @@ export function mapGitHubError(err: GitHubRequestError, action = 'complete this 
       return new AppError({
         code: 'forbidden',
         title: 'Permission Required',
-        message: `You don't have permission to ${action}.`,
-        reasons: [...permissionHint(err.acceptedPermissions), 'Your role in the repository may be too low (read/triage/write/admin)', 'Classic tokens may need extra scopes (repo, read:org, project, security_events, workflow)'],
+        // GitHub's own words first: "forbidden" has many causes, and a role alone does not explain it.
+        message: `GitHub refused to ${action}${m && !/^forbidden$/i.test(m) ? `: “${m}”` : '.'}`,
+        reasons: [
+          ...permissionHint(err.acceptedPermissions),
+          'Your role in the repository may be too low (read/triage/write/admin)',
+          'The token the app holds may lack access even if your role allows it (fine-grained tokens list their own permissions; classic tokens need "repo")',
+        ],
         actions: [],
         technical,
       });

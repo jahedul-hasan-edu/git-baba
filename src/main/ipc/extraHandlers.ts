@@ -55,6 +55,7 @@ export type ExtraChannels =
   | 'clone:cancel'
   | 'clone:removeLeftover'
   | 'graph:log'
+  | 'graph:decorate'
   | 'graph:refs'
   | 'graph:recentTags'
   | 'graph:authors'
@@ -71,10 +72,12 @@ export type ExtraChannels =
   | 'code:lastCommits'
   | 'code:file'
   | 'code:bytes'
+  | 'code:remoteImage'
   | 'code:search'
   | 'code:writeFile'
   | 'code:deleteFile'
-  | 'app:copyText';
+  | 'app:copyText'
+  | 'app:readClipboard';
 
 export function parseAccountCredential(value: unknown): AccountCredentialInput {
   const o = asObject(value, 'credential');
@@ -305,8 +308,14 @@ export function createExtraHandlers(
         search: asOptionalString(q.search, 'search', { max: 200 }),
         skip: q.skip === undefined ? 0 : asInt(q.skip, 'skip', 0, 10_000_000),
         limit: q.limit === undefined ? 300 : asInt(q.limit, 'limit', 1, 2000),
+        decorate: q.decorate === undefined ? true : q.decorate === true,
       };
       return graphGit(p).graphLogDecorated(query);
+    },
+    'graph:decorate': async (payload) => {
+      const p = asObject(payload);
+      if (!Array.isArray(p.hashes) || p.hashes.length > 2000) throw new AppError({ code: 'invalid-input', title: 'Invalid Request', message: 'Up to 2000 commits at a time.' });
+      return graphGit(p).graphDecorate(p.hashes.map((h, i) => asHash(h, `commit ${i + 1}`)));
     },
     'graph:branchChanges': async (payload) => {
       const p = asObject(payload);
@@ -347,6 +356,29 @@ export function createExtraHandlers(
       const p = asObject(payload);
       const ref = p.ref === null ? null : asString(p.ref, 'ref', { max: 255 });
       return graphGit(p).fileBytes(ref, asString(p.path, 'path', { trim: false }));
+    },
+    /**
+     * An image a Markdown file links from the web (README badges, screenshots). The window may only show images it
+     * was handed as data, so the main process fetches it: https only, images only, at most 5 MB, no credentials.
+     */
+    'code:remoteImage': async (payload) => {
+      const url = asString(asObject(payload).url, 'url', { max: 2048 });
+      let u: URL;
+      try {
+        u = new URL(url);
+      } catch {
+        return null;
+      }
+      if (u.protocol !== 'https:' || u.username || u.password) return null;
+      const res = await fetch(u, { redirect: 'follow', signal: AbortSignal.timeout(15_000), headers: { Accept: 'image/*', 'User-Agent': 'GitBaba' } }).catch(() => null);
+      if (!res || !res.ok) return null;
+      const mime = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+      if (!/^image\/(png|jpe?g|gif|webp|svg\+xml|bmp|x-icon|vnd\.microsoft\.icon|avif)$/.test(mime)) return null;
+      const len = Number(res.headers.get('content-length') ?? '0');
+      if (len > 5 * 1024 * 1024) return null;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length > 5 * 1024 * 1024) return null;
+      return { mime, base64: buf.toString('base64') };
     },
     'graph:blame': async (payload) => {
       const p = asObject(payload);
@@ -422,6 +454,8 @@ export function createExtraHandlers(
       });
       ctx.recordOperation(repo, 'Delete file', 'SUCCESS', rel);
     },
+    // Only on a click of a Paste button (e.g. a token while connecting a provider); one line, bounded.
+    'app:readClipboard': async () => ({ text: (await clipboard.readText()).trim().split(/\r?\n/)[0].slice(0, 2048) }),
     'app:copyText': async (payload) => {
       const text = asString(asObject(payload).text, 'text', { max: 10_000, trim: false });
       if (/gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|PRIVATE KEY/.test(text)) throw new AppError({ code: 'refused', title: 'Not Copied', message: 'Credentials are not copied through this action.' });

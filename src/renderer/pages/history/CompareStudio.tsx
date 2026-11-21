@@ -260,7 +260,7 @@ export function CompareStudio({ repoId, initialSources = [], initialTarget = nul
               )}
             </div>
           )}
-          <button className="sp-close" onClick={onClose} aria-label="Close compare" title="Close (Esc)">
+          <button className="cx-close" onClick={onClose} aria-label="Close compare" title="Close (Esc)">
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               <path d="M6 6l12 12M18 6 6 18" />
             </svg>

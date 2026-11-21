@@ -66,7 +66,7 @@ export function PrDetail({ repoId, ctx, metadata, number, onBack }: Props) {
     );
   }
   const pr = details.data;
-  if (!pr) return <div className="content"><Skeleton rows={8} /></div>;
+  if (!pr) return <div className="content"><Skeleton kind="detail" rows={6} label="Loading pull request" /></div>;
 
   const refresh = () => void details.reload();
   const refreshAll = () => {

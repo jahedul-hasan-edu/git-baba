@@ -1,3 +1,4 @@
+import type { ProviderId } from './providers';
 import type {
   AuthContext,
   CommitSigningPreference,
@@ -10,6 +11,7 @@ import type {
   WorktreeSyncResult,
   NotificationPrefs,
   RemoteAuthPreference,
+  ActionAuth,
   RepoAccessOverview,
   RemoteChangeCheck,
   AuthInput,
@@ -62,8 +64,10 @@ import type {
   FileAtCommit,
   BlameInfo,
   FileCommit,
+  ProviderConnection,
   FileBytes,
   GraphCommit,
+  GraphLabel,
   HistoryQuery,
   VerifiedAccount,
   BranchDeletePreview,
@@ -153,7 +157,9 @@ import type {
 type R = { repoId: string };
 
 /** `null` clears an optional setting. */
-export type RepoSettingsPatch = Partial<Omit<RepoSettings, 'githubApp' | 'apiBaseUrl' | 'sshKeyPath' | 'remoteAuth' | 'commitSigning'>> & {
+export type RepoSettingsPatch = Partial<Omit<RepoSettings, 'githubApp' | 'apiBaseUrl' | 'sshKeyPath' | 'remoteAuth' | 'commitSigning' | 'actionAuth'>> & {
+  /** Per action; null returns that action to automatic. Actions left out keep their value. */
+  actionAuth?: { [K in keyof ActionAuth]?: ActionAuth[K] | null };
   /** null returns to automatic (detected) behaviour. */
   remoteAuth?: RemoteAuthPreference | null;
   commitSigning?: CommitSigningPreference | null;
@@ -181,7 +187,7 @@ export interface ApiMap {
   'repo:summary': { req: R; res: RepoSummary };
   'repo:addExisting': { req: { selectionId: string }; res: RepoSummary };
   'repo:create': { req: { selectionId: string; folderName?: string; initialBranch: string }; res: RepoSummary };
-  'repo:remove': { req: R & { auth?: AuthInput }; res: { remoteMissing: boolean } };
+  'repo:remove': { req: R & { auth?: AuthInput; deleteFolder?: boolean }; res: { remoteMissing: boolean; folderDeleted?: boolean } };
   'repo:setFavorite': { req: R & { favorite: boolean }; res: RepoSummary };
   'repo:duplicate': { req: R & { name: string }; res: RepoSummary };
   'repo:contributors': { req: R; res: RepoContributor[] };
@@ -401,6 +407,7 @@ export interface ApiMap {
 
   // ---- Git History (graph) ----
   'graph:log': { req: R & { query: HistoryQuery }; res: { commits: GraphCommit[]; hasMore: boolean; mainRef: string | null } };
+  'graph:decorate': { req: R & { hashes: string[] }; res: Record<string, GraphLabel> };
   /** Commits and combined diff a branch adds on top of a base branch (default: the main branch). */
   'git:transplantPreview': { req: R & { source: string; base: string; target: string }; res: TransplantPreview };
   'git:transplant': { req: R & { target: string; commits: string[]; into: 'new-branch' | 'target'; newBranch?: string; expectedTarget: string; returnToCurrent: boolean; confirmed: true }; res: TransplantResult };
@@ -428,9 +435,15 @@ export interface ApiMap {
   'graph:compare': { req: R & { from: string; to: string }; res: CompareResult };
   'graph:fileAt': { req: R & { hash: string; path: string }; res: FileAtCommit };
   'graph:blame': { req: R & { rev: string; path: string }; res: BlameInfo };
+  'providers:connections': { req: void; res: ProviderConnection[] };
+  'providers:connect': { req: { provider: ProviderId; host?: string; token: string; username?: string; email?: string; org?: string }; res: ProviderConnection };
+  'providers:remove': { req: { id: string; confirmed: true }; res: ProviderConnection[] };
+  /** Repositories a connection can see (GitLab, Gitea, Bitbucket, Azure DevOps), with their HTTPS clone address. */
+  'providers:repos': { req: { id: string }; res: (RemoteRepoEntry & { cloneUrl: string })[] };
   'code:fileHistory': { req: R & { ref: string | null; path: string }; res: FileCommit[] };
   'graph:reveal': { req: R & { path: string }; res: void };
   'app:copyText': { req: { text: string }; res: void };
+  'app:readClipboard': { req: void; res: { text: string } };
   'app:quit': { req: void; res: void };
   /** Opens a title-bar menu as a native pop-up at (x, y) in window coordinates; resolves when it closes. */
   'app:menuPopup': { req: { menu: AppMenuId; x: number; y: number; theme?: string }; res: void };
@@ -446,6 +459,8 @@ export interface ApiMap {
   'code:file': { req: R & { ref: string; path: string }; res: FileAtCommit };
   /** Raw bytes of a file (images, PDFs, other binaries); `ref` null reads the working copy. */
   'code:bytes': { req: R & { ref: string | null; path: string }; res: FileBytes };
+  /** A web image linked from a Markdown file, as data (https, images only, ≤ 5 MB). */
+  'code:remoteImage': { req: { url: string }; res: { mime: string; base64: string } | null };
   'code:search': { req: R & { ref: string; query: string }; res: { files: string[]; hits: CodeSearchHit[]; truncated: boolean } };
   /** Writes a file in the working copy (current branch only) and stages it. */
   'code:writeFile': { req: R & { path: string; content: string; create: boolean }; res: void };
@@ -506,6 +521,7 @@ export interface ApiMap {
   'gh:browserLoginWait': { req: { loginId: string }; res: { ok: boolean; message: string; login: string | null } };
   'gh:browserLoginCancel': { req: { loginId: string }; res: void };
   'gh:prAccessDiagnose': { req: R; res: PrAccessDiagnosis };
+  'gh:access': { req: R & { refresh?: boolean }; res: import('./github').RepoAccess };
   'gh:prEdit': { req: R & { number: number; title?: string; body?: string; base?: string }; res: void };
   'gh:prState': { req: R & { number: number; state: 'open' | 'closed'; confirmed: true }; res: void };
   'gh:prComment': { req: R & { number: number; body: string }; res: void };
@@ -641,4 +657,4 @@ export interface UpdateCheck {
 
 export type Channel = keyof ApiMap;
 
-export const CHANNEL_PATTERN = /^(app|dialog|repo|git|commit|push|pull|conflict|pr|github|ssh|history|shell|accounts|create|clone|graph|session|gh|code|notify):[A-Za-z]+$/;
+export const CHANNEL_PATTERN = /^(app|dialog|repo|git|commit|push|pull|conflict|pr|github|ssh|history|shell|accounts|create|clone|graph|session|gh|code|notify|providers):[A-Za-z]+$/;

@@ -1,3 +1,4 @@
+import { CLOSE_DOCK_EVENT } from '../services/dock';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { FileChange, FileDiff, FriendlyError, RepoStatus } from '../../shared/types';
@@ -6,6 +7,7 @@ import { KindIcon, fileKey } from '../components/FileList';
 import { Spinner } from '../components/Modal';
 import { CommitDialog } from '../dialogs/CommitDialog';
 import { ConfirmDialog } from '../dialogs/ConfirmDialog';
+import { StagePickDialog } from '../dialogs/StagePickDialog';
 import { call } from '../services/api';
 import { useApp } from '../state/AppState';
 import { CommitComposer } from './changes/CommitComposer';
@@ -22,6 +24,8 @@ interface Props {
    * file's diff opens in `diffHost` (over the graph), and `clean` replaces the empty screen.
    */
   docked?: { diffHost: HTMLElement | null; clean: ReactNode };
+  /** Start with the folder tree (the pop-up window always opens as a tree). */
+  tree?: boolean;
 }
 
 type LaneId = 'conflicted' | 'changes' | 'staged';
@@ -31,7 +35,7 @@ const GROUP_KEY = 'gb.changes.grouped';
 const dirOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 const baseOf = (p: string) => p.slice(p.lastIndexOf('/') + 1);
 
-export function ChangesPage({ status, reload, error, docked }: Props) {
+export function ChangesPage({ status, reload, error, docked, tree }: Props) {
   const { activeRepo, showError, bump, toast, setRepoTab } = useApp();
   const repoId = activeRepo!.id;
   const [selected, setSelected] = useState<FileChange | null>(null);
@@ -46,6 +50,7 @@ export function ChangesPage({ status, reload, error, docked }: Props) {
   const [stageThenCommit, setStageThenCommit] = useState(false);
   const [filter, setFilter] = useState('');
   const [grouped, setGrouped] = useState(() => {
+    if (tree) return true;
     try {
       return localStorage.getItem(GROUP_KEY) !== 'flat';
     } catch {
@@ -53,6 +58,7 @@ export function ChangesPage({ status, reload, error, docked }: Props) {
     }
   });
   const [collapsed, setCollapsed] = useState<Set<LaneId>>(new Set());
+  const [foldedDirs, setFoldedDirs] = useState<Set<string>>(new Set());
   const [dropLane, setDropLane] = useState<LaneId | null>(null);
   const [busy, setBusy] = useState(false);
   const [stats, setStats] = useState<{ staged: Record<string, [number, number]>; unstaged: Record<string, [number, number]> }>({ staged: {}, unstaged: {} });
@@ -130,6 +136,16 @@ export function ChangesPage({ status, reload, error, docked }: Props) {
   }, [status, filter]);
   const flat = useMemo(() => lanes.flatMap((l) => (collapsed.has(l.id) ? [] : l.files)), [lanes, collapsed]);
 
+  // Docked: picking Lanes / Explorer closes the file diff.
+  useEffect(() => {
+    if (!docked) return;
+    const close = () => {
+      setSelected(null);
+      setDiff(null);
+    };
+    window.addEventListener(CLOSE_DOCK_EVENT, close);
+    return () => window.removeEventListener(CLOSE_DOCK_EVENT, close);
+  }, [docked]);
   // Docked: Esc closes the file diff and brings the graph back.
   const isDocked = !!docked;
   useEffect(() => {
@@ -307,23 +323,68 @@ export function ChangesPage({ status, reload, error, docked }: Props) {
     );
   };
 
+  /**
+   * Folder tree: nested folders you can fold, with single-child chains joined ("src/renderer") so the
+   * tree stays shallow. Files sit under their folder, indented by depth with a faint guide line.
+   */
   const laneBody = (lane: { id: LaneId; files: FileChange[] }) => {
     if (!grouped) return lane.files.map((f) => row(f, lane.id));
-    const groups = new Map<string, FileChange[]>();
-    for (const f of [...lane.files].sort((a, b) => a.path.localeCompare(b.path))) groups.set(dirOf(f.path), [...(groups.get(dirOf(f.path)) ?? []), f]);
-    return [...groups.entries()].map(([dir, files]) => (
-      <div key={dir || '.'} className="cb-group">
-        {dir && (
-          <div className="cb-dirhead">
-            <span>📂</span>
-            <span className="ellipsis grow">{dir}</span>
-            <span className="cb-count">{files.length}</span>
-          </div>
-        )}
-        {files.map((f) => row(f, lane.id))}
-      </div>
-    ));
+    type Node = { name: string; path: string; dirs: Map<string, Node>; files: FileChange[] };
+    const root: Node = { name: '', path: '', dirs: new Map(), files: [] };
+    for (const f of [...lane.files].sort((x, y) => x.path.localeCompare(y.path))) {
+      let n = root;
+      const parts = f.path.split('/');
+      parts.slice(0, -1).forEach((part) => {
+        const path = n.path ? `${n.path}/${part}` : part;
+        if (!n.dirs.has(part)) n.dirs.set(part, { name: part, path, dirs: new Map(), files: [] });
+        n = n.dirs.get(part)!;
+      });
+      n.files.push(f);
+    }
+    const count = (n: Node): number => n.files.length + [...n.dirs.values()].reduce((a, d) => a + count(d), 0);
+    const render = (n: Node, depth: number): ReactNode[] => {
+      const out: ReactNode[] = [];
+      for (const d0 of [...n.dirs.values()].sort((x, y) => x.name.localeCompare(y.name))) {
+        let d = d0;
+        let label = d.name;
+        while (d.files.length === 0 && d.dirs.size === 1) {
+          d = [...d.dirs.values()][0];
+          label += `/${d.name}`;
+        }
+        const key = `${lane.id}:${d.path}`;
+        const shut = foldedDirs.has(key);
+        out.push(
+          <div key={`d:${key}`} className="cb-tree-dir" style={{ paddingLeft: 6 + depth * 14 }} onClick={() => toggleDir(key)} title={d.path}>
+            <span className={`cb-tree-caret ${shut ? 'shut' : ''}`}>▾</span>
+            <span aria-hidden>{shut ? '📁' : '📂'}</span>
+            <span className="ellipsis grow">{label}</span>
+            <span className="cb-count">{count(d)}</span>
+          </div>,
+        );
+        if (!shut)
+          out.push(
+            <div key={`g:${key}`} className="cb-tree-kids" style={{ ['--guide' as string]: `${13 + depth * 14}px` }}>
+              {render(d, depth + 1)}
+            </div>,
+          );
+      }
+      for (const f of n.files)
+        out.push(
+          <div key={`f:${fileKey(f)}`} className="cb-tree-file" style={{ paddingLeft: depth * 14 }}>
+            {row(f, lane.id)}
+          </div>,
+        );
+      return out;
+    };
+    return render(root, 0);
   };
+  const toggleDir = (key: string) =>
+    setFoldedDirs((s) => {
+      const n = new Set(s);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
 
   const blockedReason = status.conflicted.length
     ? 'Resolve the conflicts before committing.'
@@ -353,7 +414,7 @@ export function ChangesPage({ status, reload, error, docked }: Props) {
               </div>
             </div>
             <div className="seg">
-              <button className={grouped ? 'on' : ''} onClick={() => setGrouped(true)} title="Group by folder">
+              <button className={grouped ? 'on' : ''} onClick={() => setGrouped(true)} title="Folder tree">
                 🗂
               </button>
               <button className={!grouped ? 'on' : ''} onClick={() => setGrouped(false)} title="Flat list">
@@ -476,31 +537,6 @@ export function ChangesPage({ status, reload, error, docked }: Props) {
           docked.diffHost &&
           createPortal(
             <div className="ws-diff">
-              <div className="ws-diff-bar">
-                <button
-                  className="btn sm ghost"
-                  onClick={() => {
-                    setSelected(null);
-                    setDiff(null);
-                  }}
-                  title="Close the diff and show the graph (Esc)"
-                >
-                  ✕
-                </button>
-                <span className={`ws-diff-area ${selected.area}`}>{selected.area === 'staged' ? 'Staged' : selected.area === 'untracked' ? 'New file' : selected.area === 'conflicted' ? 'Conflict' : 'Unstaged'}</span>
-                <span className="mono ellipsis grow" title={selected.path}>
-                  {dirOf(selected.path) && <span className="muted">{dirOf(selected.path)}/</span>}
-                  <strong>{baseOf(selected.path)}</strong>
-                </span>
-                {statOf(selected) && (
-                  <span className="small mono">
-                    <span className="text-ok">+{statOf(selected)![0]}</span> <span className="text-danger">−{statOf(selected)![1]}</span>
-                  </span>
-                )}
-                <span className="small muted">
-                  {flat.findIndex((f) => fileKey(f) === fileKey(selected)) + 1}/{flat.length}
-                </span>
-              </div>
               <div className="ws-diff-body">
                 {diffLoading && !diff && <Spinner />}
                 {diff && <HunkDiff file={selected} diff={diff} busy={busy} onApply={applyPartial} onWhole={applyWhole} />}
@@ -567,16 +603,12 @@ export function ChangesPage({ status, reload, error, docked }: Props) {
         />
       )}
       {stageThenCommit && (
-        <ConfirmDialog
-          title="Stage Files for Commit"
-          explanation="Nothing is staged yet. These changed files will be staged so they can be included in the commit. You will review the commit and confirm it in the next step."
-          impact="Only the staging area changes. Your files are not modified, and nothing is committed or pushed yet."
-          affected={unstagedAll}
-          confirmLabel={`Stage ${unstagedAll.length} file(s) & continue`}
+        <StagePickDialog
+          files={[...status.unstaged, ...status.untracked]}
           onCancel={() => setStageThenCommit(false)}
-          onConfirm={async () => {
+          onStage={async (paths) => {
             try {
-              await call('git:stage', { repoId, paths: unstagedAll });
+              await call('git:stage', { repoId, paths });
               await reload();
               bump();
               setStageThenCommit(false);

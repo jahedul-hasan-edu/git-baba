@@ -278,15 +278,9 @@ export function UndoCommits({ repoId, commits, disabled, onChanged }: Props) {
         })}
         {commits.length > 12 && <div className="uc-more small muted">…and {commits.length - 12} older commit{commits.length - 12 === 1 ? '' : 's'}</div>}
       </div>
-      {commits.length > 0 && (
+      {hover !== null && hover > 0 && (
         <div className="uc-tip small muted">
-          {hover !== null && hover > 0 ? (
-            <>
-              <strong className="text-warn">{hover + 1} commits</strong> would be undone together — nothing is lost, and you can redo.
-            </>
-          ) : (
-            <>Click a commit to see its files · hover to undo it before pushing (changes return to Staged, always redoable).</>
-          )}
+          <strong className="text-warn">{hover + 1} commits</strong> would be undone together — you can redo.
         </div>
       )}
 

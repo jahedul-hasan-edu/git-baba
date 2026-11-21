@@ -21,6 +21,8 @@ const IMAGE: Record<string, string> = {
   tiff: 'image/tiff',
   icns: 'image/x-icns',
 };
+/** Image type for a file name (null when it is not an image). */
+export const imageMime = (p: string): string | null => IMAGE[ext(p)] ?? null;
 /** Files that are always shown with a viewer rather than as text. */
 export const isViewablePath = (p: string) => !!IMAGE[ext(p)] && ext(p) !== 'svg' || ext(p) === 'pdf';
 

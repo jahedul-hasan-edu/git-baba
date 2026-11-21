@@ -167,7 +167,7 @@ export function ChecksSecurity({ repoId, pr, metadata, canWrite, initialCommit, 
       {target.kind === 'pr' && <LabelGates repoId={repoId} pr={pr} metadata={metadata} canWrite={canWrite} checks={checks} onChanged={onChanged} onRefreshChecks={() => setTick((t) => t + 1)} />}
 
       {error && <ErrorPanel error={error} />}
-      {loading && !data && <Skeleton rows={4} />}
+      {loading && !data && <Skeleton kind="checks" rows={4} />}
 
       {data && (
         <div className={loading ? 'is-loading' : ''}>
@@ -277,7 +277,7 @@ export function ChecksSecurity({ repoId, pr, metadata, canWrite, initialCommit, 
         {alertsError ? (
           <div className="small muted">{alertsError}</div>
         ) : !alerts ? (
-          <Skeleton rows={2} />
+          <Skeleton kind="checks" rows={2} />
         ) : alerts.unavailable ? (
           <div className="small muted">{alerts.unavailable}</div>
         ) : alerts.items.length === 0 ? (

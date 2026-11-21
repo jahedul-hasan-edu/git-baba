@@ -50,6 +50,8 @@ type HandlerMap = { [C in GitHubChannels]: Handler<C> };
 
 const METADATA_TTL_MS = 2 * 60_000;
 const TRANSPORT_TTL_MS = 5 * 60_000;
+const ACCESS_TTL_MS = 3 * 60_000;
+const accessCache = new Map<string, { at: number; data: import('../../shared/github').RepoAccess }>();
 // GitHub run / job / check ids have passed 2^31 — accept any safe integer.
 const asNum = (v: unknown, name: string) => asInt(v, name, 1, Number.MAX_SAFE_INTEGER);
 const asNodeId = (v: unknown, name: string) => asString(v, name, { max: 200, pattern: /^[A-Za-z0-9_=-]+$/ });
@@ -372,12 +374,18 @@ export function createGitHubHandlers(ctx: AppContext): HandlerMap {
       }
       // Search can be empty for repositories the token can read (fine-grained tokens, private orgs): list them directly.
       const known = counts ? counts.open + counts.closed + counts.merged : 0;
-      if (!query.after && known > 0 && (!res || res.items.length === 0)) {
+      // Search refused (fine-grained tokens often may not search) but the repository's pull requests are readable.
+      if (!query.after && counts !== null && (!res || (known > 0 && res.items.length === 0))) {
         res = await prs.listFromRepository(client, r, raw, null).catch(() => res);
+      }
+      // GraphQL refused pull requests altogether (search and the repository's list): REST may still be allowed.
+      if (!query.after && (!res || (counts === null && res.items.length === 0))) {
+        const viaRest = await prs.listFromRest(client, r, raw).catch(() => null);
+        if (viaRest) return { ...viaRest, counts: null, notice: `GitHub refuses ${login}'s token GraphQL access to pull requests, so this list comes from the REST API: reviews and checks are not shown. Grant "Pull requests: Read" to the token (or sign in again) for the full view.` };
       }
       // The token cannot see the repository at all: use the user's own GitHub CLI login if it is available.
       let ghProblem: string | null = null;
-      if (!query.after && counts === null && (!res || res.items.length === 0)) {
+      if (!query.after && (!res || (counts === null && res.items.length === 0))) {
         const apiHost = new URL(apiBase).host;
         const host = apiHost === 'api.github.com' ? 'github.com' : apiHost;
         try {
@@ -543,6 +551,65 @@ export function createGitHubHandlers(ctx: AppContext): HandlerMap {
     },
     'gh:browserLoginCancel': async (payload) => {
       cancelBrowserLogin(asString(asObject(payload).loginId, 'loginId', { max: 80, pattern: /^login-[a-z0-9-]+$/ }));
+    },
+    /**
+     * What the account behind this repository may do with it on GitHub, probed once on opening (and cached a few
+     * minutes): its role, and whether pull requests and Actions can be read with the credential the app uses here.
+     * The app shows only what works; the reasons say what to grant for the rest.
+     */
+    'gh:access': async (payload) => {
+      const { repo, r, client, login, via, account } = await repoCtx(payload);
+      const key = `${repo.id}|${login}|${via}`;
+      const hit = accessCache.get(key);
+      if (hit && Date.now() - hit.at < ACCESS_TTL_MS && !asOptionalBoolean(asObject(payload).refresh, 'refresh')) return hit.data;
+      const base = `/repos/${r.owner}/${r.name}`;
+      const probe = (path: string, query?: Record<string, string | number>) =>
+        client.rest<{ permissions?: Record<string, boolean>; message?: string }>('GET', path, { query, allowStatus: [401, 403, 404, 409] }).then(
+          (x) => ({ status: x.status, message: x.data?.message ?? null, data: x.data }),
+          () => ({ status: 0, message: 'GitHub could not be reached', data: null }),
+        );
+      // The same routes the features use: REST and GraphQL can be allowed differently for one token.
+      const gqlPulls = client
+        .graphql<{ repository: { pullRequests: { totalCount: number } | null } | null }>(`query($o: String!, $n: String!) { repository(owner: $o, name: $n) { pullRequests(first: 1) { totalCount } } }`, { o: r.owner, n: r.name }, 'check access')
+        .then((d) => !!d.repository?.pullRequests)
+        .catch(() => false);
+      const [repoRes, pulls, runs, gqlOk] = await Promise.all([probe(base), probe(`${base}/pulls`, { per_page: 1 }), probe(`${base}/actions/runs`, { per_page: 1 }), gqlPulls]);
+      const perms = repoRes.data?.permissions ?? {};
+      const role = perms.admin ? 'admin' : perms.maintain ? 'maintain' : perms.push ? 'write' : perms.triage ? 'triage' : perms.pull ? 'read' : null;
+      const fineGrained = via === 'token' && !!account && ctx.sessions.status(account.id).scopes === null;
+      // Your role is what YOU may do; the token is what the APP may do for you. They differ for fine-grained tokens
+      // (their own permission list) and for app tokens (limited to the app's permissions).
+      const method = account ? (ctx.accounts.get(account.id)?.method ?? 'token') : null;
+      const roleText = role ? `Your role is ${role[0].toUpperCase()}${role.slice(1)}, but ` : '';
+      const why = (status: number, feature: string, grant: string) =>
+        status === 0
+          ? 'GitHub could not be reached'
+          : status === 404 && feature === 'Actions'
+            ? 'Actions is turned off for this repository'
+            : status === 401
+              ? `The sign-in of ${login} has expired — sign in again`
+              : via === 'gh'
+                ? `${roleText}the GitHub CLI login (${login}) may not read ${feature.toLowerCase()} here`
+                : fineGrained
+                  ? `${roleText}${login}'s fine-grained token lacks "${grant}" for this repository`
+                  : method === 'browser'
+                    ? `${roleText}the browser sign-in of ${login} was not granted ${feature.toLowerCase()} — sign in again and approve it`
+                    : `${roleText}${login}'s token may not read ${feature.toLowerCase()} (classic tokens need the "repo" scope${feature === 'Actions' ? ' and "workflow"' : ''})`;
+      const data: import('../../shared/github').RepoAccess = {
+        login,
+        via,
+        role,
+        visible: repoRes.status === 200,
+        fineGrained,
+        pulls:
+          pulls.status === 200 || gqlOk
+            ? { ok: true, ...(gqlOk ? {} : { why: 'Shown with fewer details: GitHub allows this token the REST API but not GraphQL for pull requests' }) }
+            : { ok: false, why: why(pulls.status, 'Pull requests', 'Pull requests: Read') },
+        actions: runs.status === 200 ? { ok: true } : { ok: false, why: why(runs.status, 'Actions', 'Actions: Read') },
+        checkedAt: new Date().toISOString(),
+      };
+      accessCache.set(key, { at: Date.now(), data });
+      return data;
     },
     'gh:prAccessDiagnose': async (payload) => {
       const { repo, r, client, login, account, apiBase } = await repoCtx(payload);

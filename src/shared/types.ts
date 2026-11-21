@@ -36,9 +36,23 @@ export interface RepoSettings {
   remoteAuth?: RemoteAuthPreference;
   /** Commit signing default: sign with the configured key, or commit unsigned. Unset: follow git config commit.gpgsign. */
   commitSigning?: CommitSigningPreference;
+  /** Per-action sign-in defaults; each one overrides `remoteAuth` (or the automatic choice) for that action only. */
+  actionAuth?: ActionAuth;
 }
 
 export type RemoteAuthPreference = 'ssh' | 'pat' | 'system';
+/** How GitHub API actions (pull request merge, running workflows) authenticate by default. */
+export type ApiAuthPreference = 'session' | 'pat' | 'github-app';
+export interface ActionAuth {
+  push?: RemoteAuthPreference;
+  pull?: RemoteAuthPreference;
+  /** Merging branches locally (and publishing the result). */
+  merge?: RemoteAuthPreference;
+  /** Merging a pull request on GitHub. */
+  prMerge?: ApiAuthPreference;
+  /** Running a workflow (deployments) on GitHub Actions. */
+  deploy?: ApiAuthPreference;
+}
 export type CommitSigningPreference = 'signed' | 'unsigned';
 
 export type OperationStatus = 'SUCCESS' | 'WARNING' | 'CANCELLED' | 'FAILED';
@@ -91,6 +105,8 @@ export interface RepoSummary extends RepoRecord {
   savedSecrets: SavedSecretsStatus;
   /** owner/repo when the primary remote is on GitHub (https or ssh). */
   github: { owner: string; repo: string } | null;
+  /** The hosting provider of the primary remote (null for local-only remotes or no remote). */
+  provider: import('./providers').RepoProvider | null;
   /** Normalised identity, e.g. github.com/inride/agent (null for non-GitHub or no remote). */
   identity: string | null;
   /** Account associated with the repository (explicit or detected from the owner). */
@@ -311,6 +327,8 @@ export interface PatAuthInput {
   saveForRepo?: boolean;
   /** Use the active GitHub account's sign-in (token stays in the main process). */
   useAccount?: boolean;
+  /** Use a provider connection (GitLab, Bitbucket, Azure DevOps, Gitea) for the same host. */
+  connectionId?: string;
 }
 
 export interface GitHubAppAuthInput {
@@ -1085,6 +1103,15 @@ export interface HistoryQuery {
   search?: string;
   skip?: number;
   limit?: number;
+  /** false: return the commits straight away and leave branch / merged / release labels to `graph:decorate`. */
+  decorate?: boolean;
+}
+
+/** Labels for one commit, fetched after the commits themselves so the graph can draw first. */
+export interface GraphLabel {
+  branch?: string | null;
+  merged?: boolean;
+  releasedIn?: { tag: string; exact: boolean } | null;
 }
 
 export interface GraphCommit {
@@ -1352,7 +1379,7 @@ export interface RemoteChangeCheck {
 }
 
 // ---------------------------------------------------------------------------
-// Notifications (activity on the active account's repositories)
+// Notifications (activity on the repositories of every account and provider connection)
 // ---------------------------------------------------------------------------
 
 export type NotificationKind =
@@ -1375,6 +1402,8 @@ export interface AppNotification {
   id: string;
   accountId: string;
   accountLogin: string;
+  /** Where it happened (GitHub, or another provider watched through its connection). Missing on older items: GitHub. */
+  provider?: import('./providers').ProviderId;
   repoId: string;
   /** owner/name, or the folder name for local-only events. */
   repo: string;
@@ -1505,4 +1534,22 @@ export interface FileCommit {
   email: string;
   date: string;
   subject: string;
+}
+
+/** A sign-in on a provider other than GitHub (the token itself stays encrypted in the main process). */
+export interface ProviderConnection {
+  id: string;
+  provider: import('./providers').ProviderId;
+  /** Host the token belongs to (gitlab.com, git.example.com, bitbucket.org, dev.azure.com…). */
+  host: string;
+  /** Azure DevOps organization. */
+  org: string | null;
+  username: string;
+  displayName: string | null;
+  /** Username Git uses with the token over HTTPS. */
+  gitUsername: string;
+  addedAt: string;
+  lastVerifiedAt: string | null;
+  /** Kept encrypted on disk (false: this session only, no OS encryption available). */
+  remembered: boolean;
 }

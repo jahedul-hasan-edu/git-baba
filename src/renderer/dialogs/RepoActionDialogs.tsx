@@ -287,7 +287,7 @@ export function LastCommitDialog({ repo, onClose }: { repo: RepoSummary; onClose
 
 // ---------------------------------------------------------------- remove
 
-export function RemoveRepoDialog({ repo, onClose, onRemoved }: { repo: RepoSummary; onClose: () => void; onRemoved: (remoteMissing: boolean) => void }) {
+export function RemoveRepoDialog({ repo, onClose, onRemoved, deleteFolder }: { repo: RepoSummary; onClose: () => void; onRemoved: (remoteMissing: boolean, folderDeleted: boolean) => void; deleteFolder?: boolean }) {
   const { info } = useApp();
   const [options, setOptions] = useState<(AuthContext & { remoteUrl: string | null }) | null>(null);
   const [auth, setAuth] = useState<AuthSelection>({ input: null, summary: '' });
@@ -313,8 +313,8 @@ export function RemoveRepoDialog({ repo, onClose, onRemoved }: { repo: RepoSumma
     setBusy(true);
     setError(null);
     try {
-      const r = await call('repo:remove', { repoId: repo.id, auth: needsAuth ? auth.input ?? undefined : undefined });
-      onRemoved(!!r?.remoteMissing);
+      const r = await call('repo:remove', { repoId: repo.id, auth: needsAuth ? auth.input ?? undefined : undefined, deleteFolder });
+      onRemoved(!!r?.remoteMissing, !!r?.folderDeleted);
     } catch (err) {
       setError(toFriendly(err));
       setAuthKey((k) => k + 1);
@@ -339,17 +339,18 @@ export function RemoveRepoDialog({ repo, onClose, onRemoved }: { repo: RepoSumma
         </>
       }
     >
-      <p>
-        Removes <strong>{repo.name}</strong> from Git Baba and forgets credentials saved for it. The folder <code>{repo.path}</code>, its files and history are <strong>not deleted</strong>.
-      </p>
+      <div className="pu-chips mb">
+        <span className="pu-chip">📌 Off the sidebar</span>
+        <span className="pu-chip">🔑 Saved credentials forgotten</span>
+        {deleteFolder ? <span className="pu-chip warn" title={repo.path}>🗑 Folder → Recycle Bin</span> : <span className="pu-chip ok" title={repo.path}>📁 Files stay on disk</span>}
+      </div>
       {error && <ErrorPanel error={error} onAction={() => setAuthKey((k) => k + 1)} available={['review-auth']} />}
       {!options ? (
         <Spinner />
       ) : (
         needsAuth && (
           <div className="card" style={{ marginTop: 8 }}>
-            <h3 style={{ marginTop: 0 }}>🔐 Verify your access</h3>
-            <p className="small muted">Like before a push, confirm the credentials for {options.remoteUrl}. They are checked once with a read-only request and not stored.</p>
+            <h3 style={{ marginTop: 0 }} title={`Checked once, read-only, against ${options.remoteUrl}`}>🔐 Verify your access</h3>
             <AuthMethodPicker
               key={authKey}
               options={options.authOptions}

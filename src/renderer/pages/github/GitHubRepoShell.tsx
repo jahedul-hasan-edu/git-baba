@@ -48,7 +48,7 @@ function Inner({ repoId, children, extra, what }: { repoId: string; children: (c
   if (!ctx.data) {
     return (
       <div className="content">
-        <Skeleton rows={6} />
+        <Skeleton kind="detail" rows={5} label="Connecting to GitHub" />
       </div>
     );
   }

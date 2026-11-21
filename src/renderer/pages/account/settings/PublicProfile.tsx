@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import type { AccountProfile, PublicProfilePatch } from '../../../../shared/github';
 import { ErrorPanel } from '../../../components/ErrorPanel';
 import { Avatar, Skeleton, useGh, useMutation } from '../../../components/github/common';
-import { openExternal } from '../../../components/github/SecureActionDialog';
 import { call } from '../../../services/api';
 
 type Form = Required<Omit<PublicProfilePatch, 'hireable'>> & { hireable: boolean };
@@ -28,7 +27,7 @@ export function PublicProfile() {
   }, [profile.data]);
 
   if (profile.error) return <ErrorPanel error={profile.error} />;
-  if (!profile.data || !form) return <Skeleton rows={6} />;
+  if (!profile.data || !form) return <Skeleton kind="form" rows={6} />;
   const orig = fromProfile(profile.data);
   const changed = (Object.keys(form) as (keyof Form)[]).filter((k) => form[k] !== orig[k]);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => (f ? { ...f, [k]: v } : f));
@@ -78,7 +77,7 @@ export function PublicProfile() {
           <input type="checkbox" checked={form.hireable} onChange={(e) => set('hireable', e.target.checked)} /> Available for hire
         </label>
         <div className="row mt">
-          <span className="small muted grow">{changed.length ? `${changed.length} unsaved change(s): ${changed.join(', ')}` : 'No changes'}</span>
+          <span className="small muted grow">{changed.length ? `${changed.length} unsaved` : ''}</span>
           <button className="btn" disabled={!changed.length || busy} onClick={() => setForm(orig)}>
             Reset
           </button>
@@ -86,14 +85,9 @@ export function PublicProfile() {
             {busy ? 'Saving…' : 'Save profile'}
           </button>
         </div>
-        <div className="small muted mt">
-          Saved with the signed-in session. If GitHub refuses, the token needs the “user” scope (classic) or “Profile: write” (fine-grained). Profile picture and pronouns are edited on{' '}
-          <a onClick={() => openExternal('https://github.com/settings/profile')}>github.com</a>.
-        </div>
       </div>
 
       <div className="profile-preview">
-        <div className="small muted mb">Live preview</div>
         <div className="preview-card">
           <Avatar login={profile.data.login} size={64} />
           <div className="preview-name">{form.name || profile.data.login}</div>

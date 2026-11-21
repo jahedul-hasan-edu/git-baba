@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AccountCredentialInput, CreateRepoState, DirectorySelection, FriendlyError, RepoSummary } from '../../shared/types';
 import { AccountCredentialFields } from '../components/AccountCredentialFields';
-import { Stepper } from '../components/Stepper';
 import { ErrorPanel } from '../components/ErrorPanel';
 import { Modal } from '../components/Modal';
 import { WorkflowSteps } from '../components/WorkflowSteps';
@@ -10,19 +9,22 @@ import { useApp } from '../state/AppState';
 import { AddAccountDialog } from './AddAccountDialog';
 
 import { Select } from '../components/Select';
+import { ProviderMono } from '../components/ProviderMono';
+import { providerInfo } from '../../shared/providers';
+import { githubHost } from '../hooks/useAllAccounts';
 type Stage = 'info' | 'summary' | 'workflow';
 
 /**
  * Create Repository: information → summary → authenticate (at the point of creation) →
  * state-machine progress with retry / fix / cancel for each step.
  */
-export function CreateRepoWizard({ onClose, onCreated }: { onClose: () => void; onCreated: (r: RepoSummary) => void }) {
+export function CreateRepoWizard({ onClose, onCreated, from }: { onClose: () => void; onCreated: (r: RepoSummary) => void; /** Preselect: `gh:<id>` or 'local'. */ from?: string }) {
   const { accounts, activeAccount, repos, bump, toast, refreshRepos } = useApp();
   const [stage, setStage] = useState<Stage>('info');
   const [folder, setFolder] = useState<DirectorySelection | null>(null);
   const [subfolder, setSubfolder] = useState('');
-  const [localOnly, setLocalOnly] = useState(false);
-  const [accountId, setAccountId] = useState<string | null>(activeAccount?.id ?? accounts?.accounts[0]?.id ?? null);
+  const [localOnly, setLocalOnly] = useState(from === 'local' || !accounts?.accounts.length);
+  const [accountId, setAccountId] = useState<string | null>(from?.startsWith('gh:') ? from.slice(3) : (activeAccount?.id ?? accounts?.accounts[0]?.id ?? null));
   const [name, setName] = useState('');
   const [owner, setOwner] = useState('');
   const [visibility, setVisibility] = useState<'private' | 'public'>('private');
@@ -137,142 +139,137 @@ export function CreateRepoWizard({ onClose, onCreated }: { onClose: () => void; 
     return (
       <Modal
         title="Create Repository"
+        size="wide"
         onClose={onClose}
         locked={busy}
         footer={
-          stage === 'info' ? (
-            <>
-              <button className="btn cancel" onClick={onClose}>
-                Cancel
-              </button>
-              <button className="btn primary" disabled={!infoComplete} onClick={() => setStage('summary')}>
-                Continue
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="btn" onClick={() => setStage('info')} disabled={busy}>
-                Back
-              </button>
-              <button className="btn cancel" onClick={onClose} disabled={busy}>
-                Cancel
-              </button>
-              <button className="btn primary" onClick={start} disabled={busy}>
-                {busy ? 'Starting…' : 'Continue'}
-              </button>
-            </>
-          )
+          <>
+            <span className="spacer" />
+            <button className="btn cancel" onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+            <button className="btn primary" disabled={!infoComplete || busy} onClick={start}>
+              {busy ? 'Starting…' : localOnly ? 'Create' : 'Create & sign in'}
+            </button>
+          </>
         }
       >
-        <Stepper steps={['Repository information', 'Summary', 'Authenticate', 'Create'].map((label) => ({ label }))} current={stage === 'info' ? 0 : 1} />
-        {error && <ErrorPanel error={error} />}
-        {stage === 'info' ? (
-          <>
-            <label className="check">
-              <input type="checkbox" checked={!localOnly} onChange={(e) => setLocalOnly(!e.target.checked)} />
-              <span>
-                <strong>Create the repository on GitHub</strong> <span className="muted small">(untick for a local-only repository)</span>
-              </span>
-            </label>
-            <div className="grid-2 mt">
-              <div className="field">
-                <label>Local project folder</label>
-                <div className="row">
-                  <button className="btn" onClick={pickFolder}>
-                    Choose…
-                  </button>
-                  <span className="small ellipsis grow">{folder?.path ?? 'not selected'}</span>
-                </div>
-              </div>
-              <div className="field">
-                <label>New subfolder (optional)</label>
-                <input value={subfolder} onChange={(e) => setSubfolder(e.target.value)} placeholder="leave empty to use the folder itself" />
-              </div>
-            </div>
-            {!localOnly && (
-              <div className="grid-2">
-                <div className="field">
-                  <label>GitHub account</label>
-                  {accounts?.accounts.length ? (
-                    <Select kind="account" value={accountId ?? ''} onChange={(e) => setAccountId(e.target.value || null)}>
-                      {accounts.accounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.login}
-                          {a.active ? ' (default)' : ''}
+        <div className="repo-modal">
+          {error && <ErrorPanel error={error} />}
+          {/* Where it lives: one chip per account that can host it, or this computer only. */}
+          <div className="from-strip" role="radiogroup" aria-label="Create on">
+            {(accounts?.accounts ?? []).map((a) => (
+              <button
+                key={a.id}
+                role="radio"
+                aria-checked={!localOnly && accountId === a.id}
+                className={`from-chip ${!localOnly && accountId === a.id ? 'on' : ''}`}
+                onClick={() => {
+                  setLocalOnly(false);
+                  setAccountId(a.id);
+                }}
+                title={`GitHub · ${githubHost(a)}`}
+                style={{ ['--pc' as string]: providerInfo('github').color }}
+              >
+                <ProviderMono id="github" size={16} />
+                <span className="ellipsis">{a.login}</span>
+                {githubHost(a) !== 'github.com' && <span className="from-host">{githubHost(a)}</span>}
+              </button>
+            ))}
+            <button role="radio" aria-checked={localOnly} className={`from-chip url ${localOnly ? 'on' : ''}`} onClick={() => setLocalOnly(true)}>
+              💻 Local only
+            </button>
+            <button className="from-add" onClick={() => setAddingAccount(true)} title="Add a GitHub account" aria-label="Add a GitHub account">
+              ＋
+            </button>
+          </div>
+
+          <div className="field">
+            <label>Name</label>
+            <input className={`cr-name ${name && !nameValid ? 'bad' : ''}`} value={name} onChange={(e) => setName(e.target.value)} placeholder="my-project" spellCheck={false} autoFocus />
+            {name && !nameValid && <span className="field-hint">Letters, numbers, . - _ only.</span>}
+          </div>
+
+          {!localOnly && (
+            <div className="cr-row">
+              <div className="field grow">
+                <label>Owner</label>
+                {accounts?.accounts.length ? (
+                  <div className="row" style={{ gap: 6 }}>
+                    <Select kind="account" value={owner} onChange={(e) => setOwner(e.target.value)} disabled={!account} aria-label="Owner">
+                      {owners.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
                         </option>
                       ))}
                     </Select>
-                  ) : (
-                    <button className="btn" onClick={() => setAddingAccount(true)}>
-                      + Add GitHub Account
+                  </div>
+                ) : (
+                  <button className="btn" onClick={() => setAddingAccount(true)}>
+                    + Add GitHub account
+                  </button>
+                )}
+              </div>
+              <div className="field">
+                <label>Visibility</label>
+                <div className="cr-vis" role="radiogroup" aria-label="Visibility">
+                  {(
+                    [
+                      ['private', '🔒', 'Private'],
+                      ['public', '🌐', 'Public'],
+                    ] as const
+                  ).map(([v, ico, label]) => (
+                    <button key={v} className={visibility === v ? 'on' : ''} onClick={() => setVisibility(v)} aria-pressed={visibility === v}>
+                      {ico} {label}
                     </button>
-                  )}
-                </div>
-                <div className="field">
-                  <label>Owner / organisation</label>
-                  <Select kind="account" value={owner} onChange={(e) => setOwner(e.target.value)} disabled={!account}>
-                    {owners.map((o, i) => (
-                      <option key={o} value={o}>
-                        {o}
-                        {i === 0 ? ' (personal)' : ''}
-                      </option>
-                    ))}
-                  </Select>
+                  ))}
                 </div>
               </div>
-            )}
-            <div className="grid-2">
-              <div className="field">
-                <label>Repository name</label>
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="agent-management" spellCheck={false} />
-                {name && !nameValid && <span className="hint" style={{ color: 'var(--danger)' }}>Use letters, numbers, “.”, “-” or “_”.</span>}
-              </div>
-              {!localOnly && (
-                <div className="field">
-                  <label>Visibility</label>
-                  <Select value={visibility} onChange={(e) => setVisibility(e.target.value as 'private' | 'public')}>
-                    <option value="private" data-icon="🔒" data-desc="Only you and people you invite">Private</option>
-                    <option value="public" data-icon="🌐" data-desc="Anyone on the internet can see it">Public</option>
-                  </Select>
-                </div>
-              )}
             </div>
-            {!localOnly && (
-              <div className="field">
-                <label>Description (optional)</label>
-                <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={350} />
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="card">
-            <h3>Create Repository</h3>
-            <dl className="kv">
-              {!localOnly && (
-                <>
-                  <dt>GitHub Account</dt>
-                  <dd>{account?.login}</dd>
-                  <dt>Owner</dt>
-                  <dd>{owner === account?.login ? `${owner} (personal)` : owner}</dd>
-                </>
-              )}
-              <dt>Repository</dt>
-              <dd>{name}</dd>
-              {!localOnly && (
-                <>
-                  <dt>Visibility</dt>
-                  <dd>{visibility === 'private' ? 'Private' : 'Public'}</dd>
-                </>
-              )}
-              <dt>Local Folder</dt>
-              <dd className="mono small">{localPath}</dd>
-              <dt>Type</dt>
-              <dd>{localOnly ? 'Local repository only (no GitHub)' : 'GitHub repository + local repository'}</dd>
-            </dl>
-            {!localOnly && <p className="small muted mt">Next you authenticate {account?.login}. Nothing is created before that.</p>}
+          )}
+
+          <div className="field">
+            <label>Save to</label>
+            <div className="clone-dest">
+              <span className="clone-dest-ico" aria-hidden>
+                📁
+              </span>
+              <button className="clone-dest-pick mono ellipsis" onClick={pickFolder} title="Choose folder">
+                {folder?.path ?? 'Choose a folder…'}
+              </button>
+              <span className="clone-dest-sep">/</span>
+              <input
+                className="clone-dest-folder mono"
+                value={subfolder}
+                onChange={(e) => setSubfolder(e.target.value)}
+                placeholder="(same folder)"
+                spellCheck={false}
+                style={{ width: `${Math.min(28, Math.max(13, subfolder.length + 2))}ch` }}
+              />
+            </div>
           </div>
-        )}
-        {addingAccount && <AddAccountDialog onClose={() => setAddingAccount(false)} onAdded={(a) => setAccountId(a.id)} />}
+
+          {!localOnly && (
+            <div className="field">
+              <label>
+                Description <span className="muted">· optional</span>
+              </label>
+              <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={350} />
+            </div>
+          )}
+
+          <div className={`cr-preview ${infoComplete ? 'ready' : ''}`}>
+            <span className="cr-preview-ico" aria-hidden>
+              {localOnly ? '💻' : visibility === 'private' ? '🔒' : '🌐'}
+            </span>
+            <span className="grow ellipsis">
+              <strong>{localOnly ? name || 'name' : `${owner || 'owner'}/${name || 'name'}`}</strong>
+              <span className="mono small muted"> → {localPath || 'folder'}</span>
+            </span>
+            <span className={`cr-preview-dot ${infoComplete ? 'ok' : ''}`} />
+          </div>
+          {addingAccount && <AddAccountDialog onClose={() => setAddingAccount(false)} onAdded={(a) => (setAccountId(a.id), setLocalOnly(false))} />}
+        </div>
       </Modal>
     );
   }
@@ -336,27 +333,19 @@ export function CreateRepoWizard({ onClose, onCreated }: { onClose: () => void; 
         </>
       }
     >
+      <div className="repo-modal">
       {error && <ErrorPanel error={error} />}
-      <dl className="kv mb">
-        {s.summary.account && (
-          <>
-            <dt>Account</dt>
-            <dd>{s.summary.account}</dd>
-          </>
-        )}
-        <dt>Repository</dt>
-        <dd>{s.summary.localOnly ? s.summary.name : `${s.summary.owner}/${s.summary.name} (${s.summary.visibility})`}</dd>
-        <dt>Local folder</dt>
-        <dd className="mono small">{s.summary.localPath}</dd>
-      </dl>
+      <div className="clone-run-head">
+        <span className={`clone-run-dot ${s.phase}`} />
+        <strong className="ellipsis">{s.summary.localOnly ? s.summary.name : `${s.summary.owner}/${s.summary.name}`}</strong>
+        <span className="mono small muted ellipsis grow" title={s.summary.localPath}>
+          → {s.summary.localPath}
+        </span>
+      </div>
 
       {awaitingAuth && account && (
         <div className="card">
-          <h3>🔐 Authentication Required</h3>
-          <p className="small">
-            To create this repository, GitHub authentication is required. <strong>Account:</strong> {account.login} · <strong>Required permission:</strong> create repository
-            {s.summary.owner !== account.login ? ` in ${s.summary.owner}` : ''}.
-          </p>
+          <h3>🔐 Sign in as {account.login}</h3>
           <AccountCredentialFields key={credKey} account={account} encryptionAvailable={!!accounts?.encryptionAvailable} purpose="create this repository" onChange={onCred} />
         </div>
       )}
@@ -365,7 +354,6 @@ export function CreateRepoWizard({ onClose, onCreated }: { onClose: () => void; 
         <div className={`banner ${cancelled ? 'info' : 'warn'}`}>
           <span className="icon">{cancelled ? 'ℹ' : '⚠'}</span>
           <div>
-            {!cancelled && <strong>Repository Creation Incomplete. </strong>}
             {s.incomplete}
           </div>
         </div>
@@ -374,11 +362,12 @@ export function CreateRepoWizard({ onClose, onCreated }: { onClose: () => void; 
         <div className="banner ok">
           <span className="icon">✓</span>
           <div>
-            <strong>Repository created successfully.</strong> It was added to your repository list. Review its files in Changes and make the first commit when you are ready.
+            <strong>Created.</strong> Make the first commit in Changes.
           </div>
         </div>
       )}
       <WorkflowSteps steps={s.steps} onReviewAuth={awaitingAuth ? () => setCredKey((k) => k + 1) : undefined} />
+      </div>
     </Modal>
   );
 }

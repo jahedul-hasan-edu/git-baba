@@ -1,4 +1,6 @@
 import * as path from 'node:path';
+import { detectProvider, providerInfo } from '../../shared/providers';
+import type { ProviderConnectionStore } from '../providers/ConnectionStore';
 import type { AuthInput, AuthMethod, AuthOption, RepoRecord, SshKeyInput } from '../../shared/types';
 import type { ResolvedGitAuth } from '../git/credentials';
 import { AppError } from '../git/errors';
@@ -49,6 +51,8 @@ export interface AuthDeps {
   githubFor: (apiBase: string) => GitHubService;
   /** Session list of installation tokens shown on the token page (optional in tests). */
   tokens?: TokenRegistry;
+  /** GitLab / Bitbucket / Azure DevOps / Gitea sign-ins (optional in tests). */
+  connections?: ProviderConnectionStore | null;
 }
 
 const METHOD_TEXT: Record<AuthMethod, { label: string; description: string }> = {
@@ -117,6 +121,8 @@ export async function resolveAuth(
   purpose: AuthPurpose,
 ): Promise<ResolvedAuth> {
   const parsed = parseRemoteUrl(remoteUrl);
+  // A provider connection is an explicit choice for its own server; it works for its https and ssh remotes.
+  if (input.method === 'pat' && input.connectionId && purpose !== 'pr') return connectionAuth(deps, parsed, remoteUrl, input.connectionId);
   const allowed = describeAuthOptions(repo, remoteUrl, purpose, { pat: true, githubAppKey: true }).map((o) => o.method);
   if (!allowed.includes(input.method)) {
     throw new AppError({
@@ -170,7 +176,8 @@ export async function resolveAuth(
       }
       if (!token) throw authError('Enter a personal access token.');
       if (/\s/.test(token) || token.length > 512) throw authError('The token contains invalid characters.');
-      username = username || (parsed.isGitHub ? 'x-access-token' : '');
+      // Providers that accept any username with a token get theirs filled in (GitLab: oauth2, Azure DevOps: pat).
+      username = username || (parsed.isGitHub ? 'x-access-token' : defaultTokenUsername(remoteUrl, parsed.host));
       if (!username) throw authError('Enter the username for this Git server.');
       if (input.saveForRepo && !input.useSaved) deps.secrets.savePat(repo.id, username, token);
       const transport = httpTransport(parsed);
@@ -267,4 +274,51 @@ export async function resolveAuth(
       };
     }
   }
+}
+
+
+/** Username Git can use with a token on this provider when the user gave none ('' when the provider needs a real one). */
+function defaultTokenUsername(remoteUrl: string, resolvedHost: string | null): string {
+  const p = detectProvider(remoteUrl, { resolvedHost });
+  return p ? (providerInfo(p.id).connect?.gitUsername ?? '') : '';
+}
+
+/**
+ * Push / fetch / clone with a provider connection. The token is used only when the remote's host is the
+ * connection's host (and, for Azure DevOps, the same organization); SSH remotes go over HTTPS for this one
+ * operation.
+ */
+export function connectionAuth(deps: Pick<AuthDeps, 'connections'>, parsed: ParsedRemote, remoteUrl: string, connectionId: string): ResolvedAuth {
+  const c = deps.connections?.get(connectionId);
+  if (!c) throw authError('That provider connection is no longer available. Connect the account again.');
+  const p = detectProvider(remoteUrl, { resolvedHost: parsed.protocol === 'ssh' ? parsed.host : null, known: deps.connections?.hostMap() });
+  const sameHost = !!p && p.id === c.provider && (p.host === c.host || (c.provider === 'azure' && (p.host === 'dev.azure.com' || p.host === 'ssh.dev.azure.com' || p.host.endsWith('.visualstudio.com'))));
+  if (!sameHost || (c.provider === 'azure' && p.org?.toLowerCase() !== (c.org ?? '').toLowerCase())) {
+    throw new AppError({
+      code: 'repo-mismatch',
+      title: 'Different Server',
+      message: `This connection is for ${c.host}${c.org ? `/${c.org}` : ''}, but the remote is on ${p?.host ?? parsed.host ?? 'another server'}${p?.org ? `/${p.org}` : ''}. A connection's token is only ever sent to its own server.`,
+      actions: ['review-auth'],
+    });
+  }
+  let token = deps.connections?.token(c.id) ?? '';
+  if (!token) throw authError('The token of this connection could not be read. Connect the account again.');
+  // HTTPS transport: the remote itself when it is https, otherwise the provider's https address.
+  let httpPrefix = parsed.httpPrefix;
+  let transportUrl: string | undefined;
+  if (!httpPrefix) {
+    const url = p?.web ? (p.id === 'azure' ? p.web : `${p.web}.git`) : null;
+    if (!url) throw new AppError({ code: 'auth-not-applicable', title: 'HTTPS Remote Required', message: 'This remote has no HTTPS address to use the connection with. Use SSH instead.' });
+    transportUrl = url;
+    httpPrefix = `https://${new URL(url).host}/`;
+  }
+  return {
+    git: { kind: 'basic', username: c.gitUsername, password: token, httpPrefix },
+    transportUrl,
+    description: `${providerInfo(c.provider).name} connection ${c.username}${transportUrl ? ' (over HTTPS)' : ''}`,
+    secrets: [token],
+    cleanup: async () => {
+      token = '';
+    },
+  };
 }

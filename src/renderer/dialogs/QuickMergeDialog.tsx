@@ -98,9 +98,9 @@ export function QuickMergeDialog({ repoId, initial, onClose }: { repoId: string;
   );
 
   const cards: [How, string, string, string, string | false][] = [
-    ['direct', '⤵', `Merge into ${target || 'target'}`, 'Bring the changes in now, then publish if you like', !targetIsLocal && 'Merging directly needs a local target branch'],
-    ['bridge', '⎇', 'New branch + pull request', `${target || 'Target'} stays untouched; the merge lands on a fresh branch for review`, false],
-    ['pr', '⇄', `Pull request from ${source ? shortName(source) : 'source'}`, 'No local merge: open a PR on GitHub straight from this branch', false],
+    ['direct', '⤵', `Merge into ${target || 'target'}`, 'Merge now', !targetIsLocal && 'Needs a local target branch'],
+    ['bridge', '⎇', 'New branch + pull request', `${target || 'Target'} stays untouched`, false],
+    ['pr', '⇄', 'Pull request only', 'No local merge', false],
   ];
 
   return (
@@ -114,7 +114,7 @@ export function QuickMergeDialog({ repoId, initial, onClose }: { repoId: string;
             Cancel
           </button>
           <button className="btn primary" disabled={!ready || (how === 'direct' && !targetIsLocal)} onClick={() => (how === 'pr' ? openPr() : setGo(true))}>
-            {how === 'pr' ? 'Continue to pull request →' : 'Check & continue →'}
+            Continue →
           </button>
         </>
       }
@@ -155,9 +155,6 @@ export function QuickMergeDialog({ repoId, initial, onClose }: { repoId: string;
                 <span className="qm-radio" />
               </button>
             ))}
-          </div>
-          <div className="small muted">
-            Next, both branches are checked for conflicts and remote state before anything changes. Need several branches at once? Use the ✨ Merge Studio in the left sidebar.
           </div>
         </div>
       )}

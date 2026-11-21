@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AppNotification, NotificationFeed, NotificationKind, NotificationPrefs, RepoRecord } from '../../shared/types';
+import type { ProviderId } from '../../shared/providers';
 import type { GitHubClient } from '../github/client/GitHubClient';
 import { parseWorktrees, runsToActivity, worktreeChanges, type ActivityDraft, type RunState } from './activity';
 import { diffSnapshot, parseSnapshot, SNAPSHOT_QUERY, type RepoSnapshot } from './snapshot';
@@ -14,6 +15,26 @@ interface WatchState {
   since: string;
   runs: Record<string, RunState>;
   worktrees?: Record<string, string>;
+  /** Other providers: the remote's branches and tags (ref → commit) at the last check. */
+  refs?: Record<string, string>;
+}
+
+/**
+ * A repository on another provider (GitLab, Bitbucket, Azure DevOps, Gitea, …) watched through its connection: the
+ * remote's branches and tags are compared between checks, so pushes, new or deleted branches and new tags show up.
+ */
+export interface ProviderWatch {
+  repo: RepoRecord;
+  /** `conn:<connection id>`. */
+  accountId: string;
+  login: string;
+  provider: ProviderId;
+  /** group/name as shown. */
+  label: string;
+  /** Branches and tags on the remote now. */
+  refs: () => Promise<Record<string, string>>;
+  /** Where this computer last saw a branch (its remote-tracking ref): equal means it came from here, or is known. */
+  local: (branch: string) => Promise<string | null>;
 }
 
 interface Persisted {
@@ -33,6 +54,10 @@ export interface WatchedRepo {
 export interface NotificationDeps {
   file: string;
   activeAccount: () => { id: string; login: string } | null;
+  /** Every GitHub account to watch (all of them: the account follows the repository, so all are "yours"). */
+  accounts?: () => { id: string; login: string }[];
+  /** Repositories on other providers, watched through their connections. */
+  providerWatches?: () => Promise<ProviderWatch[]>;
   /** A GitHub client for the account, or null when it is not signed in. */
   client: (accountId: string) => Promise<GitHubClient | null>;
   /** Repositories that belong to the account (remote owner/name resolved). */
@@ -116,9 +141,15 @@ export class NotificationCenter {
     this.timer.unref?.();
   }
 
+  /** One feed for every account and provider, newest first (each item says which account it came from). */
   private mine(): AppNotification[] {
-    const acct = this.deps.activeAccount();
-    return acct ? this.data.items.filter((n) => n.accountId === acct.id).sort((a, b) => b.at.localeCompare(a.at)) : [];
+    return [...this.data.items].sort((a, b) => b.at.localeCompare(a.at));
+  }
+
+  private watchedAccounts(): { id: string; login: string }[] {
+    if (this.deps.accounts) return this.deps.accounts();
+    const a = this.deps.activeAccount();
+    return a ? [a] : [];
   }
 
   /** The feed carries only the newest page of items, so every update stays small and fast. */
@@ -149,15 +180,13 @@ export class NotificationCenter {
   }
 
   markAllRead(): NotificationFeed {
-    const acct = this.deps.activeAccount();
-    if (acct) for (const n of this.data.items) if (n.accountId === acct.id) n.read = true;
+    for (const n of this.data.items) n.read = true;
     this.save();
     return this.changed();
   }
 
   clear(): NotificationFeed {
-    const acct = this.deps.activeAccount();
-    if (acct) this.data.items = this.data.items.filter((n) => n.accountId !== acct.id);
+    this.data.items = [];
     this.save();
     return this.changed();
   }
@@ -193,45 +222,62 @@ export class NotificationCenter {
 
   private async pollOnce(): Promise<void> {
     if (this.snoozed()) return void this.changed();
-    const acct = this.deps.activeAccount();
-    if (!acct) {
+    // Every GitHub account and every provider connection: the account follows the repository, so all are yours.
+    const accts = this.watchedAccounts();
+    const watches = this.deps.providerWatches ? await this.deps.providerWatches().catch(() => [] as ProviderWatch[]) : [];
+    if (accts.length === 0 && watches.length === 0) {
       this.status = 'signed-out';
-      this.message = 'Add a GitHub account to get notifications.';
+      this.message = 'Add an account to get notifications.';
       this.watching = [];
-      return void this.changed();
-    }
-    const client = await this.deps.client(acct.id).catch(() => null);
-    if (!client) {
-      this.status = 'signed-out';
-      this.message = `Sign in to ${acct.login} to get notifications.`;
-      return void this.changed();
-    }
-    const repos = (await this.deps.reposFor(acct.id).catch(() => [] as WatchedRepo[])).slice(0, MAX_REPOS);
-    this.watching = repos.map((r) => `${r.owner}/${r.name}`);
-    if (repos.length === 0) {
-      this.status = 'no-repos';
-      this.message = `None of your repositories belong to ${acct.login} yet.`;
       return void this.changed();
     }
 
     const fresh: AppNotification[] = [];
+    const watching: string[] = [];
+    const signedOut: string[] = [];
+    let checked = 0;
     let failures = 0;
-    for (const w of repos) {
+    for (const acct of accts) {
+      const client = await this.deps.client(acct.id).catch(() => null);
+      if (!client) {
+        signedOut.push(acct.login);
+        continue;
+      }
+      const repos = (await this.deps.reposFor(acct.id).catch(() => [] as WatchedRepo[])).slice(0, MAX_REPOS);
+      for (const w of repos) {
+        watching.push(`${w.owner}/${w.name}`);
+        checked++;
+        try {
+          fresh.push(...(await this.checkRepo(client, acct, w)));
+        } catch {
+          failures++;
+        }
+      }
+    }
+    for (const pw of watches.slice(0, MAX_REPOS)) {
+      watching.push(pw.label);
+      checked++;
       try {
-        fresh.push(...(await this.checkRepo(client, acct, w)));
+        fresh.push(...(await this.checkProviderRepo(pw)));
       } catch {
         failures++;
       }
     }
+    this.watching = watching;
     this.checkedAt = this.now().toISOString();
-    this.status = failures === repos.length ? 'error' : 'ok';
-    this.message = this.status === 'error' ? 'GitHub could not be reached. Retrying in a minute.' : undefined;
+    if (checked === 0) {
+      this.status = signedOut.length ? 'signed-out' : 'no-repos';
+      this.message = signedOut.length ? `Sign in to ${signedOut.join(', ')} to get notifications.` : 'None of your repositories belong to an added account yet.';
+    } else {
+      this.status = failures === checked ? 'error' : 'ok';
+      this.message = this.status === 'error' ? 'The servers could not be reached. Retrying in a minute.' : signedOut.length ? `Not watching ${signedOut.join(', ')} (signed out).` : undefined;
+    }
 
     if (fresh.length) {
       const ids = new Set(this.data.items.map((n) => n.id));
       const added = fresh.filter((n) => !ids.has(n.id));
       this.data.items.push(...added);
-      this.trim(acct.id);
+      for (const id of new Set(added.map((n) => n.accountId))) this.trim(id);
       if (this.data.prefs.desktop && added.length) this.deps.desktop(added);
     }
     this.save();
@@ -287,11 +333,55 @@ export class NotificationCenter {
         id: `${acct.id}:${w.repo.id}:${k}`,
         accountId: acct.id,
         accountLogin: acct.login,
+        provider: 'github' as const,
         repoId: w.repo.id,
         repo: `${w.owner}/${w.name}`,
         read: false,
         own: false,
       };
+    });
+  }
+
+  /**
+   * Another provider: compare the remote's branches and tags with the last check (silent the first time). A branch
+   * that now points where this computer already has it came from here (or was fetched), so it is not news.
+   */
+  private async checkProviderRepo(pw: ProviderWatch): Promise<AppNotification[]> {
+    const key = `${pw.accountId}:${pw.repo.id}`;
+    const nowIso = this.now().toISOString();
+    const st: WatchState = this.data.watch[key] ?? { since: nowIso, runs: {} };
+    const refs = await pw.refs();
+    const drafts: ActivityDraft[] = [];
+    const nameOf = (ref: string) => ref.replace(/^refs\/(heads|tags)\//, '');
+    if (st.refs) {
+      for (const [ref, sha] of Object.entries(refs)) {
+        const prev = st.refs[ref];
+        if (prev === sha) continue;
+        const name = nameOf(ref);
+        if (ref.startsWith('refs/tags/')) {
+          if (!prev) drafts.push({ key: `tag:${name}:${sha}`, kind: 'tag', tone: 'success', action: 'created tag', subject: name, ref: name, at: nowIso });
+          continue;
+        }
+        if ((await pw.local(name).catch(() => null)) === sha) continue;
+        drafts.push(
+          prev
+            ? { key: `push:${name}:${sha}`, kind: 'push', tone: 'info', action: 'pushed to', subject: name, ref: name, detail: `now at ${sha.slice(0, 7)}`, at: nowIso }
+            : { key: `branch:${name}:${sha}`, kind: 'branch-create', tone: 'success', action: 'created branch', subject: name, ref: name, at: nowIso },
+        );
+      }
+      for (const [ref, sha] of Object.entries(st.refs)) {
+        if (ref in refs || !ref.startsWith('refs/heads/')) continue;
+        const name = nameOf(ref);
+        // Deleted from here: the remote-tracking ref went with it.
+        if ((await pw.local(name).catch(() => null)) === null) continue;
+        drafts.push({ key: `gone:${name}:${sha}`, kind: 'branch-delete', tone: 'warning', action: 'deleted branch', subject: name, ref: name, at: nowIso });
+      }
+    }
+    st.refs = refs;
+    this.data.watch[key] = st;
+    return drafts.map((d) => {
+      const { key: k, ...rest } = d;
+      return { ...rest, id: `${key}:${k}`, accountId: pw.accountId, accountLogin: pw.login, provider: pw.provider, repoId: pw.repo.id, repo: pw.label, read: false, own: false };
     });
   }
 }

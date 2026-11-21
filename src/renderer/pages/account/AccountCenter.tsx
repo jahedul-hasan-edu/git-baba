@@ -10,46 +10,24 @@ import {
 import { useApp } from "../../state/AppState";
 import { AccountRepos } from "./AccountRepos";
 import { ProfileOverview } from "./ProfileOverview";
-import { AccountSecurity } from "./settings/AccountSecurity";
 import { CredentialsPage } from "./settings/CredentialsPage";
 import { KeysPage } from "./settings/KeysPage";
 import { PublicProfile } from "./settings/PublicProfile";
 
 type Tab = "overview" | "repos" | "settings";
-type Section = "profile" | "account" | "keys" | "credentials";
+type Section = "profile" | "keys" | "credentials";
 
-const SECTIONS: { id: Section; icon: string; label: string; hint: string }[] = [
-  {
-    id: "account",
-    icon: "👤",
-    label: "Accounts & sign-in",
-    hint: "Add, switch, sign in",
-  },
-  {
-    id: "profile",
-    icon: "🪪",
-    label: "Public profile",
-    hint: "Name, bio, links",
-  },
-  {
-    id: "keys",
-    icon: "🔑",
-    label: "SSH & GPG keys",
-    hint: "Create, upload, remove",
-  },
-  {
-    id: "credentials",
-    icon: "🧩",
-    label: "Credentials & Apps",
-    hint: "Everything at a glance",
-  },
+const SECTIONS: { id: Section; icon: string; label: string }[] = [
+  { id: "profile", icon: "🪪", label: "Profile" },
+  { id: "keys", icon: "🔑", label: "SSH & GPG keys" },
+  { id: "credentials", icon: "🧩", label: "Credentials & Apps" },
 ];
 
 /** Account level: who you are on GitHub, your repositories, and account-wide settings. */
 export function AccountCenter() {
   const { activeAccount, session } = useApp();
   const [tab, setTab] = useState<Tab>(activeAccount ? "overview" : "settings");
-  const [section, setSection] = useState<Section>("account");
+  const [section, setSection] = useState<Section>("profile");
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [signIn, setSignIn] = useState<{
     initial?: SignInMethod;
@@ -65,10 +43,7 @@ export function AccountCenter() {
       <div className="ax-acc-empty-ico">👋</div>
       <div className="grow">
         <strong>Sign in to see {what}</strong>
-        <div className="small muted">
-          Optional — your local repositories, commits, push and pull work
-          without a GitHub account.
-        </div>
+
       </div>
       <button
         className="btn primary sm"
@@ -84,73 +59,38 @@ export function AccountCenter() {
 
   return (
     <div className="content account-center">
-      <div className="acct-hero">
-        <Avatar login={activeAccount?.login ?? "?"} size={56} />
-        <div className="grow" style={{ minWidth: 0 }}>
-          <div className="acct-name">
-            {profile?.name ||
-              activeAccount?.name ||
-              activeAccount?.login ||
-              "No account selected"}
-          </div>
-          <div className="small muted">
-            {activeAccount ? (
-              <>
-                {activeAccount.login}
-                {st && (
-                  <span
-                    className={`ax-chip ${st.tone}`}
-                    title={st.title}
-                    style={{ marginLeft: 8 }}
-                  >
-                    {st.label}
-                  </span>
-                )}
-                {profile?.bio ? ` · ${profile.bio}` : ""}
-              </>
-            ) : (
-              "No account yet — optional. Sign in for your profile, pull requests and Actions."
-            )}
-          </div>
+      <div className="acct-hero ach">
+        <Avatar login={activeAccount?.login ?? "?"} size={40} />
+        <div className="ach-id">
+          <strong className="ellipsis">{profile?.name || activeAccount?.name || activeAccount?.login || "No account"}</strong>
+          {activeAccount && (
+            <span className="ach-sub">
+              <span className={`ach-dot ${st?.tone ?? ""}`} title={st?.title} />
+              {activeAccount.login}
+            </span>
+          )}
         </div>
         {profile && (
-          <div className="acct-stats">
-            <span>
-              <strong>{profile.ownedRepos}</strong> repos
-            </span>
-            <span>
-              <strong>{profile.followers}</strong> followers
-            </span>
-            <span>
-              <strong>{profile.contributions.total.toLocaleString()}</strong>{" "}
-              contributions
-            </span>
+          <div className="ach-stats">
+            <span title="Repositories you own"><strong>{profile.ownedRepos}</strong> repos</span>
+            <span title="Followers"><strong>{profile.followers}</strong> followers</span>
+            <span title="Contributions this year"><strong>{profile.contributions.total.toLocaleString()}</strong> contributions</span>
           </div>
         )}
+        <span className="grow" />
         {activeAccount && !session?.active && (
-          <button
-            className="btn sm primary"
-            onClick={() => setSignIn({ upgrade: true })}
-          >
-            {activeAccount.method === "ssh" ? "⬆ Upgrade sign-in" : "Sign in"}
+          <button className="btn sm primary" onClick={() => setSignIn({ upgrade: true })}>
+            {activeAccount.method === "ssh" ? "⬆ Upgrade" : "Sign in"}
           </button>
         )}
         {!activeAccount && (
-          <button
-            className="btn sm primary"
-            onClick={() => setSignIn({ initial: "browser", upgrade: false })}
-          >
+          <button className="btn sm primary" onClick={() => setSignIn({ initial: "browser", upgrade: false })}>
             🌐 Sign in
           </button>
         )}
         {activeAccount && (
-          <button
-            className="btn sm ghost"
-            onClick={() =>
-              openExternal(`https://github.com/${activeAccount.login}`)
-            }
-          >
-            View on GitHub ↗
+          <button className="ach-ext" onClick={() => openExternal(`https://github.com/${activeAccount.login}`)} title="Open on GitHub" aria-label="Open on GitHub">
+            ↗
           </button>
         )}
       </div>
@@ -199,20 +139,12 @@ export function AccountCenter() {
                 onClick={() => setSection(s.id)}
               >
                 <span className="settings-nav-ico">{s.icon}</span>
-                <span className="grow">
-                  <span className="settings-nav-label">{s.label}</span>
-                  <span className="settings-nav-hint">{s.hint}</span>
-                </span>
+                <span className="grow settings-nav-label">{s.label}</span>
               </button>
             ))}
           </nav>
           <div className="settings-body">
-            <h2 style={{ marginTop: 0 }}>
-              {SECTIONS.find((s) => s.id === section)!.label}
-            </h2>
-            {section === "account" ? (
-              <AccountSecurity />
-            ) : !activeAccount ? (
+            {!activeAccount ? (
               noAccount(
                 SECTIONS.find((s) => s.id === section)!.label.toLowerCase(),
               )

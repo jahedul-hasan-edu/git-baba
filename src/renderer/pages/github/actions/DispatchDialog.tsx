@@ -214,7 +214,7 @@ export function DispatchDialog({ repoId, ctx, workflow, branches, tags, onClose,
             </div>
           )}
           <h4 style={{ margin: '12px 0 8px' }}>Authenticate this run</h4>
-          <ApiAuthPicker repoId={repoId} purpose="run this workflow" needs="“Actions: write” (fine-grained) or the “repo” / “workflow” scope (classic)" onChange={onAuth} />
+          <ApiAuthPicker repoId={repoId} action="deploy" purpose="run this workflow" needs="“Actions: write” (fine-grained) or the “repo” / “workflow” scope (classic)" onChange={onAuth} />
           <label className="check mt">
             <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />
             <span>

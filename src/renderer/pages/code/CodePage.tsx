@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { providerInfo, providerLinks } from '../../../shared/providers';
 import { FilePeople } from './FilePeople';
 import { isViewablePath } from './BinaryView';
 import { CodeTree } from './CodeTree';
@@ -17,7 +18,7 @@ import { JUMP_EVENT, takeJump } from '../../services/jump';
 import { call, toFriendly } from '../../services/api';
 import { useApp } from '../../state/AppState';
 import { AboutPanel } from './AboutPanel';
-import { CodeEditor, FileView, formatBytes } from './FileView';
+import { CodeEditor, FileView, formatBytes, resolveMdImage } from './FileView';
 import { RefPicker } from './RefPicker';
 
 type View =
@@ -99,6 +100,8 @@ export function CodePage() {
   const viewRef = ref ?? info?.ref ?? null;
   const isCurrent = !!viewRef && viewRef === info?.current;
   const isGitHub = !!activeRepo?.github;
+  const otherProvider = activeRepo?.provider && activeRepo.provider.id !== 'github' ? activeRepo.provider : null;
+  const otherNewPull = otherProvider && providerInfo(otherProvider.id).features.pullRequests && providerLinks(otherProvider).pulls ? providerLinks(otherProvider).newPull : null;
 
   // ---- data loading ----
   useEffect(() => {
@@ -427,7 +430,7 @@ export function CodePage() {
   if (!info) {
     return (
       <div className="content">
-        <Skeleton rows={8} />
+        <Skeleton kind="code" rows={8} label="Reading the repository" />
       </div>
     );
   }
@@ -514,6 +517,15 @@ export function CodePage() {
               {!isDefault && isGitHub && (
                 <button className="btn sm" onClick={openPr} title={`Open a pull request from ${info.current} into ${info.defaultBranch}`}>
                   ⇄ Pull request
+                </button>
+              )}
+              {!isDefault && !isGitHub && otherNewPull && info.current && info.defaultBranch && (
+                <button
+                  className="btn sm"
+                  onClick={() => void call('shell:openExternal', { url: otherNewPull(info.current!, info.defaultBranch!)! }).catch(showError)}
+                  title={`Open a ${otherProvider!.id === 'gitlab' ? 'merge' : 'pull'} request from ${info.current} into ${info.defaultBranch} on ${providerInfo(otherProvider!.id).name}`}
+                >
+                  ⇄ {otherProvider!.id === 'gitlab' ? 'Merge request' : 'Pull request'} ↗
                 </button>
               )}
             </div>
@@ -647,7 +659,7 @@ export function CodePage() {
               {changes.get(view.path) && <span className={`change-tag ${changes.get(view.path)}`}>{changes.get(view.path) === 'added' ? 'new' : changes.get(view.path)}</span>}
             </div>
             {fileError && <ErrorPanel error={fileError} />}
-            {!file && !fileError && <Skeleton rows={6} />}
+            {!file && !fileError && <Skeleton kind="source" rows={6} />}
             {file && file.path === view.path && (
               <>
                 {file.hash === 'WORKTREE' && (
@@ -725,7 +737,7 @@ export function CodePage() {
                   </button>
                 </div>
               ) : !shownEntries ? (
-                <Skeleton rows={6} />
+                <Skeleton kind="code" rows={6} />
               ) : (
                 <div className="file-table">
                   {dir && (
@@ -774,7 +786,7 @@ export function CodePage() {
                   )}
                 </div>
                 <div className="readme-body">
-                  {/\.(md|markdown)$/i.test(readme.path) ? <Markdown source={readme.content} onLink={onLink(parentOf(readme.path))} /> : <pre>{readme.content}</pre>}
+                  {/\.(md|markdown)$/i.test(readme.path) ? <Markdown source={readme.content} onLink={onLink(parentOf(readme.path))} image={(src) => resolveMdImage(src, readme.path, { repoId, ref: readme.hash === 'WORKTREE' ? null : viewRef })} /> : <pre>{readme.content}</pre>}
                 </div>
               </div>
             )}
@@ -785,7 +797,7 @@ export function CodePage() {
       </div>
 
       {aboutOpen && <div className="about-scrim" onClick={() => setAboutOpen(false)} />}
-      <AboutPanel repoId={repoId} info={info} isGitHub={isGitHub} />
+      <AboutPanel repoId={repoId} info={info} isGitHub={isGitHub} providerName={otherProvider ? providerInfo(otherProvider.id).name : null} />
 
       {dialog?.kind === 'commit' && (
         <CommitDialog

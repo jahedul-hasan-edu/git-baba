@@ -1,4 +1,6 @@
 import { app, clipboard, dialog, shell, type BrowserWindow } from 'electron';
+import { detectProvider, providerInfo, type ProviderId } from '../../shared/providers';
+import { asHost, listConnectionRepos, verifyConnection } from '../providers/verify';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -16,6 +18,7 @@ import type {
   RemoteChangeCheck,
   RepoRecord,
   RepoSettings,
+  ActionAuth,
   RepoSummary,
   SavedSshKey,
   SecurityStatus,
@@ -130,7 +133,15 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
     return { name: r.name, url: r.pushUrl };
   }
 
-  const authDeps = { secrets: ctx.secrets, vault: ctx.vault, githubFor: (b: string) => ctx.githubFor(b), tokens: ctx.tokens };
+  const authDeps = {
+    secrets: ctx.secrets,
+    vault: ctx.vault,
+    githubFor: (b: string) => ctx.githubFor(b),
+    tokens: ctx.tokens,
+    get connections() {
+      return ctx.providerConnections;
+    },
+  };
 
   /**
    * Resolves credentials for one repository operation and remembers the non-secret
@@ -261,6 +272,19 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
     return parts.join(' · ');
   }
 
+  /** Self-hosted servers the user connected, plus GitHub Enterprise hosts of added accounts. */
+  function knownHosts(): Record<string, ProviderId> {
+    const map: Record<string, ProviderId> = { ...(ctx.providerConnections?.hostMap() ?? {}) };
+    for (const a of ctx.accounts.list()) {
+      const host = a.apiBaseUrl ? /^https?:\/\/(?:api\.)?([^/]+)/.exec(a.apiBaseUrl)?.[1]?.toLowerCase() : null;
+      if (host && host !== 'github.com') map[host] = 'github';
+    }
+    return map;
+  }
+
+  /** Web hosts of the repositories' providers (links to them may be opened). */
+  const providerWebHosts = new Set<string>();
+
   async function summarize(repo: RepoRecord): Promise<RepoSummary> {
     const exists = fs.existsSync(repo.path);
     let branch: string | null = null;
@@ -297,10 +321,13 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
         ctx.repos.setWorktreeParent(repo.id, parent.id);
       }
     }
+    const provider = remoteUrl ? detectProvider(remoteUrl, { resolvedHost: parsed?.protocol === 'ssh' ? parsed.host : null, known: knownHosts() }) : null;
+    if (provider?.web) providerWebHosts.add(new URL(provider.web).hostname);
     return {
       ...repo,
       worktreeOf,
       github: parsed?.isGitHub && parsed.owner && parsed.repo ? { owner: parsed.owner, repo: parsed.repo } : null,
+      provider,
       ...repoIdentity(repo, parsed),
       exists,
       branch,
@@ -514,10 +541,22 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
           }
         }
       }
+      const deleteFolder = p.deleteFolder === undefined ? false : asBoolean(p.deleteFolder, 'deleteFolder');
       ctx.secrets.forget(repo.id);
       ctx.repos.remove(repo.id);
-      ctx.recordOperation(null, 'Remove repository', 'SUCCESS', `${repo.name} removed from the app (files untouched)${remoteMissing ? ' — its remote no longer exists' : ''}`);
-      return { remoteMissing };
+      // The folder goes to the Recycle Bin / Trash (recoverable), never a permanent delete.
+      let folderDeleted = false;
+      if (deleteFolder && fs.existsSync(repo.path)) {
+        try {
+          await shell.trashItem(repo.path);
+          folderDeleted = true;
+        } catch (err) {
+          ctx.recordOperation(null, 'Remove repository', 'WARNING', `${repo.name} removed from the app, but its folder could not be moved to the trash: ${String((err as Error)?.message ?? err)}`);
+          return { remoteMissing, folderDeleted };
+        }
+      }
+      ctx.recordOperation(null, 'Remove repository', 'SUCCESS', `${repo.name} removed from the app${folderDeleted ? ' and its folder moved to the trash' : ' (files untouched)'}${remoteMissing ? ' — its remote no longer exists' : ''}`);
+      return { remoteMissing, folderDeleted };
     },
 
     'repo:setFavorite': async (payload) => {
@@ -564,6 +603,15 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       }
       if (s.remoteAuth !== undefined) patch.remoteAuth = s.remoteAuth === null ? undefined : asEnum(s.remoteAuth, 'remote authentication', ['ssh', 'pat', 'system'] as const);
       if (s.commitSigning !== undefined) patch.commitSigning = s.commitSigning === null ? undefined : asEnum(s.commitSigning, 'commit signing', ['signed', 'unsigned'] as const);
+      if (s.actionAuth !== undefined) {
+        const a = asObject(s.actionAuth, 'actionAuth');
+        const next: ActionAuth = { ...(repo.settings.actionAuth ?? {}) };
+        const git = ['ssh', 'pat', 'system'] as const;
+        const api = ['session', 'pat', 'github-app'] as const;
+        for (const k of ['push', 'pull', 'merge'] as const) if (a[k] !== undefined) next[k] = a[k] === null ? undefined : asEnum(a[k], `${k} sign-in`, git);
+        for (const k of ['prMerge', 'deploy'] as const) if (a[k] !== undefined) next[k] = a[k] === null ? undefined : asEnum(a[k], `${k} sign-in`, api);
+        patch.actionAuth = Object.values(next).some((v) => v !== undefined) ? next : undefined;
+      }
       if (s.apiBaseUrl !== undefined) patch.apiBaseUrl = s.apiBaseUrl ? validateApiBaseUrl(asLine(s.apiBaseUrl, 'API URL', { max: 300 })) : undefined;
       if (s.githubApp !== undefined) {
         if (s.githubApp === null) patch.githubApp = undefined;
@@ -778,7 +826,8 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       const name = asRemoteName(p.name);
       const url = asLine(p.url, 'Remote URL', { max: 2048 }).trim();
       const probe = p.probe !== false;
-      const existing = (await git.remotes()).find((r) => r.name === name) ?? null;
+      const all = await git.remotes();
+      const existing = all.find((r) => r.name === name) ?? null;
       const before = existing ? parseRemoteUrl(existing.pushUrl) : null;
       const after = parseRemoteUrl(url);
       const view = (u: string, x: ReturnType<typeof parseRemoteUrl>) => ({ url: redactSecrets(u), protocol: x.protocol, host: x.host ?? null, owner: x.owner ?? null, repo: x.repo ?? null });
@@ -792,8 +841,14 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
         before.owner.toLowerCase() === (after.owner ?? '').toLowerCase() &&
         before.repo.toLowerCase() === (after.repo ?? '').toLowerCase() &&
         (before.host ?? '') === (after.host ?? '');
+      // The same repository on the same provider (any protocol) already configured under another name.
+      const key = (x: ReturnType<typeof parseRemoteUrl>) => (x.owner && x.repo ? `${(x.host ?? '').toLowerCase()}/${x.owner.toLowerCase()}/${x.repo.toLowerCase().replace(/\.git$/, '')}` : null);
+      const target = key(after);
+      const twin = target ? all.find((r) => r.name !== name && key(parseRemoteUrl(r.pushUrl)) === target) ?? null : null;
+      const sameAsNow = !!before && !!target && key(before) === target && before.protocol === after.protocol;
       if (!valid.ok) checks.push({ level: 'error', title: 'This URL cannot be used', detail: valid.reason });
-      else if (unchanged) checks.push({ level: 'info', title: 'Nothing changes', detail: `${name} already points to this URL.` });
+      else if (unchanged || sameAsNow) checks.push({ level: 'info', title: 'Nothing changes', detail: `${name} already points to this repository.` });
+      else if (twin) checks.push({ level: 'error', title: `Already added as ${twin.name}`, detail: `${after.owner}/${after.repo} on ${after.host ?? 'this provider'} is already the remote ${twin.name}. Use it, or remove it first.` });
       else {
         checks.push({ level: 'ok', title: 'Valid remote URL', detail: `${after.protocol.toUpperCase()}${after.host ? ` · ${after.host}` : ''}${after.owner ? ` · ${after.owner}/${after.repo}` : ''}` });
         if (before && sameRepo && before.protocol !== after.protocol) {
@@ -833,7 +888,7 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       }
       let reachable: RemoteChangeCheck['reachable'] = 'skipped';
       let remoteHead: RemoteChangeCheck['remoteHead'] = null;
-      if (valid.ok && !unchanged && probe) {
+      if (valid.ok && !unchanged && !sameAsNow && !twin && probe) {
         const r = await git.probeRemote(url);
         if (r.ok) {
           reachable = 'yes';
@@ -854,8 +909,8 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       }
       return {
         name,
-        ok: valid.ok && !unchanged,
-        unchanged,
+        ok: valid.ok && !unchanged && !sameAsNow && !twin,
+        unchanged: unchanged || sameAsNow,
         isNew: !existing,
         from: existing && before ? view(existing.pushUrl, before) : null,
         to: { ...view(url, after), isGitHub: after.isGitHub },
@@ -1872,6 +1927,51 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       return { summary: await summarize(updated), ...result };
     },
 
+    // ---- other providers (GitLab, Bitbucket, Azure DevOps, Gitea) ----
+    'providers:connections': async () => ctx.providerConnections?.all() ?? [],
+    'providers:connect': async (payload) => {
+      const p = asObject(payload);
+      const store = ctx.providerConnections;
+      if (!store) throw new AppError({ code: 'unavailable', title: 'Not Available', message: 'Provider connections are not available.' });
+      const provider = asEnum(p.provider, 'provider', ['gitlab', 'bitbucket', 'azure', 'gitea'] as const);
+      const info = providerInfo(provider);
+      // Bitbucket and Azure DevOps are cloud services with one fixed host; GitLab and Gitea may be self-hosted.
+      const host = provider === 'bitbucket' ? 'bitbucket.org' : provider === 'azure' ? 'dev.azure.com' : asHost(p.host ? asString(p.host, 'server', { max: 260 }) : info.host ?? '');
+      const token = asString(p.token, 'token', { max: 1024 });
+      if (/\s/.test(token)) throw new AppError({ code: 'connection-input', title: 'Invalid Token', message: 'The token contains spaces or line breaks.' });
+      const username = p.username ? asString(p.username, 'username', { max: 200 }) : undefined;
+      const email = p.email ? asString(p.email, 'email', { max: 254 }) : undefined;
+      const org = p.org ? asString(p.org, 'organization', { max: 100 }) : undefined;
+      if (org && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(org)) throw new AppError({ code: 'connection-input', title: 'Invalid Organization', message: 'Use the organization name exactly as it appears after dev.azure.com/.' });
+      const who = await verifyConnection({ provider, host, token, username, email, org });
+      const rec = store.save(
+        { provider, host, org: org ?? null, username: who.username, displayName: who.displayName, gitUsername: info.connect?.gitUsername ?? username ?? who.username, lastVerifiedAt: new Date().toISOString() },
+        token,
+      );
+      ctx.recordOperation(null, 'Connect provider', 'SUCCESS', `${info.name} · ${who.username} @ ${host}${org ? `/${org}` : ''}`);
+      return rec;
+    },
+    'providers:repos': async (payload) => {
+      const p = asObject(payload);
+      const store = ctx.providerConnections;
+      const c = store?.get(asId(p.id, 'connection'));
+      if (!store || !c) throw new AppError({ code: 'connection-missing', title: 'Connection Not Found', message: 'That connection is no longer available. Connect the account again.' });
+      const token = store.token(c.id);
+      if (!token) throw new AppError({ code: 'connection-token', title: 'Token Unavailable', message: 'The token of this connection could not be read. Connect the account again.' });
+      return listConnectionRepos(c, token);
+    },
+    'providers:remove': async (payload) => {
+      const p = asObject(payload);
+      asConfirmed(p.confirmed);
+      const store = ctx.providerConnections;
+      if (!store) return [];
+      const id = asId(p.id, 'connection');
+      const c = store.get(id);
+      store.remove(id);
+      if (c) ctx.recordOperation(null, 'Disconnect provider', 'SUCCESS', `${providerInfo(c.provider).name} · ${c.username} @ ${c.host}`);
+      return store.all();
+    },
+
     'app:menus': async () => (chrome?.devMenus ? ['file', 'view', 'help'] : ['file', 'help']),
 
     'app:menuPopup': async (payload) => {
@@ -1958,14 +2058,17 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       } catch {
         throw new ValidationError('Invalid URL');
       }
-      const allowedHosts = ['github.com', 'docs.github.com', 'git-scm.com'];
+      // Known providers (and their token pages), the servers the user connected, and the web hosts of the
+      // repositories in the app. Nothing else is opened.
+      const allowedHosts = ['github.com', 'docs.github.com', 'git-scm.com', 'gitlab.com', 'bitbucket.org', 'id.atlassian.com', 'dev.azure.com', 'learn.microsoft.com', 'codeberg.org', ...Object.keys(ctx.providerConnections?.hostMap() ?? {}).map((h) => h.split(':')[0]), ...providerWebHosts];
+      if (/^[a-z0-9-]+\.console\.aws\.amazon\.com$/.test(u.hostname)) allowedHosts.push(u.hostname);
       const extra = ctx.repos
         .list()
         .map((r) => r.settings.apiBaseUrl)
         .filter((x): x is string => !!x)
         .map((x) => new URL(x).hostname);
       if (u.protocol !== 'https:' || ![...allowedHosts, ...extra].includes(u.hostname)) {
-        throw new ValidationError('Only https links to GitHub and Git documentation can be opened');
+        throw new ValidationError('Only https links to your Git providers and Git documentation can be opened');
       }
       await shell.openExternal(u.toString());
     },

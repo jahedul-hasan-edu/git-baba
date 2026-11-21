@@ -53,6 +53,9 @@ export class AppContext {
   /** Account-level GitHub App registry (set at start-up; null in tests that do not need it). */
   appRegistry: AppRegistry | null = null;
 
+  /** Sign-ins for GitLab, Bitbucket, Azure DevOps and Gitea (set at start-up; null in tests). */
+  providerConnections: import('./providers/ConnectionStore').ProviderConnectionStore | null = null;
+
   githubFor(apiBase: string): GitHubService {
     return new GitHubService(apiBase);
   }

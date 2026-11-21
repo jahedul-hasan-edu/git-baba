@@ -460,7 +460,7 @@ export function PrList({ repoId, ctx, metadata, onOpen, onCreate }: Props) {
       {list.data?.notice && items.length > 0 && <div className="small muted prx-notice">{list.data.notice}</div>}
 
       <div className={`prx-body ${view}`}>
-        {list.loading && !list.data && <Skeleton rows={6} />}
+        {list.loading && !list.data && <Skeleton kind="pr" rows={6} label="Loading pull requests" />}
         {!list.loading && list.data && items.length === 0 && (
           <div className="empty prx-empty">
             <div className="empty-art">⇄</div>

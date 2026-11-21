@@ -1,3 +1,4 @@
+import { CLOSE_DOCK_EVENT } from '../../services/dock';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CommitStatFile, FileAtCommit, FileDiff } from '../../../shared/types';
 import { DiffViewer } from '../../components/DiffViewer';
@@ -91,7 +92,7 @@ function ChangeBar({ add, del, max }: { add: number; del: number; max: number })
  * `dockHost`: where a clicked file's diff opens (the centre pane, over the graph). Without it a click
  * only focuses the file and the diff opens inline or in the focus view.
  */
-export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, dockHost }: { repoId: string; files: CommitStatFile[]; diffs: FileDiff[]; atCommit: string | null; context?: string; dockHost?: HTMLElement | null }) {
+export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, dockHost, split = false, baseRev }: { /** The older side, for line authors (the commit's parent; omitted: only the new side shows authors). */ baseRev?: string | null; repoId: string; files: CommitStatFile[]; diffs: FileDiff[]; atCommit: string | null; context?: string; dockHost?: HTMLElement | null; split?: boolean }) {
   const { toast, showError } = useApp();
   const [view, setView] = useState<View>(() => {
     try {
@@ -110,6 +111,40 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
   const [docked, setDocked] = useState(false);
   // Another commit (or comparison): close the centre diff.
   useEffect(() => setDocked(false), [files]);
+  // Inline / pop-up diff: one header row; layout and file actions live behind ⋮.
+  const [more, setMore] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const [diffMode, setDiffMode] = useState<'unified' | 'split'>(() => {
+    try {
+      return localStorage.getItem('gb.history.diffMode') === 'split' ? 'split' : 'unified';
+    } catch {
+      return 'unified';
+    }
+  });
+  const pickDiffMode = (m: 'unified' | 'split') => {
+    setDiffMode(m);
+    try {
+      localStorage.setItem('gb.history.diffMode', m);
+    } catch {
+      /* per-viewer convenience */
+    }
+  };
+  useEffect(() => {
+    if (!more) return;
+    const down = (e: MouseEvent) => !moreRef.current?.contains(e.target as Node) && setMore(false);
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && (e.stopPropagation(), setMore(false));
+    window.addEventListener('mousedown', down);
+    window.addEventListener('keydown', key, true);
+    return () => {
+      window.removeEventListener('mousedown', down);
+      window.removeEventListener('keydown', key, true);
+    };
+  }, [more]);
+  useEffect(() => {
+    const close = () => setDocked(false);
+    window.addEventListener(CLOSE_DOCK_EVENT, close);
+    return () => window.removeEventListener(CLOSE_DOCK_EVENT, close);
+  }, []);
   const [openMode, setOpenMode] = useState<'focus' | 'inline'>(() => {
     try {
       return localStorage.getItem('gb.history.diffOpen') === 'inline' ? 'inline' : 'focus';
@@ -179,8 +214,10 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
 
   const fi = ordered.findIndex((f) => f.path === focus);
   const step = (d: number) => ordered.length && setFocus(ordered[(fi + d + ordered.length) % ordered.length].path);
-  const focused = fi >= 0 ? ordered[fi] : null;
+  // Split (pop-up window): files on the left, the picked file's diff on the right — something is always open.
+  const focused = fi >= 0 ? ordered[fi] : split ? (ordered[0] ?? null) : null;
   const dock = !!dockHost;
+  const inline = split || openMode === 'inline';
 
   useEffect(() => {
     if (!docked) return;
@@ -301,8 +338,8 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
               ['list', '☰ Path', 'Flat list with full paths'],
               ['stack', '▤ All diffs', 'Every file diff stacked (classic view)'],
             ] as [View, string, string][]
-          ).map(([v, l, t]) => (
-            <button key={v} className={view === v ? 'on' : ''} onClick={() => setView(v)} title={t}>
+          ).filter(([v]) => !(split || dock) || v !== 'stack').map(([v, l, t]) => (
+            <button key={v} className={((split || dock) && view === 'stack' ? 'tree' : view) === v ? 'on' : ''} onClick={() => setView(v)} title={t}>
               {l}
             </button>
           ))}
@@ -321,7 +358,7 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
             </button>
           )}
         </div>
-        {view !== 'stack' && !dock && (
+        {view !== 'stack' && !dock && !split && (
           <div className="seg" title="How a file's diff opens">
             <button className={openMode === 'focus' ? 'on' : ''} onClick={() => pickOpenMode('focus')} title="Open diffs in the focus view (button below, double-click or ⤢)">
               ⤢ Focus view
@@ -342,15 +379,16 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
         </label>
       </div>
 
-      {view === 'stack' ? (
+      {view === 'stack' && !split && !dock ? (
         <FileDiffList repoId={repoId} files={shown} diffs={diffs} atCommit={atCommit} search={search} />
       ) : (
         <>
+          <div className={split ? 'fx-split' : 'fx-flow'}>
           <div className="fx-list" ref={listRef} tabIndex={0}>
             {shown.length === 0 && <div className="empty small">No files match.</div>}
-            {view === 'tree' ? folderRows(tree, 0) : shown.map((f) => fileRow(f, 0, f.path))}
+            {view === 'tree' || ((split || dock) && view === 'stack') ? folderRows(tree, 0) : shown.map((f) => fileRow(f, 0, f.path))}
           </div>
-          {(dock || openMode === 'focus') && shown.length > 0 && (
+          {!split && !dock && openMode === 'focus' && shown.length > 0 && (
             <button className="fx-focus-cta" onClick={() => setTheater(focused?.path ?? ordered[0]?.path ?? null)}>
               <span className="fx-focus-ico">⤢</span>
               <span>
@@ -359,41 +397,81 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
               </span>
             </button>
           )}
-          {!dock && openMode === 'inline' && focused && (
+          {!dock && inline && focused && (
             <div className="fx-diff">
               <div className="fx-diff-head">
                 <span className={`fx-st ${focused.status}`}>{STATUS[focused.status].letter}</span>
-                <span className="mono ellipsis grow" title={focused.path}>
-                  {focused.oldPath ? `${focused.oldPath} → ` : ''}
-                  {focused.path}
+                <span className="mono ellipsis grow" title={focused.oldPath ? `${focused.oldPath} → ${focused.path}` : focused.path}>
+                  {focused.path.includes('/') && <span className="muted">{focused.path.slice(0, focused.path.lastIndexOf('/') + 1)}</span>}
+                  <strong>{focused.path.split('/').pop()}</strong>
+                  {focused.oldPath && <span className="muted"> ← {focused.oldPath.split('/').pop()}</span>}
                 </span>
-                <span className="small muted">
-                  {fi + 1}/{ordered.length}
-                </span>
-                <button className="btn sm ghost" onClick={() => step(-1)} title="Previous file ( [ )">
-                  ↑
-                </button>
-                <button className="btn sm ghost" onClick={() => step(1)} title="Next file ( ] )">
-                  ↓
-                </button>
-                <button className="btn sm ghost" title="Open in focus view" onClick={() => setTheater(focused.path)}>
-                  ⤢
-                </button>
-                <button className="btn sm ghost" title="Copy file path" onClick={() => copy(focused.path, 'File path')}>
-                  ⧉
-                </button>
-                {atCommit && focused.status !== 'deleted' && (
-                  <button className="btn sm ghost" title="View the whole file at this commit (double-click a file)" onClick={() => openAt(focused)}>
-                    👁
-                  </button>
+                {!focused.binary && (
+                  <span className="small mono nowrap">
+                    <span className="text-ok">+{focused.additions}</span> <span className="text-danger">−{focused.deletions}</span>
+                  </span>
                 )}
-                <button className="btn sm ghost" title="Show the file in its folder" onClick={() => call('graph:reveal', { repoId, path: focused.path }).catch(showError)}>
-                  📂
-                </button>
+                <div className="hd-more" ref={moreRef}>
+                  <button className={`hd-more-btn ${more ? 'on' : ''}`} onClick={() => setMore((m) => !m)} title="View and file actions" aria-haspopup="menu" aria-expanded={more}>
+                    ⋮
+                  </button>
+                  {more && (
+                    <div className="hd-menu" role="menu" onClick={() => setMore(false)}>
+                      <div className="hd-menu-h">View</div>
+                      {(
+                        [
+                          ['unified', '☰', 'Unified'],
+                          ['split', '◫', 'Side-by-side'],
+                        ] as const
+                      ).map(([m, ico, label]) => (
+                        <button key={m} role="menuitemradio" aria-checked={diffMode === m} className={`hd-mi ${diffMode === m ? 'on' : ''}`} onClick={() => pickDiffMode(m)}>
+                          <span className="hd-mi-ico">{ico}</span>
+                          <span className="grow">{label}</span>
+                          {diffMode === m && <span className="hd-mi-hint">✓</span>}
+                        </button>
+                      ))}
+                      <div className="hd-menu-sep" />
+                      <button role="menuitem" className="hd-mi" onClick={() => step(-1)}>
+                        <span className="hd-mi-ico">↑</span>
+                        <span className="grow">Previous file</span>
+                        <span className="hd-mi-hint">[</span>
+                      </button>
+                      <button role="menuitem" className="hd-mi" onClick={() => step(1)}>
+                        <span className="hd-mi-ico">↓</span>
+                        <span className="grow">Next file</span>
+                        <span className="hd-mi-hint">
+                          ] · {fi + 1}/{ordered.length}
+                        </span>
+                      </button>
+                      <div className="hd-menu-sep" />
+                      {!split && (
+                        <button role="menuitem" className="hd-mi" onClick={() => setTheater(focused.path)}>
+                          <span className="hd-mi-ico">⤢</span>
+                          <span className="grow">Focus view</span>
+                        </button>
+                      )}
+                      {atCommit && focused.status !== 'deleted' && (
+                        <button role="menuitem" className="hd-mi" onClick={() => openAt(focused)}>
+                          <span className="hd-mi-ico">👁</span>
+                          <span className="grow">View whole file</span>
+                        </button>
+                      )}
+                      <button role="menuitem" className="hd-mi" onClick={() => copy(focused.path, 'File path')}>
+                        <span className="hd-mi-ico">⧉</span>
+                        <span className="grow">Copy path</span>
+                      </button>
+                      <button role="menuitem" className="hd-mi" onClick={() => call('graph:reveal', { repoId, path: focused.path }).catch(showError)}>
+                        <span className="hd-mi-ico">📂</span>
+                        <span className="grow">Show in folder</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-              {byPath.get(focused.path) ? <DiffViewer diff={byPath.get(focused.path)!} highlight={term} /> : <div className="empty small">No textual changes.</div>}
+              {byPath.get(focused.path) ? <DiffViewer diff={byPath.get(focused.path)!} highlight={term} hideHeader forceMode={diffMode} blame={atCommit ? { repoId, oldRev: baseRev ?? null, newRev: atCommit } : undefined} /> : <div className="empty small">No textual changes.</div>}
             </div>
           )}
+          </div>
         </>
       )}
 
@@ -402,42 +480,6 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
         focused &&
         createPortal(
           <div className="ws-diff">
-            <div className="ws-diff-bar">
-              <button className="btn sm ghost" onClick={() => setDocked(false)} title="Close the diff and show the graph (Esc)">
-                ✕
-              </button>
-              <span className={`fx-st ${focused.status}`}>{STATUS[focused.status].letter}</span>
-              <span className="mono ellipsis grow" title={focused.oldPath ? `${focused.oldPath} → ${focused.path}` : focused.path}>
-                {focused.path.includes('/') && <span className="muted">{focused.path.slice(0, focused.path.lastIndexOf('/') + 1)}</span>}
-                <strong>{focused.path.split('/').pop()}</strong>
-                {focused.oldPath && <span className="muted"> ← {focused.oldPath}</span>}
-              </span>
-              {!focused.binary && (
-                <span className="small mono">
-                  <span className="text-ok">+{focused.additions}</span> <span className="text-danger">−{focused.deletions}</span>
-                </span>
-              )}
-              <span className="small muted">
-                {fi + 1}/{ordered.length}
-              </span>
-              <button className="btn sm ghost" onClick={() => step(-1)} title="Previous file ( [ )">
-                ↑
-              </button>
-              <button className="btn sm ghost" onClick={() => step(1)} title="Next file ( ] )">
-                ↓
-              </button>
-              <button className="btn sm ghost" title="Open in focus view" onClick={() => setTheater(focused.path)}>
-                ⤢
-              </button>
-              <button className="btn sm ghost" title="Copy file path" onClick={() => copy(focused.path, 'File path')}>
-                ⧉
-              </button>
-              {atCommit && focused.status !== 'deleted' && (
-                <button className="btn sm ghost" title="View the whole file at this commit" onClick={() => openAt(focused)}>
-                  👁
-                </button>
-              )}
-            </div>
             <div className="ws-diff-body">{byPath.get(focused.path) ? <DiffViewer diff={byPath.get(focused.path)!} highlight={term} /> : <div className="empty">No textual changes for this file.</div>}</div>
           </div>,
           dockHost!,

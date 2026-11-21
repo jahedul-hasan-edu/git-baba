@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CommitInfo, CommitPreview, FriendlyError, SigningMethod } from '../../shared/types';
 import { ErrorPanel } from '../components/ErrorPanel';
 import { KindIcon } from '../components/FileList';
-import { Modal, Spinner } from '../components/Modal';
+import { Modal, Spinner, Working } from '../components/Modal';
+import { ResultCard } from '../components/ResultCard';
 import { call, toFriendly } from '../services/api';
 
 interface Props {
@@ -29,6 +30,7 @@ export function CommitDialog({ repoId, mode, initialMessage = '', onClose, onDon
   const [idName, setIdName] = useState('');
   const [idEmail, setIdEmail] = useState('');
   const [asAccount, setAsAccount] = useState(false); // chosen once when loaded; read-only in the dialog
+  const [showFiles, setShowFiles] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -93,129 +95,114 @@ export function CommitDialog({ repoId, mode, initialMessage = '', onClose, onDon
   };
 
   const opName = preview?.operation === 'rebase' ? 'rebase' : 'merge';
-  const title = mode === 'commit' ? 'Confirm Commit' : `Confirm: Continue ${opName}`;
+  const title = mode === 'commit' ? 'Commit' : `Continue ${opName}`;
 
   if (done) {
+    const finish = () => onDone(done === 'continued' ? null : done);
     return (
-      <Modal title={title} icon="✓" onClose={() => onDone(done === 'continued' ? null : done)} size="narrow" footer={<button className="btn primary" onClick={() => onDone(done === 'continued' ? null : done)}>Done</button>}>
-        <div className="banner ok">
-          <span className="icon">✓</span>
-          <div>
-            {done === 'continued' ? (
-              <strong>The {opName} was completed.</strong>
-            ) : (
-              <>
-                <strong>Commit created</strong>
-                <div className="mono">
-                  {done.shortHash} {done.subject}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-        <p className="small muted">Nothing was sent to the remote. Use Push when you are ready to share these changes.</p>
-      </Modal>
+      <ResultCard
+        tone="ok"
+        title={done === 'continued' ? `The ${opName} is complete` : 'Committed'}
+        subtitle={done === 'continued' ? undefined : done.subject}
+        chips={[<>⎇ {preview?.branch ?? 'HEAD'}</>, ...(preview?.files.length ? [<>{preview.files.length} file{preview.files.length === 1 ? '' : 's'}</>] : [])]}
+        sha={done === 'continued' ? null : done.hash}
+        actions={[{ label: '⬆ Push', primary: true, title: 'Commits stay on this computer until you push', run: () => (finish(), window.dispatchEvent(new CustomEvent('gb:repo-dialog', { detail: 'push' }))) }]}
+        note="Saved locally — nothing was sent to the remote yet."
+        onClose={finish}
+      />
     );
   }
 
   const canConfirm = !!preview && (!identityMissing || (asAccount && !!preview.accountAuthor)) && (mode === 'continue' || message.trim().length > 0) && !busy;
+  const subjectLen = message.split('\n')[0].length;
+  const author = asAccount && preview?.accountAuthor ? preview.accountAuthor : preview && !identityMissing ? preview.identity : null;
 
   return (
     <Modal
       title={title}
-      icon="⚠"
+      icon="✓"
+      size="narrow"
       onClose={onClose}
       locked={busy}
+      working={busy && preview ? <Working icon="✓" from={`${preview.files.length} file${preview.files.length === 1 ? '' : 's'}`} to={`⎇ ${preview.branch ?? 'HEAD'}`} label={mode === 'commit' ? 'Committing' : `Continuing the ${opName}`} /> : null}
       footer={
         <>
           <button className="btn cancel" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button className="btn primary" onClick={confirm} disabled={!canConfirm}>
-            {busy ? 'Committing…' : mode === 'commit' ? 'Authenticate & Commit' : `Confirm & Continue ${opName}`}
+          <button className="btn primary" onClick={confirm} disabled={!canConfirm} title="Ctrl+Enter">
+            {mode === 'commit' ? '✓ Commit' : `✓ Continue ${opName}`}
+            <span className="kbd">Ctrl ↵</span>
           </button>
         </>
       }
     >
-      <div className="banner info">
-        <span className="icon">ℹ</span>
-        <div>
-          {mode === 'commit' ? 'You are about to create a Git commit.' : `Continuing the ${opName} will create commit(s).`} Please confirm the credentials/authentication method that should be used.
-        </div>
-      </div>
       {error && <ErrorPanel error={error} onSwitched={() => void load()} />}
-      {!preview && !error && <Spinner label="Preparing review…" />}
+      {!preview && !error && <Spinner label="Preparing…" />}
       {preview && (
-        <>
-          <dl className="kv mb">
-            <dt>Repository</dt>
-            <dd>{preview.repoName}</dd>
-            <dt>Branch</dt>
-            <dd>{preview.branch ?? 'detached HEAD'}</dd>
-            <dt>Author</dt>
-            <dd>
-              {/* The author is decided for you (your GitHub account, or this repository's Git identity) and cannot be changed here. */}
-              {asAccount && preview.accountAuthor ? (
-                <span className="cd-author" title="The author is fixed for this commit">
-                  <span className="cd-lock" aria-hidden>🔒</span>
-                  <strong>{preview.accountAuthor.name}</strong> <span className="muted">&lt;{preview.accountAuthor.email}&gt;</span>
-                  <span className="badge">GitHub account · {preview.accountAuthor.login}</span>
-                </span>
-              ) : identityMissing ? (
-                <span className="badge danger">not configured</span>
-              ) : (
-                <span className="cd-author" title="The author is fixed for this commit">
-                  <span className="cd-lock" aria-hidden>🔒</span>
-                  <strong>{preview.identity.name}</strong> <span className="muted">&lt;{preview.identity.email}&gt;</span>
-                </span>
-              )}
-            </dd>
-            <dt>Repository hooks</dt>
-            <dd>{preview.hooksEnabled ? <span className="badge warn">enabled — pre-commit/commit-msg hooks will run</span> : <span className="badge ok">disabled</span>}</dd>
-            <dt>Expected result</dt>
-            <dd>
-              A new {mode === 'continue' ? `${opName} ` : ''}commit on <strong>{preview.branch ?? 'HEAD'}</strong> containing {preview.files.length} staged file(s). Nothing is pushed.
-            </dd>
-          </dl>
-
-          {identityMissing && !(asAccount && preview.accountAuthor) && (
-            <div className="card">
-              <h3>Configure Git identity for this repository</h3>
-              <div className="grid-2">
-                <div className="field">
-                  <label>Name</label>
-                  <input value={idName} onChange={(e) => setIdName(e.target.value)} />
+        <div
+          className="cmt"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && canConfirm) {
+              e.preventDefault();
+              void confirm();
+            }
+          }}
+        >
+          <div className="cmt-top">
+            <span className="pu-branch">⎇ {preview.branch ?? 'detached HEAD'}</span>
+            <button className={`pu-chip cmt-files-btn ${showFiles ? 'on' : ''}`} onClick={() => setShowFiles((v) => !v)} aria-expanded={showFiles}>
+              {preview.files.length} file{preview.files.length === 1 ? '' : 's'} {showFiles ? '▴' : '▾'}
+            </button>
+            {preview.hooksEnabled && (
+              <span className="pu-chip warn" title="pre-commit / commit-msg hooks from this repository will run">
+                ⚙ hooks
+              </span>
+            )}
+          </div>
+          {showFiles && (
+            <div className="cmt-files">
+              {preview.files.map((f) => (
+                <div key={f.path} className="row mono small">
+                  <KindIcon kind={f.kind} /> {f.path}
                 </div>
-                <div className="field">
-                  <label>Email</label>
-                  <input value={idEmail} onChange={(e) => setIdEmail(e.target.value)} />
-                </div>
-              </div>
-              <button className="btn" onClick={saveIdentity} disabled={busy || !idName || !idEmail}>
-                Save identity
-              </button>
+              ))}
+              {preview.files.length === 0 && <span className="muted small">Merge result only — no staged files.</span>}
             </div>
           )}
-
-          <h4>Files involved ({preview.files.length})</h4>
-          <div className="card" style={{ maxHeight: 150, overflow: 'auto', padding: '8px 12px' }}>
-            {preview.files.map((f) => (
-              <div key={f.path} className="row mono small">
-                <KindIcon kind={f.kind} /> {f.path}
-              </div>
-            ))}
-            {preview.files.length === 0 && <span className="muted small">No staged changes (merge result only).</span>}
-          </div>
 
           {mode === 'commit' && (
-            <div className="field">
-              <label>Commit message</label>
-              <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4} placeholder="Summarise the change in the first line" autoFocus />
+            <div className="cmt-msg">
+              <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} placeholder="What did you change?" autoFocus aria-label="Commit message" />
+              {message && <span className={`cmt-count ${subjectLen > 72 ? 'long' : ''}`}>{subjectLen}/72</span>}
             </div>
           )}
-          <div className="mg-as mb">
-            <span className="small muted">Commit as</span>
-            <div className="segmented">
+
+          {identityMissing && !(asAccount && preview.accountAuthor) ? (
+            <div className="cmt-ident">
+              <input value={idName} onChange={(e) => setIdName(e.target.value)} placeholder="Your name" aria-label="Name" />
+              <input value={idEmail} onChange={(e) => setIdEmail(e.target.value)} placeholder="Email" aria-label="Email" />
+              <button className="btn" onClick={saveIdentity} disabled={busy || !idName || !idEmail}>
+                Save
+              </button>
+            </div>
+          ) : (
+            author && (
+              <div className="cmt-row">
+                <span className="cmt-k">Author</span>
+                <span className="cd-author" title={`${author.name} <${author.email}> — fixed for this commit`}>
+                  <span className="cd-lock" aria-hidden>
+                    🔒
+                  </span>
+                  <strong>{author.name}</strong>
+                  {asAccount && preview.accountAuthor && <span className="badge">@{preview.accountAuthor.login}</span>}
+                </span>
+              </div>
+            )
+          )}
+          <div className="cmt-row">
+            <span className="cmt-k">Sign</span>
+            <div className="segmented sm">
               {preview.signingOptions.map((o) => (
                 <button key={o.method} className={signing === o.method ? 'on' : ''} onClick={() => setSigning(o.method)} title={o.description}>
                   {SIGN_ICON[o.method]} {o.label}
@@ -224,8 +211,7 @@ export function CommitDialog({ repoId, mode, initialMessage = '', onClose, onDon
               ))}
             </div>
           </div>
-          <div className="small muted auth-as-desc">{preview.signingOptions.find((o) => o.method === signing)?.description} Commits are local — you sign in when you push.</div>
-        </>
+        </div>
       )}
     </Modal>
   );

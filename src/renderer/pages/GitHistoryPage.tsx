@@ -1,27 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { layoutGraph, type GraphRow } from '../../shared/graphLayout';
+import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { layoutGraph } from '../../shared/graphLayout';
 import type { CommitDetails, CommitStatFile, CompareResult, FriendlyError, GraphCommit, HistoryQuery, HistoryScope, RepoStatus } from '../../shared/types';
 import { ChangesPage } from './ChangesPage';
 import { CleanSlate } from './changes/CleanSlate';
 import { relative } from '../components/FileDiffList';
 import { ErrorPanel } from '../components/ErrorPanel';
 import { Spinner } from '../components/Modal';
+import { Skeleton } from '../components/Skeleton';
 import { CompareStudio } from './history/CompareStudio';
 import { announceFilter, CLEAR_EVENT, JUMP_EVENT, takeJump } from '../services/jump';
 import { call, toFriendly } from '../services/api';
 import { useApp } from '../state/AppState';
 
-import { Select } from '../components/Select';
 import { useCommitActions, type CommitAction } from './history/CommitActions';
 import { CommitFilesExplorer } from './history/CommitFilesExplorer';
 import { CommitMenu, type CompareKind } from './history/CommitMenu';
 import { authorColor, initials } from './history/graphStyle';
+import { CLOSE_DOCK_EVENT } from '../services/dock';
+import { HistoryQueryBar } from './history/HistoryQueryBar';
+import { BranchExplorer } from './history/BranchExplorer';
 import { RefActionsContext, RefChip, type RefActions } from './history/RefChip';
 import { Modal } from '../components/Modal';
 import { SwitchBranchDialog } from '../dialogs/BranchDialogs';
 import { onCompareRequest } from '../services/compareRequest';
 
 const ROW_H = 58;
+/** One-line commit rows. */
+const CROW_H = 38;
 const LANE_W = 20;
 const COLORS = ['#5b8cff', '#3ecf8e', '#f5b84a', '#ff6b6b', '#b18cff', '#6cc4ff', '#ff9f6b', '#9fd36b'];
 const laneX = (i: number) => i * LANE_W + LANE_W / 2;
@@ -47,41 +52,6 @@ function MergedMark({ main }: { main: string }) {
 }
 
 /** One row of the commit graph: lane lines in, an author-avatar node, and edges out to the parents. */
-function GraphCell({ row, width, commit, isHead, wipAbove, hot }: { row: GraphRow; width: number; commit: GraphCommit; isHead: boolean; wipAbove: boolean; hot: boolean }) {
-  const mid = ROW_H / 2;
-  const els: ReactElement[] = [];
-  row.before.forEach((v, i) => {
-    if (!v) return;
-    if (v === row.hash) els.push(<path key={`in${i}`} d={`M${laneX(i)} 0 C ${laneX(i)} ${mid * 0.6}, ${laneX(row.lane)} ${mid * 0.4}, ${laneX(row.lane)} ${mid}`} stroke={color(i)} />);
-    else if (row.after[i] === v) els.push(<line key={`pass${i}`} x1={laneX(i)} y1={0} x2={laneX(i)} y2={ROW_H} stroke={color(i)} />);
-    else els.push(<line key={`end${i}`} x1={laneX(i)} y1={0} x2={laneX(i)} y2={mid} stroke={color(i)} />);
-  });
-  row.parentLanes.forEach((j, k) =>
-    els.push(<path key={`out${k}`} d={`M${laneX(row.lane)} ${mid} C ${laneX(row.lane)} ${mid + mid * 0.6}, ${laneX(j)} ${mid + mid * 0.4}, ${laneX(j)} ${ROW_H}`} stroke={color(j)} />),
-  );
-  if (wipAbove) els.push(<line key="wip" x1={laneX(row.lane)} y1={0} x2={laneX(row.lane)} y2={mid} stroke={color(row.lane)} strokeDasharray="3 3" />);
-  const cx = laneX(row.lane);
-  const c = color(row.lane);
-  return (
-    <svg width={width} height={ROW_H} className={`graph-cell ${hot ? 'hot' : ''}`} fill="none" strokeWidth={2}>
-      {els}
-      {isHead && <circle cx={cx} cy={mid} r={12.5} className="g-head-halo" stroke={c} />}
-      {row.isMerge ? (
-        <>
-          <circle cx={cx} cy={mid} r={6} fill="var(--bg)" stroke={c} strokeWidth={2.5} />
-          <circle cx={cx} cy={mid} r={2} fill={c} />
-        </>
-      ) : (
-        <g className="g-node">
-          <circle cx={cx} cy={mid} r={9.5} fill={authorColor(commit.email || commit.author)} stroke={c} strokeWidth={2} />
-          <text x={cx} y={mid + 3} textAnchor="middle" className="g-initials">
-            {initials(commit.author)}
-          </text>
-        </g>
-      )}
-    </svg>
-  );
-}
 
 /** Tags created on a commit, as interactive chips (the first `max`; the rest behind a "+N" toggle). */
 function TagChips({ refs, max = 2 }: { refs: string[]; max?: number }) {
@@ -112,9 +82,17 @@ function TagChips({ refs, max = 2 }: { refs: string[]; max?: number }) {
 
 /** The release a commit first shipped in (nearest tag containing it). Hidden when the tag sits on the commit itself. */
 function ReleaseChip({ info, full }: { info: GraphCommit['releasedIn']; full?: boolean }) {
+  const actions = useContext(RefActionsContext);
   if (!info || (info.exact && !full)) return null;
   return (
-    <span className="release-chip" title={info.exact ? `Tagged ${info.tag}` : `First released in ${info.tag} — the nearest tag that contains this commit`}>
+    <span
+      className="release-chip copyable"
+      title={`${info.exact ? `Tagged ${info.tag}` : `First released in ${info.tag}`} — click to copy`}
+      onClick={(e) => {
+        e.stopPropagation();
+        actions?.copy(info.tag, 'Tag');
+      }}
+    >
       📦 {info.exact ? info.tag : `in ${info.tag}`}
     </span>
   );
@@ -257,12 +235,64 @@ export function GitHistoryPage({ workspace }: Props = {}) {
   // Workspace: the right pane shows the working changes until a commit is opened.
   const [wip, setWip] = useState(!!ws);
   const [diffHost, setDiffHost] = useState<HTMLDivElement | null>(null);
+  // A file diff open over the graph: neither graph view is "on", and picking one closes the diff.
+  const [diffOpen, setDiffOpen] = useState(false);
+  useEffect(() => {
+    if (!diffHost) return;
+    const sync = () => setDiffOpen(diffHost.childElementCount > 0);
+    sync();
+    const mo = new MutationObserver(sync);
+    mo.observe(diffHost, { childList: true });
+    return () => mo.disconnect();
+  }, [diffHost]);
   const pendingFocus = useRef<GraphFocus | null>(null);
   const [author, setAuthor] = useState('');
   const [sinceDays, setSinceDays] = useState<number | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  // Branch Explorer lanes the query bar hides or isolates, and what the Explorer reports back.
+  const [bxHidden, setBxHidden] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('gb.bx.hidden') ?? '[]') as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const [bxSolo, setBxSolo] = useState<string | null>(null);
+  const [bxInfo, setBxInfo] = useState<{ lanes: string[]; matches: number }>({ lanes: [], matches: 0 });
+  const [findStep, setFindStep] = useState({ n: 0, back: false });
+  const setLanes = (h: Set<string>, solo: string | null) => {
+    setBxHidden(h);
+    setBxSolo(solo);
+    try {
+      localStorage.setItem('gb.bx.hidden', JSON.stringify([...h]));
+    } catch {
+      /* per-viewer convenience */
+    }
+  };
   const [commits, setCommits] = useState<GraphCommit[]>([]);
+  /** Branch runs folded away in the commit list, by the hash of the run's first commit. */
+  const [foldedRuns, setFoldedRuns] = useState<Set<string>>(new Set());
+  /** For every commit: the run of consecutive commits made on the same branch that it belongs to. */
+  const runs = useMemo(() => {
+    const out: { key: string; start: number; len: number; allMerged: boolean }[] = [];
+    for (let i = 0; i < commits.length; ) {
+      const key = commits[i].branch ?? '';
+      let j = i;
+      while (j < commits.length && (commits[j].branch ?? '') === key) j++;
+      const r = { key, start: i, len: j - i, allMerged: commits.slice(i, j).every((x) => x.merged) };
+      for (let k = i; k < j; k++) out.push(r);
+      i = j;
+    }
+    return out;
+  }, [commits]);
+  const toggleRun = (h: string) =>
+    setFoldedRuns((s) => {
+      const n = new Set(s);
+      if (n.has(h)) n.delete(h);
+      else n.add(h);
+      return n;
+    });
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<FriendlyError | null>(null);
@@ -274,6 +304,23 @@ export function GitHistoryPage({ workspace }: Props = {}) {
   const [slots, setSlots] = useState<[string | null, string | null]>([null, null]);
   const [dragging, setDragging] = useState<string | null>(null);
   const [studio, setStudio] = useState(false);
+  /** Which graph draws the history: the lane list, or the Branch Explorer (time left → right, a row per branch). */
+  const [graphView, setGraphViewRaw] = useState<'lanes' | 'explorer'>(() => {
+    try {
+      // Explorer is the default; "lanes" only when the user picked it.
+      return localStorage.getItem('gb.graph.view2') === 'lanes' ? 'lanes' : 'explorer';
+    } catch {
+      return 'explorer';
+    }
+  });
+  const setGraphView = (v: 'lanes' | 'explorer') => {
+    setGraphViewRaw(v);
+    try {
+      localStorage.setItem('gb.graph.view2', v);
+    } catch {
+      /* per-viewer convenience */
+    }
+  };
   // The tab bar's Compare button opens the Compare window here.
   const openStudio = useRef<() => void>(() => undefined);
   const [dropOn, setDropOn] = useState<string | null>(null);
@@ -298,6 +345,8 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     }
   });
   const [modalOpen, setModalOpen] = useState(false);
+  /** The right-hand sidebar starts hidden; selecting working changes or a commit opens it. */
+  const [sideOpen, setSideOpen] = useState(false);
   const [switching, setSwitching] = useState<{ target: string; kind: 'local' | 'remote' } | null>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const [head, setHead] = useState<{ oid: string | null; dirty: number; branch: string | null; detached: boolean }>({ oid: null, dirty: 0, branch: null, detached: false });
@@ -346,9 +395,11 @@ export function GitHistoryPage({ workspace }: Props = {}) {
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput.trim()), 350);
+    // The Explorer highlights matches in place; the list view filters by the text. Prefixed text is a query being typed.
+    const plain = /^\s*(on:|in:|@|#|-|\+|since:)/i.test(searchInput) || graphView === 'explorer' ? '' : searchInput.trim();
+    const t = setTimeout(() => setSearch(plain), 350);
     return () => clearTimeout(t);
-  }, [searchInput]);
+  }, [searchInput, graphView]);
 
   useEffect(() => {
     call('graph:refs', { repoId })
@@ -386,19 +437,32 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     return { scope: (ref ? 'ref' : kind) as HistoryScope, ref, author: author || undefined, sinceDays: sinceDays ?? undefined, search: search || undefined, limit: 300 };
   }, [scope, author, sinceDays, search]);
 
+  /** Bumped by every new query: answers to an older one are dropped instead of overwriting the list. */
+  const loadSeq = useRef(0);
   const load = useCallback(
     async (append: boolean) => {
+      const seq = append ? loadSeq.current : ++loadSeq.current;
       setLoading(true);
       setError(null);
       try {
-        const r = await call('graph:log', { repoId, query: { ...query, skip: append ? commits.length : 0 } });
+        // Fast path: the commits alone (a small first page so the graph appears at once), labels afterwards.
+        const r = await call('graph:log', { repoId, query: { ...query, limit: append ? 400 : 120, skip: append ? commits.length : 0, decorate: false } });
+        if (seq !== loadSeq.current) return;
         setCommits((c) => (append ? [...c, ...r.commits] : r.commits));
         setHasMore(r.hasMore);
         setMainRef(r.mainRef);
+        if (r.commits.length) {
+          void call('graph:decorate', { repoId, hashes: r.commits.map((c) => c.hash) })
+            .then((labels) => {
+              if (seq !== loadSeq.current) return;
+              setCommits((list) => list.map((c) => (labels[c.hash] ? { ...c, ...labels[c.hash] } : c)));
+            })
+            .catch(() => undefined);
+        }
       } catch (err) {
-        setError(toFriendly(err));
+        if (seq === loadSeq.current) setError(toFriendly(err));
       } finally {
-        setLoading(false);
+        if (seq === loadSeq.current) setLoading(false);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -510,11 +574,33 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     if (f && !loading && openFocus(f)) pendingFocus.current = null;
   }, [commits, loading, openFocus]);
 
+  // Pop-up placement: the working-changes window is only for changes. Once everything is committed it closes on its
+  // own, and with nothing to commit it does not open (a short note says so instead).
+  const wsClean = !!ws?.status && ws.status.staged.length + ws.status.unstaged.length + ws.status.untracked.length + ws.status.conflicted.length === 0;
+  useEffect(() => {
+    if (placement === 'modal' && modalOpen && wip && wsClean) setModalOpen(false);
+  }, [placement, modalOpen, wip, wsClean]);
+
   const openWip = () => {
+    if (placement === 'modal' && wsClean && !(wip && modalOpen)) {
+      setWip(true);
+      setSelected(null);
+      setComparison(null);
+      toast(`Nothing to commit on ${ws?.status?.branch ?? 'this branch'}`, 'info');
+      return;
+    }
+    // Clicking the active working-changes pill again hides the panel.
+    if (wip && (placement === 'sidebar' ? sideOpen : modalOpen)) {
+      setSideOpen(false);
+      setModalOpen(false);
+      return;
+    }
     setWip(true);
+    setSideOpen(placement === 'sidebar');
     setSelected(null);
     setComparison(null);
-    setModalOpen(false);
+    // Pop-up placement: the working changes open in their own window (tree + commit on the left, diff on the right).
+    setModalOpen(placement === 'modal');
   };
 
   const clickCommit = (hash: string) => {
@@ -525,6 +611,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     }
     setSelected(hash);
     setComparison(null);
+    setSideOpen(placement === 'sidebar');
     if (placement === 'modal') setModalOpen(true);
   };
 
@@ -538,6 +625,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
       setComparison(await call('graph:compare', { repoId, from: a, to: b }));
       setSelected(null);
       setWip(false);
+      setSideOpen(placement === 'sidebar');
       if (placement === 'modal') setModalOpen(true);
     } catch (err) {
       showError(err);
@@ -608,7 +696,10 @@ export function GitHistoryPage({ workspace }: Props = {}) {
 
   const refActions: RefActions = {
     filter: (r) => setScope(`ref:${r}`),
-    switchTo: (name, kind) => setSwitching({ target: name, kind }),
+    switchTo: (name, kind) => {
+      if (kind === 'local' && !head.detached && head.branch === name) return toast(`Already on ${name}`, 'info');
+      setSwitching({ target: name, kind });
+    },
     copy: (text, what) => void copy(text, what),
     current: head.detached ? null : head.branch,
   };
@@ -634,7 +725,18 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     />
   );
 
-  const showSide = placement === 'sidebar' || (!!ws && wip);
+  // Picking a graph view puts the working changes away (the ✎ pill goes quiet) until it is opened again.
+  const pickGraph = (v: 'lanes' | 'explorer') => {
+    window.dispatchEvent(new Event(CLOSE_DOCK_EVENT));
+    setGraphView(v);
+    if (ws && wip) {
+      setWip(false);
+      setSideOpen(false);
+      setModalOpen(false);
+    }
+  };
+  const showSide = placement === 'sidebar' && sideOpen;
+  const panelOpen = placement === 'sidebar' ? sideOpen : modalOpen;
   const pane = (
     <>
           {ws && !wip && (comparison || !details) && (
@@ -719,7 +821,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
                   </span>
                 </div>
               </div>
-              <CommitFilesExplorer repoId={repoId} files={comparison.files} diffs={comparison.diffs} atCommit={comparison.to.hash} dockHost={diffHost} context={`Compare ${comparison.from.shortHash} → ${comparison.to.shortHash}`} />
+              <CommitFilesExplorer repoId={repoId} files={comparison.files} diffs={comparison.diffs} atCommit={comparison.to.hash} baseRev={comparison.from.hash} dockHost={placement === 'modal' ? undefined : diffHost} split={placement === 'modal'} context={`Compare ${comparison.from.shortHash} → ${comparison.to.shortHash}`} />
             </>
           )}
           {!comparison && !selected && !wip && <div className="empty">Select a commit to see its details. Use ↑ / ↓ to move between commits.</div>}
@@ -736,7 +838,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
                       <span className="cab-ico">↓</span>
                     </button>
                     <span className="spacer" />
-                    {ws && (
+                    {ws && placement !== 'modal' && (
                       <button className={`cd-wip ${head.dirty ? 'dirty' : ''}`} onClick={openWip} title={`Back to your working changes on ${head.branch ?? 'HEAD'} (W)`}>
                         <span className="cd-wip-ico">←</span>
                         <span className="cd-wip-label">Working changes</span>
@@ -852,7 +954,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
                 </div>
                 </Modal>
               )}
-              <CommitFilesExplorer repoId={repoId} files={details.files} diffs={details.diffs} atCommit={details.hash} dockHost={diffHost} context={`${details.hash.slice(0, 7)} · ${details.subject} — ${details.author}`} />
+              <CommitFilesExplorer repoId={repoId} files={details.files} diffs={details.diffs} atCommit={details.hash} baseRev={commits.find((c) => c.hash === details.hash)?.parents[0] ?? null} dockHost={placement === 'modal' ? undefined : diffHost} split={placement === 'modal'} context={`${details.hash.slice(0, 7)} · ${details.subject} — ${details.author}`} />
             </>
           )}
     </>
@@ -864,63 +966,27 @@ export function GitHistoryPage({ workspace }: Props = {}) {
       <div className={`history-toolbar ${ws ? 'ws-toolbar' : ''}`}>
         {ws?.railToggle}
         {ws && (
-          <button className={`ws-wip-pill ${wip ? 'on' : ''} ${head.dirty ? 'dirty' : ''}`} onClick={openWip} title="Your working changes: stage, review and commit (W)">
-            <span>✎</span> Working changes
+          <button className={`ws-wip-pill ${wip && panelOpen ? 'on' : ''} ${head.dirty ? 'dirty' : ''}`} onClick={openWip} title="Working changes: stage, review and commit (W)" aria-label="Working changes">
+            <span aria-hidden>✎</span>
             {head.dirty > 0 && <span className="ws-wip-count">{head.dirty}</span>}
           </button>
         )}
-        {!ws && <label className="small muted">Branch</label>}
-        <Select kind="ref" value={scope} onChange={(e) => setScope(e.target.value)}>
-          <option value="current">Current branch{refs?.current ? ` (${refs.current})` : ''}</option>
-          <option value="all">All branches, remotes & tags</option>
-          <option value="remotes">Remote branches</option>
-          <option value="tags">Tags</option>
-          {refs?.branches.length ? (
-            <optgroup label="Branches">
-              {refs.branches.map((b) => (
-                <option key={b} value={`ref:${b}`}>
-                  {b}
-                </option>
-              ))}
-            </optgroup>
-          ) : null}
-          {refs?.remotes.length ? (
-            <optgroup label="Remote branches">
-              {refs.remotes.map((b) => (
-                <option key={b} value={`ref:${b}`}>
-                  {b}
-                </option>
-              ))}
-            </optgroup>
-          ) : null}
-          {refs?.tags.length ? (
-            <optgroup label="Tags">
-              {refs.tags.map((t) => (
-                <option key={t} value={`ref:${t}`}>
-                  {t}
-                </option>
-              ))}
-            </optgroup>
-          ) : null}
-        </Select>
-        {!ws && <label className="small muted">Author</label>}
-        <Select kind="account" value={author} onChange={(e) => setAuthor(e.target.value)}>
-          <option value="">All</option>
-          {authors.map((a) => (
-            <option key={a.email} value={a.email}>
-              {a.name} ({a.commits})
-            </option>
-          ))}
-        </Select>
-        {!ws && <label className="small muted">Date</label>}
-        <Select value={sinceDays ?? ''} onChange={(e) => setSinceDays(e.target.value ? Number(e.target.value) : null)}>
-          <option value="">All</option>
-          <option value="1">Last 24 hours</option>
-          <option value="7">Last 7 days</option>
-          <option value="30">Last 30 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="365">Last year</option>
-        </Select>
+        <HistoryQueryBar
+          scope={scope}
+          onScope={setScope}
+          refs={refs}
+          author={author}
+          onAuthor={setAuthor}
+          authors={authors}
+          sinceDays={sinceDays}
+          onSince={setSinceDays}
+          text={searchInput}
+          onText={setSearchInput}
+          textMode={graphView === 'explorer' ? 'find' : 'filter'}
+          onStep={graphView === 'explorer' ? (back) => setFindStep((f) => ({ n: f.n + 1, back })) : undefined}
+          matches={graphView === 'explorer' ? bxInfo.matches : null}
+          lanes={graphView === 'explorer' ? { all: bxInfo.lanes, hidden: bxHidden, solo: bxSolo, onChange: setLanes } : null}
+        />
         <span className="grow" />
         {!ws && (
         <button
@@ -934,6 +1000,14 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           ⇄ Compare
         </button>
         )}
+        <div className="seg graph-view-seg" role="tablist" aria-label="Graph">
+          <button role="tab" aria-selected={!diffOpen && graphView === 'lanes'} className={!diffOpen && graphView === 'lanes' ? 'on' : ''} onClick={() => pickGraph('lanes')} title="Lanes: a commit list with the branch graph beside it">
+            ☰ Lanes
+          </button>
+          <button role="tab" aria-selected={!diffOpen && graphView === 'explorer'} className={!diffOpen && graphView === 'explorer' ? 'on' : ''} onClick={() => pickGraph('explorer')} title="Branch Explorer: time left to right, one row per branch">
+            ⟿ Explorer
+          </button>
+        </div>
         <div className="seg" title="Where commit details open">
           {(
             [
@@ -943,11 +1017,18 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           ).map(([v, ico, t]) => (
             <button
               key={v}
-              className={placement === v ? 'on' : ''}
+              className={placement === v && panelOpen ? 'on' : ''}
               title={t}
               onClick={() => {
+                // Clicking the active one hides the details; otherwise show them there.
+                if (placement === v && panelOpen) {
+                  setSideOpen(false);
+                  setModalOpen(false);
+                  return;
+                }
                 setPlacement(v);
-                setModalOpen(v === 'modal' && !!(selected || comparison));
+                setSideOpen(v === 'sidebar');
+                setModalOpen(v === 'modal' && !!(selected || comparison || (ws && wip)));
                 try {
                   localStorage.setItem('gb.history.placement', v);
                 } catch {
@@ -985,12 +1066,13 @@ export function GitHistoryPage({ workspace }: Props = {}) {
       )}
       <div className="split hist-split" ref={splitRef} style={{ gridTemplateColumns: showSide ? `minmax(360px, ${100 - paneW}%) 6px minmax(${ws ? 340 : 0}px, 1fr)` : '1fr' }}>
         <div className={ws ? 'ws-center' : 'left-wrap'}>
-        <div className="left" ref={listRef}>
+        <div className={`left ${graphView === 'explorer' ? 'bx-host' : ''}`} ref={listRef}>
           {error && (
             <div style={{ padding: 12 }}>
               <ErrorPanel error={error} />
             </div>
           )}
+          {loading && commits.length === 0 && !error && <Skeleton kind="graph" rows={16} label="Reading history" />}
           {!loading && commits.length === 0 && !error && (ws && !ws.status?.headOid ? (
             <div className="ws-genesis">
               <div className="ws-genesis-dot" aria-hidden />
@@ -1004,6 +1086,29 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           ) : (
             <div className="empty">No commits match these filters.</div>
           ))}
+          {graphView === 'explorer' && commits.length > 0 && (
+            <BranchExplorer
+              commits={commits}
+              headOid={head.oid}
+              headBranch={head.detached ? null : head.branch}
+              mainRef={mainRef}
+              selected={selected}
+              pair={compareMode ? slots.filter((h): h is string => !!h) : []}
+              hasMore={hasMore}
+              loading={loading}
+              onSelect={(h) => clickCommit(h)}
+              onMenu={(c, x, y) => setMenu({ x, y, commit: c })}
+              onLoadMore={() => load(true)}
+              onSwitch={(b) => refActions.switchTo(b, refs?.remotes.includes(b) && !refs.branches.includes(b) ? 'remote' : 'local')}
+              find={/^\s*(on:|in:|@|#|-|\+|since:)/i.test(searchInput) ? '' : searchInput}
+              findStep={findStep}
+              hidden={bxHidden}
+              solo={bxSolo}
+              onLanes={setLanes}
+              onInfo={setBxInfo}
+            />
+          )}
+          {graphView === 'lanes' && <>
           {!ws && head.dirty > 0 && commits[0]?.hash === head.oid && (
             <div
               className={`commit-row wip-row ${ws && wip ? 'selected' : ''}`}
@@ -1024,12 +1129,40 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               </div>
             </div>
           )}
-          {commits.map((c, i) => (
+          {commits.map((c, i) => {
+            // Consecutive commits made on the same branch form a run: its name is shown once, in a header
+            // that folds the run away, and a rail in the branch colour runs down its rows.
+            const run = runs[i];
+            const runKey = run.key;
+            const runStart = run.start === i;
+            const runLen = run.len;
+            const startHash = commits[run.start].hash;
+            const folded = !!runKey && foldedRuns.has(startHash);
+            const lastInRun = i === run.start + run.len - 1;
+            const lc = runKey ? branchColor(runKey) : color(rows[i].lane);
+            return (
+            <Fragment key={c.hash}>
+            {runStart && runKey && (
+              <button
+                className={`run-head ${folded ? 'folded' : ''}`}
+                style={{ ['--lc' as string]: lc }}
+                onClick={() => toggleRun(startHash)}
+                onDoubleClick={() => refActions.switchTo(runKey, refs?.remotes.includes(runKey) && !refs.branches.includes(runKey) ? 'remote' : 'local')}
+                title={`${folded ? 'Click to show' : 'Click to fold'} · double-click to check out ${runKey}`}
+              >
+                <span className="run-caret">▾</span>
+                <BranchChip name={runKey} />
+                {run.allMerged && mainRef && !onMain(c) && <MergedMark main={mainRef} />}
+                <span className="run-n">
+                  {runLen} commit{runLen === 1 ? '' : 's'}
+                </span>
+              </button>
+            )}
+            {!folded && (
             <div
-              key={c.hash}
               data-hash={c.hash}
               className={`commit-row ${c.hash === head.oid ? 'is-head' : ''} ${hoverBranch && c.branch === hoverBranch ? 'lane-hl' : ''} ${selected === c.hash ? 'selected' : ''} ${pair.includes(c.hash) ? 'paired' : ''} ${range && i >= range.lo && i <= range.hi ? 'in-range' : ''} ${dragging === c.hash ? 'drag-src' : ''} ${dropOn === c.hash ? 'drop-on' : ''}`}
-              style={{ height: ROW_H }}
+              style={{ height: CROW_H, ['--lc' as string]: lc }}
               onClick={() => clickCommit(c.hash)}
               draggable
               onDragStart={(e) => {
@@ -1065,64 +1198,58 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               onMouseEnter={() => c.branch && setHoverBranch(c.branch)}
               onMouseLeave={() => setHoverBranch(null)}
             >
-              <GraphCell row={rows[i]} width={graphWidth} commit={c} isHead={c.hash === head.oid} wipAbove={!ws && i === 0 && head.dirty > 0 && c.hash === head.oid} hot={!!hoverBranch && c.branch === hoverBranch} />
-              <div className="commit-text">
-                <div className="commit-subject ellipsis">
-                  {compareMode && (slots[0] === c.hash || slots[1] === c.hash) && <span className={`cmp-letter sm ${slots[0] === c.hash ? 'A' : 'B'}`}>{slots[0] === c.hash ? 'A' : 'B'}</span>}
-                  {c.refs.length > 0 && (
-                    <span className="ref-group">
-                      <RefPills refs={c.refs} laneColor={color(rows[i].lane)} remotes={remoteNames} />
-                      <TagChips refs={c.refs} />
+              <span className={`cr-rail ${runStart ? 'first' : ''} ${lastInRun ? 'last' : ''}`} aria-hidden>
+                <i className={c.parents.length > 1 ? 'merge' : ''} />
+              </span>
+              <div className="cr">
+                {compareMode && (slots[0] === c.hash || slots[1] === c.hash) && <span className={`cmp-letter sm ${slots[0] === c.hash ? 'A' : 'B'}`}>{slots[0] === c.hash ? 'A' : 'B'}</span>}
+                {c.refs.length > 0 && (
+                  <span className="ref-group">
+                    <RefPills refs={c.refs} laneColor={color(rows[i].lane)} remotes={remoteNames} />
+                    <TagChips refs={c.refs} />
+                  </span>
+                )}
+                <span className="cr-subject" title={c.subject}>
+                  {c.subject}
+                </span>
+                <span className="cr-meta">
+                  {c.merged && mainRef && !onMain(c) && !run.allMerged && (
+                    <span className="cr-merged" title={`Already merged into ${mainRef}`}>
+                      ✓
                     </span>
                   )}
-                  <span className="subject-text">{c.subject}</span>
-                </div>
-                <div className="small muted commit-meta">
-                  {/* The tip already carries the branch as a ref chip: no second chip for the same name. */}
-                  {c.branch && !c.refs.some((r) => r.replace(/^HEAD -> /, '') === c.branch) && <BranchChip name={c.branch} />}
-                  {c.merged && mainRef && !onMain(c) && <MergedMark main={mainRef} />}
                   <ReleaseChip info={c.releasedIn} />
-                  <span className="ellipsis">
-                    {c.author} · {relative(c.date)}
+                  {c.parents.length > 1 && (
+                    <span className="cr-merge" title="Merge commit">
+                      ⑂
+                    </span>
+                  )}
+                  <span className="cr-av" style={{ background: authorColor(c.email || c.author) }} title={`${c.author} <${c.email}>`}>
+                    {initials(c.author)}
                   </span>
-                  {c.parents.length > 1 && <span className="badge">merge</span>}
-                  <span className="mono commit-sha">{c.shortHash}</span>
-                </div>
-              </div>
-              <div className="row-actions" onClick={(e) => e.stopPropagation()}>
-                <button title={`Cherry-pick onto ${head.branch ?? 'HEAD'} (P)`} disabled={c.hash === head.oid} onClick={() => runAction('cherry-pick', c)}>
-                  🍒
-                </button>
-                <button title="Compare with HEAD" disabled={c.hash === head.oid || !head.oid} onClick={() => compareFromMenu('head', c)}>
-                  ⇄
-                </button>
-                <button title="Copy SHA (C)" onClick={() => runAction('copy-sha', c)}>
-                  ⧉
-                </button>
-                <button
-                  title="More actions (right-click)"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setMenu({ x: r.left - 200, y: r.bottom + 4, commit: c });
-                  }}
-                >
-                  ⋯
-                </button>
+                  <span className="cr-time" title={new Date(c.date).toLocaleString()}>
+                    {shortAgo(c.date)}
+                  </span>
+                  <span
+                    className="mono cr-sha copyable"
+                    title="Click to copy the full commit id"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void copy(c.hash, 'Commit id');
+                    }}
+                  >
+                    {c.shortHash}
+                  </span>
+                </span>
               </div>
             </div>
-          ))}
-          {loading && (
-            <div style={{ padding: 12 }}>
-              <Spinner label="Loading history…" />
-            </div>
-          )}
-          {hasMore && !loading && (
-            <div style={{ padding: 12 }}>
-              <button className="btn block" onClick={() => load(true)}>
-                Load more commits
-              </button>
-            </div>
-          )}
+            )}
+            </Fragment>
+            );
+          })}
+          {loading && commits.length > 0 && <Skeleton kind="graph" rows={4} label="Loading older commits" />}
+          {hasMore && !loading && <AutoMore root={listRef} onMore={() => void load(true)} />}
+          </>}
         </div>
         {/* A changed file (working or committed) opens here, over the graph, so the diff gets the room it needs. */}
         <div className="ws-diff-host" ref={setDiffHost} />
@@ -1159,14 +1286,21 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           </>
         )}
       </div>
-      {placement === 'modal' && modalOpen && (comparison || selected) && (
+      {placement === 'modal' && modalOpen && ws && wip && (
+        <Modal title={`Working changes${ws.status?.branch ? ` · ${ws.status.branch}` : ''}`} icon="✎" size="wide" onClose={() => setModalOpen(false)}>
+          <div className="wip-modal">
+            <ChangesPage status={ws.status} reload={ws.reload} error={ws.error} tree />
+          </div>
+        </Modal>
+      )}
+      {placement === 'modal' && modalOpen && !wip && (comparison || selected) && (
         <Modal
           title={comparison ? 'Compare commits' : selectedCommit ? `${selectedCommit.shortHash} · ${selectedCommit.subject}` : 'Commit'}
           icon={comparison ? '⇄' : '◉'}
           size="wide"
           onClose={() => setModalOpen(false)}
         >
-          <div className="hist-modal-body">{pane}</div>
+          <div className="hist-modal-body hist-modal-split">{pane}</div>
         </Modal>
       )}
       {menu && (
@@ -1198,4 +1332,40 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     </div>
     </RefActionsContext.Provider>
   );
+}
+
+/** Loads the next page as soon as the end of the list scrolls into view; the button is the fallback. */
+function AutoMore({ root, onMore }: { root: React.RefObject<HTMLDivElement | null>; onMore: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const more = useRef(onMore);
+  more.current = onMore;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((e) => e.some((x) => x.isIntersecting) && more.current(), { root: root.current, rootMargin: '600px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [root]);
+  return (
+    <div ref={ref} style={{ padding: 12 }}>
+      <button className="btn block cancel" onClick={onMore}>
+        Load older commits
+      </button>
+    </div>
+  );
+}
+
+/** "now", "8m", "3h", "2d", "5w", then the date — compact enough for a one-line row. */
+function shortAgo(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return '';
+  const m = Math.max(0, Math.round((Date.now() - t) / 60_000));
+  if (m < 1) return 'now';
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.round(h / 24);
+  if (d < 14) return `${d}d`;
+  if (d < 70) return `${Math.round(d / 7)}w`;
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(d > 330 ? { year: '2-digit' } : {}) });
 }

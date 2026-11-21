@@ -1,10 +1,14 @@
-import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { providerInfo, providerLinks } from '../../shared/providers';
+import { ProviderMono } from '../components/ProviderMono';
+import { ProviderHub } from './provider/ProviderHub';
 import { createPortal } from 'react-dom';
 import { HEADER_REPO_SLOT } from '../components/AppHeader';
 import { NotificationBell } from '../components/NotificationBell';
 import { requestCompare } from '../services/compareRequest';
 import { Spinner } from '../components/Modal';
 import type { PullResult } from '../../shared/types';
+import type { RepoAccess } from '../../shared/github';
 import { RepoSyncBar } from '../components/RepoSyncBar';
 import { AddAccountDialog } from '../dialogs/AddAccountDialog';
 import { FetchDialog } from '../dialogs/FetchDialog';
@@ -26,12 +30,12 @@ const ActionsTab = lazy(() => import('./github/ActionsTab').then((m) => ({ defau
 const PullRequestsTab = lazy(() => import('./github/PullRequestsTab').then((m) => ({ default: m.PullRequestsTab })));
 const PullRequestPage = lazy(() => import('./PullRequestPage').then((m) => ({ default: m.PullRequestPage })));
 import { FILTER_EVENT, requestClearFilter } from '../services/jump';
-const SearchPalette = lazy(() => import('../components/search/SearchPalette').then((m) => ({ default: m.SearchPalette })));
 const RepoSettingsShell = lazy(() => import('./repoSettings/RepoSettingsShell').then((m) => ({ default: m.RepoSettingsShell })));
 
 export function RepoView() {
-  const { activeRepo, repoTab, setRepoTab, revision, bump, appSetupRepoId, requestAppSetup, activeAccount, accounts, setAccounts, refreshSession, refreshRepos, toast, setView } = useApp();
-  const otherAccount = activeRepo?.account && activeRepo.account.id !== activeAccount?.id ? activeRepo.account : null;
+  const { activeRepo, repoTab, setRepoTab, revision, bump, appSetupRepoId, requestAppSetup, activeAccount, accounts, setAccounts, refreshSession, refreshRepos, toast, setView, switchingAccount, ghKey } = useApp();
+  // Opening a repository moves to its account on its own; for that moment nothing is shown as locked.
+  const otherAccount = !switchingAccount && activeRepo?.account && activeRepo.account.id !== activeAccount?.id ? activeRepo.account : null;
   // The account this repository belongs to was signed out (or removed): ask to sign in to it again.
   const missingAccount = activeRepo?.missingAccount ?? null;
   const [signInMissing, setSignInMissing] = useState(false);
@@ -94,16 +98,52 @@ export function RepoView() {
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => setHeaderSlot(document.getElementById(HEADER_REPO_SLOT)), []);
 
+  // A tab this repository's provider does not have (e.g. Pull Requests on a plain Git server) falls back to Changes.
+  const prov = activeRepo?.provider && activeRepo.provider.id !== 'github' ? activeRepo.provider : null;
+  // GitHub: what the repository's account may do here — role, pull requests, Actions. Probed when it opens (once the
+  // app is on the right account) and again after signing in; tabs it cannot use are not shown.
+  const [access, setAccess] = useState<RepoAccess | null>(null);
+  const accessReady = !!activeRepo?.github && !!activeRepo.exists && !otherAccount && !missingAccount && !!activeAccount;
+  const loadAccess = useCallback(
+    (refresh = false) => {
+      if (!accessReady || !repoId) return setAccess(null);
+      call('gh:access', { repoId, refresh })
+        .then(setAccess)
+        .catch(() => setAccess(null)); // unknown: keep every tab (each one explains its own problem)
+    },
+    [accessReady, repoId],
+  );
+  useEffect(() => {
+    setAccess(null);
+    loadAccess();
+  }, [loadAccess, ghKey]);
+  const pullsOff = !!access && !access.pulls.ok;
+  const actionsOff = !!access && !access.actions.ok;
+  const tabMissing =
+    (!!prov && ((repoTab === 'pulls' && !(providerInfo(prov.id).tabs.pulls && providerLinks(prov).pulls)) || (repoTab === 'actions' && !(providerInfo(prov.id).tabs.pipelines && providerLinks(prov).pipelines)))) ||
+    (repoTab === 'pulls' && pullsOff) ||
+    (repoTab === 'actions' && actionsOff);
+  useEffect(() => {
+    if (tabMissing) setRepoTab('changes');
+  }, [tabMissing, setRepoTab]);
+
   if (!activeRepo) return null;
   const st = status.data;
   const conflictCount = st?.conflicted.length ?? 0;
   const inOperation = !!st?.operation || !!switchSession.data;
 
+  // GitHub keeps its own Pull Requests and Actions tabs. Other providers get their own names, and a tab only when
+  // the provider has that feature (a plain Git server has neither).
+  const other = activeRepo.provider && activeRepo.provider.id !== 'github' ? activeRepo.provider : null;
+  const otherInfo = other ? providerInfo(other.id) : null;
+  const otherLinks = other ? providerLinks(other) : null;
+  const pullsLabel = other ? (otherInfo!.tabs.pulls && otherLinks!.pulls ? otherInfo!.tabs.pulls : null) : pullsOff ? null : 'Pull Requests';
+  const pipelinesLabel = other ? (otherInfo!.tabs.pipelines && otherLinks!.pipelines ? otherInfo!.tabs.pipelines : null) : actionsOff ? null : 'Actions';
   const tabs: [RepoTab, string, number | null, string][] = [
     ['changes', 'Changes', st ? st.staged.length + st.unstaged.length + st.untracked.length : null, '✎'],
     ['code', 'Code', null, '</>'],
-    ['pulls', 'Pull Requests', null, '⇄'],
-    ['actions', 'Actions', null, '▶'],
+    ...(pullsLabel ? ([['pulls', pullsLabel, null, '⇄']] as [RepoTab, string, null, string][]) : []),
+    ...(pipelinesLabel ? ([['actions', pipelinesLabel, null, '▶']] as [RepoTab, string, null, string][]) : []),
     ...(inOperation || conflictCount > 0 ? ([['conflicts', 'Conflicts', conflictCount, '⚠']] as [RepoTab, string, number, string][]) : []),
     ['settings', 'Settings', null, '⚙'],
   ];
@@ -205,7 +245,7 @@ export function RepoView() {
             </div>
           )}
           </div>
-          <TabDock tabs={tabs} active={repoTab} onPick={setRepoTab} locked={locked} />
+          <TabDock tabs={tabs} active={repoTab} onPick={setRepoTab} locked={locked} extra={access && (pullsOff || actionsOff || !!access.pulls.why) ? <AccessNote access={access} onRecheck={() => loadAccess(true)} /> : null} />
 <Suspense fallback={<div className="content"><Spinner label="Loading…" /></div>}>
           {missingAccount ? (
             <div className="content">
@@ -254,8 +294,8 @@ export function RepoView() {
           {repoTab === 'changes' && <WorkspacePage status={st} reload={status.reload} error={status.error} />}
           {repoTab === 'code' && <CodePage key={repoId} />}
           {repoTab === 'pr' && <PullRequestPage />}
-          {repoTab === 'pulls' && <PullRequestsTab />}
-          {repoTab === 'actions' && <ActionsTab />}
+          {repoTab === 'pulls' && (other ? pullsLabel && <ProviderHub repo={activeRepo} status={st ?? null} kind="pulls" /> : <PullRequestsTab />)}
+          {repoTab === 'actions' && (other ? pipelinesLabel && <ProviderHub repo={activeRepo} status={st ?? null} kind="pipelines" /> : <ActionsTab />)}
           {repoTab === 'conflicts' && <ConflictsPage status={st} switchSession={switchSession.data ?? null} />}
           {repoTab === 'settings' && (
             <div className="content">
@@ -364,11 +404,19 @@ function RepoIdentity() {
   const mainRepo = activeRepo.worktreeOf ? repos.find((r) => r.id === activeRepo.worktreeOf) : undefined;
   const c = deckColor(activeRepo.identity ?? activeRepo.name);
   const remote = activeRepo.remoteUrl ?? activeRepo.identity;
+  // The provider's logo stands in for the repository tile; a repository with no remote gets a folder.
+  const provId = activeRepo.github ? 'github' : (activeRepo.provider?.id ?? null);
   return (
     <div className="deck-id">
-      <div className="deck-tile" style={{ ['--rc' as string]: c }}>
-        {activeRepo.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '⎇'}
-      </div>
+      {provId ? (
+        <span className="deck-logo" title={`${providerInfo(provId).name}${remote ? ` · ${remote}` : ''}`}>
+          <ProviderMono id={provId} size={30} />
+        </span>
+      ) : (
+        <div className="deck-tile local" style={{ ['--rc' as string]: c }} title="Local repository — no remote">
+          📁
+        </div>
+      )}
       <div className="deck-main">
         <div className="deck-title">
           <h1 className="deck-name ellipsis" title={activeRepo.name}>
@@ -401,7 +449,7 @@ function RepoIdentity() {
 }
 
 /** Tab bar with icons, a sliding active indicator, counts and Ctrl+1…9 shortcuts. */
-function TabDock({ tabs, active, onPick: pick, locked }: { tabs: [RepoTab, string, number | null, string][]; active: RepoTab; onPick: (t: RepoTab) => void; locked?: boolean }) {
+function TabDock({ tabs, active, onPick: pick, locked, extra }: { tabs: [RepoTab, string, number | null, string][]; active: RepoTab; onPick: (t: RepoTab) => void; locked?: boolean; extra?: ReactNode }) {
   const isOff = (_t: RepoTab) => !!locked;
   const onPick = (t: RepoTab) => {
     if (!isOff(t)) pick(t);
@@ -433,23 +481,12 @@ function TabDock({ tabs, active, onPick: pick, locked }: { tabs: [RepoTab, strin
     window.addEventListener('resize', on);
     return () => window.removeEventListener('resize', on);
   }, [active]);
-  const [searching, setSearching] = useState(false);
   const [filtered, setFiltered] = useState(false);
   useEffect(() => {
     const on = (e: Event) => setFiltered(!!(e as CustomEvent<boolean>).detail);
     window.addEventListener(FILTER_EVENT, on);
     return () => window.removeEventListener(FILTER_EVENT, on);
   }, []);
-  useEffect(() => {
-    const on = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        if (!locked) setSearching(true);
-      }
-    };
-    window.addEventListener('keydown', on);
-    return () => window.removeEventListener('keydown', on);
-  }, [locked]);
   return (
     <div className="tabs dock" ref={ref} role="tablist">
       {tabs.map(([id, label, count, icon], i) => (
@@ -470,6 +507,7 @@ function TabDock({ tabs, active, onPick: pick, locked }: { tabs: [RepoTab, strin
         </div>
       ))}
       {ink && <span className="tab-ink" style={{ transform: `translateX(${ink.left}px)`, width: ink.width }} />}
+      {extra}
       <button
         className="tab-compare"
         disabled={!!locked}
@@ -486,18 +524,69 @@ function TabDock({ tabs, active, onPick: pick, locked }: { tabs: [RepoTab, strin
           ✕ Clear search
         </button>
       )}
-      <button className={`tab-search ${filtered ? 'after-clear' : ''}`} disabled={!!locked} onClick={() => setSearching(true)} title={locked ? 'Switch to the account this repository belongs to first' : 'Search commits, code and tags (Ctrl+K)'} aria-label="Search">
-        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <circle cx="10.5" cy="10.5" r="6.5" />
-          <path d="M15.5 15.5 21 21" />
-        </svg>
-        <span>Search</span>
-        <kbd>Ctrl K</kbd>
+    </div>
+  );
+}
+
+/**
+ * "Limited access": the features hidden for this repository's account, why, and how to grant them. Rechecking
+ * after changing the token (or signing in to the GitHub CLI) brings the tabs back.
+ */
+function AccessNote({ access, onRecheck }: { access: RepoAccess; onRecheck: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    window.addEventListener('mousedown', down);
+    return () => window.removeEventListener('mousedown', down);
+  }, [open]);
+  // Hidden features, and ones that work with less (e.g. pull requests over REST only).
+  const rows = ([
+    ['⇄', 'Pull requests', access.pulls],
+    ['▶', 'Actions', access.actions],
+  ] as const).filter(([, , f]) => !f.ok || !!f.why);
+  const hidden = rows.filter(([, , f]) => !f.ok).length;
+  const tokenPage = access.fineGrained ? 'https://github.com/settings/personal-access-tokens' : 'https://github.com/settings/tokens';
+  return (
+    <div className="acn" ref={ref}>
+      <button className={`acn-btn ${open ? 'on' : ''}`} onClick={() => setOpen((o) => !o)} title="Some features are hidden: this account may not use them here">
+        {hidden ? `🔒 ${hidden} hidden` : '◐ Limited'}
       </button>
-      {searching && (
-        <Suspense fallback={null}>
-          <SearchPalette onClose={() => setSearching(false)} />
-        </Suspense>
+      {open && (
+        <div className="acn-pop pop-in" role="dialog" aria-label="Access">
+          <div className="acn-head">
+            <strong>{access.login}</strong>
+            <span className="acn-role">{access.role ?? 'no role'}</span>
+            {access.via === 'gh' && <span className="acn-role">via GitHub CLI</span>}
+          </div>
+          {rows.map(([ico, name, f]) => (
+            <div key={name} className={`acn-row ${f.ok ? 'part' : ''}`}>
+              <span className="acn-ico">{ico}</span>
+              <span className="grow">
+                <strong>
+                  {name} <span className={`acn-state ${f.ok ? 'part' : 'off'}`}>{f.ok ? 'limited' : 'hidden'}</span>
+                </strong>
+                <span className="small muted">{f.why}</span>
+              </span>
+            </div>
+          ))}
+          <div className="acn-foot">
+            <a className="small" onClick={() => void call('shell:openExternal', { url: tokenPage }).catch(() => undefined)}>
+              {access.fineGrained ? 'Edit token permissions ↗' : 'Token settings ↗'}
+            </a>
+            <span className="grow" />
+            <button
+              className="btn sm"
+              onClick={() => {
+                setOpen(false);
+                onRecheck();
+              }}
+            >
+              ↻ Check again
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

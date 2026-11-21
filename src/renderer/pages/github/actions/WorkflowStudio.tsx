@@ -161,7 +161,7 @@ function Gallery({ repoId, ctx, onClose, onPick }: { repoId: string; ctx: GhRepo
         <div className="studio-grid">
           {Array.from({ length: 6 }, (_, i) => (
             <div key={i} className="studio-card">
-              <Skeleton rows={3} />
+              <Skeleton kind="about" rows={3} />
             </div>
           ))}
         </div>

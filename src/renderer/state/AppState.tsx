@@ -61,6 +61,8 @@ interface AppStateValue {
   prDraft: { base: string; head: string } | null;
   setPrDraft: (d: { base: string; head: string } | null) => void;
   activeAccount: AccountSummary | null;
+  /** True for the moment the app moves to the opened repository's account. */
+  switchingAccount: boolean;
   refreshAccounts: () => Promise<void>;
   setAccounts: (s: AccountsState) => void;
 }
@@ -154,6 +156,32 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     void refreshSession();
   }, [accounts?.activeAccountId, refreshSession]);
 
+  /**
+   * The account follows the repository: opening a repository of another added account makes that account the one in
+   * use (sessions, GitHub pages and the main process's one-account-at-a-time checks all follow). There is no manual
+   * switcher. Only a change of repository switches, so managing another account from the Accounts window is not undone.
+   */
+  const followedRepo = useRef<string | null>(null);
+  const [switchingAccount, setSwitchingAccount] = useState(false);
+  useEffect(() => {
+    if (!accounts || !activeRepoId) return;
+    const repo = repos.find((r) => r.id === activeRepoId);
+    if (!repo) return;
+    if (followedRepo.current === activeRepoId) return;
+    followedRepo.current = activeRepoId;
+    const want = repo.account?.id;
+    if (!want || want === accounts.activeAccountId || !accounts.accounts.some((a) => a.id === want)) return;
+    setSwitchingAccount(true);
+    void call('accounts:setActive', { accountId: want })
+      .then(async (next) => {
+        setAccounts(next);
+        await refreshSession().catch(() => undefined);
+        setRevision((r) => r + 1);
+      })
+      .catch(() => undefined)
+      .finally(() => setSwitchingAccount(false));
+  }, [activeRepoId, repos, accounts, refreshSession]);
+
   const selectRepo = useCallback((id: string | null) => {
     setActiveRepoId(id);
     setViewRaw(id ? 'repo' : 'welcome');
@@ -198,13 +226,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       prDraft,
       setPrDraft,
       activeAccount: accounts?.accounts.find((a) => a.active) ?? null,
+      switchingAccount,
       refreshAccounts,
       setAccounts: (s: AccountsState) => {
         setAccounts(s);
         void refreshRepos(); // account associations shown in the sidebar may change
       },
     }),
-    [info, repos, activeRepoId, selectRepo, view, setView, accountsOpen, tokenOpen, repoTab, refreshRepos, error, showError, reviewAuthHandler, toasts, toast, revision, bump, appSetupRepoId, accounts, refreshAccounts, session, refreshSession, openPr, prDraft],
+    [info, repos, activeRepoId, selectRepo, view, setView, accountsOpen, tokenOpen, repoTab, refreshRepos, error, showError, reviewAuthHandler, toasts, toast, revision, bump, appSetupRepoId, accounts, refreshAccounts, session, refreshSession, openPr, prDraft, switchingAccount],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

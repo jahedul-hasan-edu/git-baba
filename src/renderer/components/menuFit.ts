@@ -7,13 +7,20 @@ const GAP = 8;
  * would cross the right/bottom edge, and when it is taller than the window it gets the window's height and
  * scrolls, with soft fades at the edges that still have items beyond them (`.can-up` / `.can-down`).
  */
+/** Menus never cover the custom title bar (window controls live there). */
+function topLimit() {
+  const bar = document.querySelector('.titlebar');
+  return (bar ? bar.getBoundingClientRect().bottom : 0) + GAP;
+}
+
 export function fitMenu(el: HTMLElement, x: number, y: number) {
-  el.style.maxHeight = `${window.innerHeight - GAP * 2}px`;
+  const top = topLimit();
+  el.style.maxHeight = `${window.innerHeight - top - GAP}px`;
   // offset sizes: unaffected by the opening animation's transform.
   const w = el.offsetWidth;
   const h = el.offsetHeight;
   el.style.left = `${Math.max(GAP, Math.min(x, window.innerWidth - w - GAP))}px`;
-  el.style.top = `${Math.max(GAP, Math.min(y, window.innerHeight - h - GAP))}px`;
+  el.style.top = `${Math.max(top, Math.min(y, window.innerHeight - h - GAP))}px`;
   markScroll(el);
 }
 
@@ -44,12 +51,13 @@ export function useMenuFit(ref: RefObject<HTMLElement | null>, x: number | undef
 export function fitSubmenu(sub: HTMLElement, row: HTMLElement, menu: HTMLElement) {
   const m = menu.getBoundingClientRect();
   const it = row.getBoundingClientRect();
-  sub.style.maxHeight = `${window.innerHeight - GAP * 2}px`;
+  const top = topLimit();
+  sub.style.maxHeight = `${window.innerHeight - top - GAP}px`;
   const sw = sub.offsetWidth;
   const sh = sub.offsetHeight;
   const right = m.right + 4;
   const left = right + sw + GAP <= window.innerWidth ? right : Math.max(GAP, m.left - 4 - sw);
   sub.style.left = `${left}px`;
-  sub.style.top = `${Math.max(GAP, Math.min(it.top - 5, window.innerHeight - sh - GAP))}px`;
+  sub.style.top = `${Math.max(top, Math.min(it.top - 5, window.innerHeight - sh - GAP))}px`;
   markScroll(sub);
 }

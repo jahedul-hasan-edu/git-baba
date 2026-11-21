@@ -79,138 +79,163 @@ export function RepoSecrets({ repoId, ctx }: { repoId: string; ctx: GhRepoContex
   const [editing, setEditing] = useState<Editing>(null);
   const [deleting, setDeleting] = useState<Deleting>(null);
   const [newEnv, setNewEnv] = useState(false);
+  const [active, setActive] = useState('repo');
+  const [view, setView] = useState<'list' | 'matrix'>('list');
 
   const list = useMemo(() => (overview.data ? stores(overview.data) : []), [overview.data]);
   const defined = useMemo(() => new Set(list.flatMap((s) => (s.secrets ?? []).map((x) => x.name))), [list]);
   const missing = useMemo(() => Object.entries(usage.data ?? {}).filter(([n]) => !defined.has(n)), [usage.data, defined]);
-  const total = list.reduce((n, s) => n + (s.secrets?.length ?? 0), 0);
   const query = q.trim().toUpperCase();
   const reload = () => {
     void overview.reload();
   };
 
   if (overview.error) return <ErrorPanel error={overview.error} />;
-  if (!overview.data) return <Skeleton rows={6} />;
+  if (!overview.data) return <Skeleton kind="secrets" rows={5} label="Reading secrets" />;
+
+  const current = list.find((s) => s.key === active) ?? list[0];
+  const names = [...defined].sort();
+  const hits = query ? list.flatMap((s) => (s.secrets ?? []).filter((x) => x.name.includes(query)).map((x) => ({ s, x }))) : [];
+
+  const row = (s: Store, x: GhSecret, showStore = false) => {
+    const used = usage.data?.[x.name];
+    return (
+      <div key={`${s.key}:${x.name}`} className={`sx-row ${usage.data && !used ? 'idle' : ''}`}>
+        <span className="sx-lock">🔒</span>
+        <strong className="mono sx-name">{x.name}</strong>
+        {showStore && <span className="sx-store-tag">{s.icon} {s.env ?? s.title}</span>}
+        <span className="sx-uses grow">
+          {used ? used.map((w) => <span key={w} className="wf-use">{w}</span>) : usage.data ? <span className="muted small">unused</span> : null}
+        </span>
+        <span className="small muted" title={x.updatedAt ?? undefined}>{relTime(x.updatedAt)}</span>
+        {s.manageable && (
+          <span className="sx-acts">
+            <button className="sx-ib" onClick={() => setEditing({ store: s, name: x.name })} title="Replace the value">✎</button>
+            <button className="sx-ib danger-text" onClick={() => setDeleting({ store: s, name: x.name })} title="Delete">🗑</button>
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div>
-      <div className="secret-summary">
-        <div className="stat-tile">
-          <span className="stat-ico">🔐</span>
-          <div>
-            <div className="stat-value">{total}</div>
-            <div className="small muted">secrets in {list.filter((s) => (s.secrets?.length ?? 0) > 0).length} store(s)</div>
-          </div>
+    <div className="sx">
+      {/* Environments as tabs: each one is its own secret store. */}
+      <div className="sx-envs" role="tablist">
+        {list.map((s) => (
+          <button key={s.key} role="tab" aria-selected={s.key === current.key && view === 'list' && !query} className={`sx-env ${s.key === current.key && view === 'list' && !query ? 'on' : ''} ${s.protectedEnv ? 'protected' : ''}`} onClick={() => (setActive(s.key), setView('list'), setQ(''))} title={s.hint}>
+            <span>{s.icon}</span>
+            <span className="ellipsis">{s.env ?? s.title.split(' · ')[0]}</span>
+            <span className="sx-n">{s.secrets?.length ?? 0}</span>
+          </button>
+        ))}
+        <button className="sx-env add" onClick={() => setNewEnv(true)} title="New environment">
+          ＋
+        </button>
+        <span className="grow" />
+        <div className="seg">
+          <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')} title="One environment at a time">
+            ☰
+          </button>
+          <button className={view === 'matrix' ? 'on' : ''} onClick={() => setView('matrix')} title="Every secret across every environment">
+            ▦
+          </button>
         </div>
-        <div className={`stat-tile ${missing.length ? 'danger' : ''}`}>
-          <span className="stat-ico">{missing.length ? '⚠' : '✓'}</span>
-          <div>
-            <div className="stat-value">{usage.data ? missing.length : '…'}</div>
-            <div className="small muted">referenced in workflows but missing</div>
-          </div>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-ico">💤</span>
-          <div>
-            <div className="stat-value">{usage.data ? [...defined].filter((n) => !usage.data![n]).length : '…'}</div>
-            <div className="small muted">not used by any workflow</div>
-          </div>
-        </div>
-        <div className="actions-search" style={{ minWidth: 220 }}>
+        <div className="actions-search sx-search">
           <span>⌕</span>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a secret…" spellCheck={false} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find…" spellCheck={false} />
         </div>
       </div>
 
       {missing.length > 0 && (
-        <div className="banner warn small">
-          <span className="icon">⚠</span>
-          <div className="grow">
-            Workflows reference secrets that do not exist here:{' '}
-            {missing.map(([n, wfs]) => (
-              <button key={n} className="secret-missing" title={`Used in: ${wfs.join(', ')}`} onClick={() => setEditing({ store: list[0], name: n })}>
-                {n} ＋
-              </button>
-            ))}
-          </div>
+        <div className="sx-missing">
+          <span className="text-warn">⚠ Missing</span>
+          {missing.map(([n, wfs]) => (
+            <button key={n} className="secret-missing" title={`Used in: ${wfs.join(', ')} — click to add`} onClick={() => setEditing({ store: list[0], name: n })}>
+              {n} ＋
+            </button>
+          ))}
         </div>
       )}
 
-      <div className="secret-stores">
-        {list.map((s) => {
-          const items = (s.secrets ?? []).filter((x) => !query || x.name.includes(query));
-          if (query && items.length === 0) return null;
-          return (
-            <div key={s.key} className={`secret-store ${s.protectedEnv ? 'protected' : ''}`}>
-              <div className="secret-store-head">
-                <span className="secret-store-ico">{s.icon}</span>
-                <div className="grow" style={{ minWidth: 0 }}>
-                  <strong>{s.title}</strong> <span className="badge">{s.secrets?.length ?? 0}</span>
-                  <div className="small muted">{s.hint}</div>
-                </div>
-                {s.manageable && (
-                  <button className="btn sm primary" onClick={() => setEditing({ store: s })}>
-                    ＋ New secret
-                  </button>
-                )}
-              </div>
-              {s.error && <div className="small text-danger pad">{s.error}</div>}
-              {!s.error && items.length === 0 && <div className="small muted pad">No secrets.</div>}
-              {items.map((x) => {
-                const used = usage.data?.[x.name];
-                return (
-                  <div key={x.name} className="secret-row">
-                    <span className="secret-lock">🔒</span>
-                    <div className="grow" style={{ minWidth: 0 }}>
-                      <div className="row" style={{ gap: 6 }}>
-                        <strong className="mono">{x.name}</strong>
-                        {x.visibility && <span className="badge">{x.visibility === 'all' ? 'all repositories' : x.visibility === 'private' ? 'private repositories' : 'selected repositories'}</span>}
-                      </div>
-                      <div className="small muted">
-                        updated {relTime(x.updatedAt)}
-                        {used ? (
-                          <>
-                            {' '}
-                            · used by{' '}
-                            {used.map((w) => (
-                              <span key={w} className="wf-use">
-                                {w}
-                              </span>
-                            ))}
-                          </>
-                        ) : usage.data ? (
-                          ' · not referenced by any workflow'
+      {query ? (
+        <div className="sx-panel">
+          {hits.length ? hits.map(({ s, x }) => row(s, x, true)) : <div className="sx-empty small muted">No secret matches “{q}”.</div>}
+        </div>
+      ) : view === 'matrix' ? (
+        <div className="sx-panel sx-matrix-wrap">
+          <table className="sx-matrix">
+            <thead>
+              <tr>
+                <th />
+                {list.map((s) => (
+                  <th key={s.key} title={s.title}>
+                    <span>{s.icon}</span> {s.env ?? s.title.split(' · ')[0]}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {names.map((n) => (
+                <tr key={n}>
+                  <td className="mono">{n}</td>
+                  {list.map((s) => {
+                    const has = (s.secrets ?? []).some((x) => x.name === n);
+                    return (
+                      <td key={s.key}>
+                        {has ? (
+                          <button className="sx-cell on" disabled={!s.manageable} onClick={() => setEditing({ store: s, name: n })} title={`Replace ${n} in ${s.title}`}>
+                            ●
+                          </button>
                         ) : (
-                          ''
+                          <button className="sx-cell" disabled={!s.manageable} onClick={() => setEditing({ store: s, name: n })} title={`Add ${n} to ${s.title}`}>
+                            ＋
+                          </button>
                         )}
-                      </div>
-                    </div>
-                    {s.manageable && (
-                      <>
-                        <button className="btn sm" onClick={() => setEditing({ store: s, name: x.name })} title="Replace the value">
-                          ✎ Update
-                        </button>
-                        <button className="btn sm ghost danger-text" onClick={() => setDeleting({ store: s, name: x.name })}>
-                          🗑
-                        </button>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+              {names.length === 0 && (
+                <tr>
+                  <td colSpan={list.length + 1} className="sx-empty small muted">
+                    No secrets yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className={`sx-panel ${current.protectedEnv ? 'protected' : ''}`}>
+          <div className="sx-head">
+            <span className="sx-head-ico">{current.icon}</span>
+            <strong className="grow ellipsis" title={current.hint}>
+              {current.title}
+              {current.protectedEnv && <span className="badge warn sx-badge">needs approval</span>}
+            </strong>
+            {current.scope === 'env' && (
+              <button className="btn sm ghost" onClick={() => openExternal(`https://github.com/${ctx.owner}/${ctx.name}/settings/environments`)} title="Reviewers, wait timers and branch limits">
+                Rules ↗
+              </button>
+            )}
+            {current.manageable && (
+              <button className="btn sm primary" onClick={() => setEditing({ store: current })}>
+                ＋ Secret
+              </button>
+            )}
+          </div>
+          {current.error && <div className="small text-danger sx-empty">{current.error}</div>}
+          {!current.error && (current.secrets ?? []).length === 0 && (
+            <div className="sx-empty">
+              <span className="sx-empty-ico">🔐</span>
+              <span className="small muted">Nothing here yet</span>
             </div>
-          );
-        })}
-      </div>
-
-      <div className="row mt">
-        <button className="btn sm" onClick={() => setNewEnv(true)}>
-          ＋ New environment
-        </button>
-        <button className="btn sm ghost" onClick={() => openExternal(`https://github.com/${ctx.owner}/${ctx.name}/settings/environments`)}>
-          Environment protection rules ↗
-        </button>
-      </div>
+          )}
+          {(current.secrets ?? []).map((x) => row(current, x))}
+        </div>
+      )}
 
       {editing && <SecretEditor repoId={repoId} ctx={ctx} stores={list.filter((s) => s.manageable)} initial={editing} onClose={() => setEditing(null)} onDone={reload} />}
       {deleting && (
@@ -222,11 +247,7 @@ export function RepoSecrets({ repoId, ctx }: { repoId: string; ctx: GhRepoContex
           repoId={repoId}
           needs="admin access, or “Secrets: write” (fine-grained)"
           typeToConfirm={deleting.name}
-          impact={
-            usage.data?.[deleting.name]
-              ? `Workflows that use it will fail: ${usage.data[deleting.name].join(', ')}.`
-              : 'Any workflow or job that reads it will get an empty value.'
-          }
+          impact={usage.data?.[deleting.name] ? `Workflows that use it will fail: ${usage.data[deleting.name].join(', ')}.` : 'Any job that reads it gets an empty value.'}
           onClose={() => setDeleting(null)}
           onConfirm={async (auth) => {
             await call('gh:adminDeleteSecret', { repoId, scope: deleting.store.scope, env: deleting.store.env, name: deleting.name, auth, confirmed: true });
@@ -234,11 +255,21 @@ export function RepoSecrets({ repoId, ctx }: { repoId: string; ctx: GhRepoContex
           }}
         >
           <p>
-            Deletes <strong className="mono">{deleting.name}</strong> from <strong>{deleting.store.title}</strong>. The value cannot be recovered.
+            Deletes <strong className="mono">{deleting.name}</strong> from <strong>{deleting.store.title}</strong>. It cannot be recovered.
           </p>
         </SecureActionDialog>
       )}
-      {newEnv && <NewEnvDialog repoId={repoId} onClose={() => setNewEnv(false)} onDone={reload} />}
+      {newEnv && (
+        <NewEnvDialog
+          repoId={repoId}
+          onClose={() => setNewEnv(false)}
+          onDone={(name) => {
+            reload();
+            setActive(`env:${name}`);
+            setView('list');
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -292,7 +323,7 @@ function SecretEditor({ repoId, ctx, stores: list, initial, onClose, onDone }: {
               {'•'.repeat(Math.min(value.length, 24))} <span className="small muted">({value.length} characters)</span>
             </dd>
             <dt>Protection</dt>
-            <dd className="small">Encrypted on this computer with {ctx.owner}/{ctx.name}’s public key (libsodium sealed box) before it is sent. Nobody can read it back — not even you.</dd>
+            <dd className="small" title={`Sealed with ${ctx.owner}/${ctx.name}’s public key before it is sent`}>🔒 Encrypted here · write-only</dd>
           </dl>
         </div>
       </SecureActionDialog>
@@ -301,7 +332,7 @@ function SecretEditor({ repoId, ctx, stores: list, initial, onClose, onDone }: {
 
   return (
     <Modal
-      title={initial.name ? `Update ${initial.name}` : 'New secret'}
+      title={exists ? `Update ${upper}` : 'New secret'}
       icon="🔐"
       size="wide"
       onClose={close}
@@ -366,14 +397,14 @@ function SecretEditor({ repoId, ctx, stores: list, initial, onClose, onDone }: {
         <div className="hint">
           {value.length} characters
           {looks ? ` · looks like ${looks}` : ''}
-          {value !== value.trim() ? ' · ⚠ has leading/trailing whitespace' : ''} · max 48 KB. Never written to disk.
+          {value !== value.trim() ? ' · ⚠ leading/trailing spaces' : ''}
         </div>
       </div>
     </Modal>
   );
 }
 
-function NewEnvDialog({ repoId, onClose, onDone }: { repoId: string; onClose: () => void; onDone: () => void }) {
+function NewEnvDialog({ repoId, onClose, onDone }: { repoId: string; onClose: () => void; onDone: (name: string) => void }) {
   const [name, setName] = useState('');
   const { busy, run } = useMutation();
   const ok = /^[^/\\'"]{1,255}$/.test(name.trim());
@@ -393,7 +424,7 @@ function NewEnvDialog({ repoId, onClose, onDone }: { repoId: string; onClose: ()
             onClick={() =>
               void run(() => call('gh:adminCreateEnv', { repoId, name: name.trim() }).then(() => true), `Environment ${name.trim()} created`).then((r) => {
                 if (r) {
-                  onDone();
+                  onDone(name.trim());
                   onClose();
                 }
               })
@@ -407,7 +438,7 @@ function NewEnvDialog({ repoId, onClose, onDone }: { repoId: string; onClose: ()
       <div className="field">
         <label>Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="production" autoFocus />
-        <div className="hint">Add protection rules (reviewers, wait timers, branch limits) on GitHub afterwards.</div>
+        <div className="hint">e.g. staging, production</div>
       </div>
     </Modal>
   );

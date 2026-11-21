@@ -7,13 +7,11 @@ import { call, toFriendly } from '../../services/api';
 import { useApp } from '../../state/AppState';
 import { RepoSettingsPage } from '../RepoSettingsPage';
 import { DangerZone } from './DangerZone';
-import { DeployKeys } from './DeployKeys';
-import { RemoteRefs } from './RemoteRefs';
 import { RepoSecrets } from './RepoSecrets';
 import { RepoAccess } from './RepoAccess';
 import { RoleCard } from './RoleCard';
 
-type Section = 'general' | 'access' | 'secrets' | 'deploy-keys' | 'refs' | 'danger';
+type Section = 'general' | 'access' | 'secrets' | 'danger';
 
 interface Item {
   id: Section;
@@ -24,13 +22,11 @@ interface Item {
   needs?: 'read' | 'admin';
 }
 
+const DANGER: Item = { id: 'danger', icon: '⚠', label: 'Danger zone', hint: 'Remove or delete' };
 const ITEMS: Item[] = [
-  { id: 'general', icon: '⚙', label: 'General', hint: 'Who you commit as, remotes, remove' },
-  { id: 'access', icon: '🛡', label: 'Security & access', hint: 'Push & merge credential, GitHub App, commit signing' },
-  { id: 'secrets', icon: '🔐', label: 'Secrets', hint: 'Actions, Copilot agent, environments, organisation', needs: 'admin' },
-  { id: 'deploy-keys', icon: '🔑', label: 'Deploy keys', hint: 'Machine access with SSH', needs: 'admin' },
-  { id: 'refs', icon: '⎇', label: 'Branches, tags & commits', hint: 'As they are on GitHub', needs: 'read' },
-  { id: 'danger', icon: '⚠', label: 'Danger zone', hint: 'Delete on GitHub', needs: 'admin' },
+  { id: 'general', icon: '⚙', label: 'General', hint: 'Identity · remotes' },
+  { id: 'access', icon: '🛡', label: 'Security & access', hint: 'Sign-in per action' },
+  { id: 'secrets', icon: '🔐', label: 'Secrets', hint: 'By environment', needs: 'admin' },
 ];
 
 /**
@@ -64,7 +60,7 @@ export function RepoSettingsShell() {
   }, [repo.id, repo.github, ghKey]);
 
   const allowed = (i: Item) => !i.needs || (!!ctx && (i.needs === 'read' || ctx.permissions.canAdmin));
-  const visible = ITEMS.filter((i) => !i.needs || (repo.github && allowed(i)));
+  const visible = [...ITEMS.filter((i) => !i.needs || (repo.github && allowed(i))), DANGER];
   const current = visible.some((i) => i.id === section) ? section : 'general';
 
   return (
@@ -72,7 +68,7 @@ export function RepoSettingsShell() {
       <nav className="settings-nav">
         <div className="settings-nav-group">This computer</div>
         {visible
-          .filter((i) => !i.needs)
+          .filter((i) => !i.needs && i.id !== 'danger')
           .map((i) => (
             <NavItem key={i.id} item={i} on={current === i.id} onClick={() => setSection(i.id)} />
           ))}
@@ -81,7 +77,7 @@ export function RepoSettingsShell() {
             <div className="settings-nav-group">
               GitHub · {repo.github.owner}/{repo.github.repo}
             </div>
-            {loading && !ctx && <Skeleton rows={3} />}
+            {loading && !ctx && <Skeleton kind="nav" rows={3} />}
             {visible
               .filter((i) => i.needs)
               .map((i) => (
@@ -93,16 +89,16 @@ export function RepoSettingsShell() {
             {ctxError && !ctx && <div className="role-note small muted">Sign in to manage GitHub settings.</div>}
           </>
         )}
+        <div className="settings-nav-sep" />
+        <NavItem item={DANGER} on={current === 'danger'} onClick={() => setSection('danger')} />
       </nav>
       <div className="settings-body">
-        <h2 style={{ marginTop: 0 }}>{ITEMS.find((i) => i.id === current)!.label}</h2>
+        <h2 style={{ marginTop: 0 }}>{visible.find((i) => i.id === current)!.label}</h2>
         {current === 'general' && <RepoSettingsPage onManageAccess={() => setSection('access')} />}
         {current === 'access' && <RepoAccess appsAvailable={!!ctx} />}
         {ITEMS.find((i) => i.id === current)?.needs && ctxError && !ctx && <ErrorPanel error={ctxError} />}
         {ctx && current === 'secrets' && <RepoSecrets repoId={repo.id} ctx={ctx} />}
-        {ctx && current === 'deploy-keys' && <DeployKeys repoId={repo.id} />}
-        {ctx && current === 'refs' && <RemoteRefs repoId={repo.id} ctx={ctx} />}
-        {ctx && current === 'danger' && <DangerZone repoId={repo.id} ctx={ctx} />}
+        {current === 'danger' && <DangerZone ctx={ctx} />}
       </div>
     </div>
   );
