@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PROVIDERS, providerInfo, type ProviderId } from '../../shared/providers';
 import { AddAccountDialog } from '../dialogs/AddAccountDialog';
 import { SignOutDialog } from '../dialogs/SignOutDialog';
@@ -20,8 +20,12 @@ type Rail = 'all' | ProviderId;
  * remove). There is no "current account" to pick here — opening a repository uses its own account.
  */
 export function AccountsHub({ onClose, focus }: { onClose: () => void; /** Open on this provider, ready to add an account there. */ focus?: ProviderId }) {
-  const { accounts, setAccounts, refreshSession, refreshRepos, setView, showError, toast, bump, selectRepo } = useApp();
+  const { accounts, setAccounts, refreshSession, refreshRepos, refreshAccounts, setView, showError, toast, bump, selectRepo } = useApp();
   const { all, reload, setConnections } = useAllAccounts();
+  // Sign-ins adopted in the background since start-up (remembered by default) show up as soon as this opens.
+  useEffect(() => {
+    void refreshAccounts();
+  }, [refreshAccounts]);
   const [rail, setRail] = useState<Rail>(focus ?? 'all');
   const [adding, setAdding] = useState<ProviderId | 'pick' | null>(
     // GitHub with accounts already: show them (sign-in stays one click away); otherwise open the connect step.

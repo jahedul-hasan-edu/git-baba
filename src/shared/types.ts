@@ -950,7 +950,7 @@ export interface AccountCredentialInput {
   accountId: string;
   token?: string;
   useRemembered?: boolean;
-  /** Explicit opt-in to store the token in the OS keychain. */
+  /** Keep the token in the OS keychain. Accounts are remembered by default whenever a keychain is available. */
   remember?: boolean;
   /** Use the token the GitHub CLI holds for this account (after "Sign in with browser"). Read in main only. */
   useCli?: boolean;
