@@ -5765,3 +5765,50 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .repo-prov { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; opacity: .85; transition: opacity .15s, transform .15s; }
 .repo-item:hover .repo-prov, .repo-item.active .repo-prov { opacity: 1; transform: scale(1.06); }
 .repo-prov.local { font-size: 11px; filter: grayscale(.4); }
+/* Nothing to commit: the working-changes window shrinks to fit its small "all clear" card. */
+.modal.wide:has(.wip-modal):not(:has(.cb-split)) { width: min(640px, 100%); height: auto; max-height: 100%; }
+.modal.wide:has(.wip-modal):not(:has(.cb-split)) > .modal-body { overflow: auto; }
+.wip-modal:not(:has(.cb-split)) .ws-clean { padding: 8px 4px; }
+.wip-modal:not(:has(.cb-split)) > .content { height: auto; flex: 1; }
+.wip-modal:not(:has(.cb-split)) .cs-hero { margin-bottom: 16px; gap: 16px; }
+.wip-modal:not(:has(.cb-split)) .cs-orb { width: 64px; height: 64px; }
+.wip-modal:not(:has(.cb-split)) .cs-core { width: 44px; height: 44px; font-size: 20px; }
+.wip-modal:not(:has(.cb-split)) .cs-title { font-size: 18px; }
+
+/* Result card buttons: never crop — share the row when they fit, wrap to a new row when they don't. */
+.rc { width: min(440px, calc(100vw - 32px)); }
+.rc-actions { display: flex; flex-wrap: wrap; }
+.rc-btn { flex: 1 1 0; min-width: max-content; overflow: visible; text-overflow: clip; }
+
+/* ---- GitHub App sign-in: an identity chip and one private-key slot ---- */
+.ga { display: flex; flex-direction: column; gap: 8px; }
+.ga-id { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text-2); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; transition: border-color .15s, color .15s; }
+.ga-id:hover { color: var(--text); border-color: var(--border-2); }
+.ga-id-edit { opacity: 0; transition: opacity .15s; }
+.ga-id:hover .ga-id-edit { opacity: 1; }
+.ga-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ga-fields input { flex: 1 1 90px; min-width: 70px; font-size: 12.5px; padding: 6px 8px; }
+.ga-slash { color: var(--text-3); }
+.ga-remember { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--text-3); cursor: pointer; }
+.ga-key { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 12px; border: 1.5px dashed var(--border-2); border-radius: 10px; background: var(--bg); outline: none; transition: border-color .15s, background .15s, box-shadow .15s; }
+.ga-key:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.ga-key.drop { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg)); }
+.ga-key.ready { border-style: solid; border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.ga-key.saved { border-style: solid; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+.ga-key-ico { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--bg-3); font-size: 15px; }
+.ga-key-text { display: flex; flex-direction: column; min-width: 0; font-size: 12.5px; }
+.ga-key-x { flex: none; width: 22px; height: 22px; border: 0; border-radius: 50%; background: none; color: var(--text-3); cursor: pointer; font-size: 15px; }
+.ga-key-x:hover { color: var(--text); background: var(--bg-3); }
+.ga-switch { flex: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-3); user-select: none; }
+.ga-switch input { position: absolute; opacity: 0; pointer-events: none; }
+.ga-switch-track { width: 30px; height: 17px; border-radius: 999px; background: var(--border-2); position: relative; transition: background .18s; }
+.ga-switch-track i { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; transition: transform .18s; }
+.ga-switch.on { color: var(--text); }
+.ga-switch.on .ga-switch-track { background: var(--ok); }
+.ga-switch.on .ga-switch-track i { transform: translateX(13px); }
+.ga-switch input:focus-visible + .ga-switch-track { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.ga-use-saved, .ga-alt { align-self: flex-start; color: var(--text-3); }
+.ga-use-saved:hover, .ga-alt:hover { color: var(--accent); }
+.ga-tok { display: flex; align-items: center; gap: 8px; }
+.ga-tok input { flex: 1; }
+.auth-via { margin: 4px 0 8px; }

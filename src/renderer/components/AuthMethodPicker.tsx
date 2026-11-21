@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { TokenPermissionPreset } from '../../shared/api';
 import type { AuthInput, AuthMethod, AuthOption, GeneratedTokenInfo, GitHubAppConfig, KeyHandleInfo, ProviderConnection, SavedSshKey, SshKeyInput } from '../../shared/types';
 import { providerInfo } from '../../shared/providers';
 import { call } from '../services/api';
@@ -39,12 +38,6 @@ const SOURCE_NOTE: Partial<Record<DefaultSource, string>> = {
 const AS_VERB: Record<Props['purpose'], string> = { push: 'Push as', fetch: 'Sign in as', pr: 'Create as', clone: 'Clone as' };
 const AS_ICON: Record<AuthMethod, string> = { pat: '👤', 'github-app': '🤖', ssh: '🔑', system: '💻', none: '○' };
 
-const PRESET: Record<Props['purpose'], TokenPermissionPreset> = {
-  push: 'contents-write',
-  fetch: 'contents-read',
-  clone: 'contents-read',
-  pr: 'pull-requests-write',
-};
 
 function mask(v: string): string {
   if (!v) return '';
@@ -117,8 +110,9 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
   const [tokenMode, setTokenMode] = useState<'generate' | 'existing'>('generate');
   const [existingToken, setExistingToken] = useState('');
   const [generated, setGenerated] = useState<GeneratedTokenInfo | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const savedKeyAvailable = !!options.find((o) => o.method === 'github-app')?.hasSaved;
+  const [savedKeyAvailable, setSavedKeyAvailable] = useState(() => !!options.find((o) => o.method === 'github-app')?.hasSaved);
+  const [forgetting, setForgetting] = useState(false);
+  const [dropping, setDropping] = useState(false);
   const [keyMode, setKeyMode] = useState<'file' | 'paste' | 'saved'>(savedKeyAvailable ? 'saved' : 'file');
   const [pem, setPem] = useState('');
   const [keyInfo, setKeyInfo] = useState<KeyHandleInfo | null>(null);
@@ -166,7 +160,7 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
         }
         if (appBase.appId && appBase.owner && appBase.repo && keyFields) {
           sel = {
-            input: { ...appBase, tokenMode, ...keyFields, saveKeyForRepo: keyMode === 'paste' && saveKey, rememberApp: appChanged && rememberApp },
+            input: { ...appBase, tokenMode, ...keyFields, saveKeyForRepo: keyMode !== 'saved' && saveKey, rememberApp: appChanged && rememberApp },
             summary: `GitHub App ${appBase.appId} → new installation token for ${appBase.owner}/${appBase.repo} (revoked after use)`,
           };
         }
@@ -196,30 +190,36 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
     }
   };
 
-  const generateNow = async () => {
-    if (!keyFields) return;
-    setGenerating(true);
+  /** Forget the saved private key of this repository (the toggle switched off). */
+  const forgetKey = async () => {
+    if (!repoId) return;
+    setForgetting(true);
     try {
-      if (tokenHandleRef.current) await call('github:discardToken', { handle: tokenHandleRef.current }).catch(() => undefined);
-      const t = await call('github:generateToken', {
-        appId: appBase.appId,
-        owner: appBase.owner,
-        repo: appBase.repo,
-        installationId: appBase.installationId,
-        preset: PRESET[purpose],
-        clearAfterSeconds: 600,
-        repoId,
-        ...keyFields,
-      });
-      tokenHandleRef.current = t.handle;
-      setGenerated(t);
-      if (t.installationId) setInstallationId(t.installationId);
-      toast('Installation token generated. It is used for this operation and revoked automatically within 10 minutes.', 'info');
+      await call('repo:forgetSecrets', { repoId, kind: 'githubAppKey' });
+      setSavedKeyAvailable(false);
+      setKeyMode('file');
+      toast('Saved private key removed from this computer.', 'info');
     } catch (err) {
       showError(err);
     } finally {
-      setGenerating(false);
+      setForgetting(false);
     }
+  };
+  /** A dropped or pasted .pem: read as text, kept in this dialog only. */
+  const takePem = (text: string) => {
+    if (!text.includes('PRIVATE KEY')) return toast('That is not a private key (.pem).', 'warning');
+    if (keyHandleRef.current) void call('github:discardKey', { handle: keyHandleRef.current }).catch(() => undefined);
+    keyHandleRef.current = null;
+    setKeyInfo(null);
+    setPem(text.trim());
+    setKeyMode('paste');
+  };
+  const clearKey = () => {
+    if (keyHandleRef.current) void call('github:discardKey', { handle: keyHandleRef.current }).catch(() => undefined);
+    keyHandleRef.current = null;
+    setKeyInfo(null);
+    setPem('');
+    setKeyMode('file');
   };
 
   const copyGenerated = async () => {
@@ -239,91 +239,126 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
   const current = options.find((o) => o.method === method);
   const patOption = options.find((o) => o.method === 'pat');
 
+  const pemLoaded = keyMode === 'paste' && pem.includes('PRIVATE KEY');
+  const keyReady = keyMode === 'saved' || !!keyInfo || pemLoaded;
   const appFields = (
-    <>
+    <div className="ga">
       {githubApp && !editingApp ? (
-        <div className="row mb">
-          <span className="small grow">
-            <span className="badge ok">saved for this repo</span> App <strong>{githubApp.appId}</strong> ·{' '}
-            <strong>
-              {githubApp.owner}/{githubApp.repo}
-            </strong>
-            {githubApp.installationId && <span className="muted"> · installation {githubApp.installationId}</span>}
+        <button className="ga-id" onClick={() => setEditingApp(true)} title="Edit App ID, owner and repository">
+          <span className="ga-id-ico">🤖</span>
+          <span className="grow ellipsis">
+            App <strong>{githubApp.appId}</strong> · {githubApp.owner}/{githubApp.repo}
           </span>
-          <button className="btn sm ghost" onClick={() => setEditingApp(true)}>
-            Edit
-          </button>
-        </div>
+          <span className="ga-id-edit">✎</span>
+        </button>
       ) : (
-        <>
-          <div className="grid-2">
-            <div className="field">
-              <label>GitHub App ID</label>
-              <input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="123456" spellCheck={false} />
-            </div>
-            <div className="field">
-              <label>Installation ID (optional)</label>
-              <input value={installationId} onChange={(e) => setInstallationId(e.target.value)} placeholder="auto-detect" spellCheck={false} />
-            </div>
-            <div className="field">
-              <label>Owner</label>
-              <input value={owner} onChange={(e) => setOwner(e.target.value)} spellCheck={false} />
-            </div>
-            <div className="field">
-              <label>Repository</label>
-              <input value={repo} onChange={(e) => setRepo(e.target.value)} spellCheck={false} />
-            </div>
-          </div>
+        <div className="ga-fields">
+          <input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="App ID" spellCheck={false} aria-label="GitHub App ID" />
+          <input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="owner" spellCheck={false} aria-label="Owner" />
+          <span className="ga-slash">/</span>
+          <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="repository" spellCheck={false} aria-label="Repository" />
+          <input value={installationId} onChange={(e) => setInstallationId(e.target.value)} placeholder="install ID · auto" spellCheck={false} aria-label="Installation ID (optional)" />
           {repoId && appChanged && (
-            <label className="check small">
-              <input type="checkbox" checked={rememberApp} onChange={(e) => setRememberApp(e.target.checked)} />
-              <span>Remember App ID, owner and repository for this repository (not the key)</span>
+            <label className="ga-remember" title="Remember App ID, owner and repository for this repository (never the key)">
+              <input type="checkbox" checked={rememberApp} onChange={(e) => setRememberApp(e.target.checked)} /> remember
             </label>
           )}
-        </>
-      )}
-      <div className="field">
-        <label>Private key</label>
-        <div className="row">
-          {savedKeyAvailable && (
-            <button className={`btn sm ${keyMode === 'saved' ? 'primary' : ''}`} onClick={() => setKeyMode('saved')}>
-              Use saved key
-            </button>
-          )}
-          <button className={`btn sm ${keyMode === 'file' ? 'primary' : ''}`} onClick={() => setKeyMode('file')}>
-            Load .pem file
-          </button>
-          <button className={`btn sm ${keyMode === 'paste' ? 'primary' : ''}`} onClick={() => setKeyMode('paste')}>
-            Paste key
-          </button>
         </div>
-      </div>
-      {keyMode === 'file' && (
-        <div className="row mb">
-          <button className="btn" onClick={loadKey}>
-            Choose .pem file…
-          </button>
-          {keyInfo ? (
-            <span className="small">
-              {keyInfo.fileName} · <span className="mono">{keyInfo.fingerprint.slice(0, 24)}…</span>
-            </span>
+      )}
+
+      {/* The private key: one slot. Saved → a locked card with a switch; otherwise drop, pick or paste. */}
+      <div
+        className={`ga-key ${keyReady ? 'ready' : ''} ${dropping ? 'drop' : ''} ${keyMode === 'saved' ? 'saved' : ''}`}
+        tabIndex={0}
+        onDragOver={(e) => {
+          if (keyMode === 'saved') return;
+          e.preventDefault();
+          setDropping(true);
+        }}
+        onDragLeave={() => setDropping(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDropping(false);
+          const f = e.dataTransfer.files[0];
+          if (f) void f.text().then(takePem);
+        }}
+        onPaste={(e) => {
+          if (keyMode === 'saved') return;
+          const t = e.clipboardData.getData('text');
+          if (t) {
+            e.preventDefault();
+            takePem(t);
+          }
+        }}
+      >
+        <span className="ga-key-ico" aria-hidden>
+          {keyMode === 'saved' ? '🔐' : keyReady ? '🔑' : '⇣'}
+        </span>
+        <span className="grow ga-key-text">
+          {keyMode === 'saved' ? (
+            <>
+              <strong>Saved private key</strong>
+              <span className="muted small">encrypted · this repository</span>
+            </>
+          ) : keyInfo ? (
+            <>
+              <strong className="ellipsis">{keyInfo.fileName}</strong>
+              <span className="mono muted small ellipsis">{keyInfo.fingerprint.slice(0, 23)}…</span>
+            </>
+          ) : pemLoaded ? (
+            <>
+              <strong>Pasted private key</strong>
+              <span className="mono muted small">{pem.split('\n').length} lines</span>
+            </>
           ) : (
-            <span className="small muted">Read by the app and kept in memory only (max 15 minutes).</span>
+            <>
+              <strong>Private key</strong>
+              <span className="muted small">
+                drop a .pem, <a onClick={loadKey}>choose file</a> or paste (Ctrl+V)
+              </span>
+            </>
           )}
-        </div>
+        </span>
+        {keyMode !== 'saved' && keyReady && (
+          <button className="ga-key-x" onClick={clearKey} title="Remove this key" aria-label="Remove key">
+            ×
+          </button>
+        )}
+        {keyMode !== 'saved' && !keyReady && (
+          <button className="btn sm" onClick={loadKey}>
+            Choose…
+          </button>
+        )}
+        {(keyMode === 'saved' || (keyReady && canSave)) && (
+          <label className={`ga-switch ${keyMode === 'saved' || saveKey ? 'on' : ''}`} title={keyMode === 'saved' ? 'Switch off to forget the saved key' : 'Save this key encrypted for this repository'}>
+            <input
+              type="checkbox"
+              checked={keyMode === 'saved' || saveKey}
+              disabled={forgetting}
+              onChange={(e) => {
+                if (keyMode === 'saved') {
+                  if (!e.target.checked) void forgetKey();
+                } else setSaveKey(e.target.checked);
+              }}
+            />
+            <span className="ga-switch-track" aria-hidden>
+              <i />
+            </span>
+            <span className="small">{forgetting ? 'Forgetting…' : keyMode === 'saved' || saveKey ? 'Saved' : 'Save'}</span>
+          </label>
+        )}
+      </div>
+      {savedKeyAvailable && keyMode !== 'saved' && (
+        <a className="small ga-use-saved" onClick={() => setKeyMode('saved')}>
+          ↩ use the saved key
+        </a>
       )}
-      {keyMode === 'paste' && (
-        <>
-          <textarea className="code" rows={4} value={pem} onChange={(e) => setPem(e.target.value)} placeholder="-----BEGIN RSA PRIVATE KEY-----" spellCheck={false} autoComplete="off" />
-          {canSave && (
-            <label className="check small">
-              <input type="checkbox" checked={saveKey} onChange={(e) => setSaveKey(e.target.checked)} />
-              <span>Save this private key encrypted for this repository only</span>
-            </label>
-          )}
-        </>
+      {keyMode === 'saved' && (
+        <a className="small ga-use-saved" onClick={() => setKeyMode('file')}>
+          use a different key
+        </a>
       )}
-    </>
+    </div>
   );
 
   return (
@@ -353,25 +388,18 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
         </p>
       )}
       {!conn && method === preset.method && SOURCE_NOTE[preset.source] && <p className="small auth-preset-note">✓ {SOURCE_NOTE[preset.source]}</p>}
-      {!conn && current && method !== 'ssh' && <p className="small muted auth-as-desc">{current.description}</p>}
       {!conn && current?.viaHttps && (
-        <div className="banner info small">
-          <span className="icon">ℹ</span>
-          <div>
-            This remote uses SSH. With a token, this one operation goes over HTTPS to <span className="mono">{current.viaHttps}</span>. Your remote URL is not changed.
-          </div>
-        </div>
+        <p className="small muted auth-via" title={`This one push goes over HTTPS to ${current.viaHttps}; the remote URL is not changed.`}>
+          ⇄ via HTTPS for this push
+        </p>
       )}
 
       {!conn && method === 'ssh' && (
         <>
           {current?.viaSsh && (
-            <div className="banner info small">
-              <span className="icon">ℹ</span>
-              <div>
-                This remote uses HTTPS. With SSH, this one operation goes to <span className="mono">{current.viaSsh}</span>. Your remote URL is not changed.
-              </div>
-            </div>
+            <p className="small muted auth-via" title={`This one push goes over SSH to ${current.viaSsh}; the remote URL is not changed.`}>
+              ⇄ via SSH for this push
+            </p>
           )}
           <SshKeyFields savedKey={savedSshKey} onChange={onSsh} />
         </>
@@ -383,7 +411,7 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
             <label className="check">
               <input type="checkbox" checked={useAcct} onChange={(e) => setUseAcct(e.target.checked)} />
               <span>
-                Use <strong>{account}</strong>’s sign-in <span className="muted small">(recommended — no token to paste, and not the login Windows Credential Manager has cached)</span>
+                Use <strong>{account}</strong>’s sign-in
               </span>
             </label>
           )}
@@ -408,7 +436,7 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
               {canSave && (
                 <label className="check small">
                   <input type="checkbox" checked={savePat} onChange={(e) => setSavePat(e.target.checked)} />
-                  <span>Save this token encrypted for this repository only (you will still confirm every operation)</span>
+                  <span>Save for this repository</span>
                 </label>
               )}
             </>
@@ -418,22 +446,14 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
 
       {!conn && method === 'github-app' && (
         <div className="auth-form">
-          <label className={`radio-card ${tokenMode === 'generate' ? 'selected' : ''}`}>
-            <input type="radio" checked={tokenMode === 'generate'} onChange={() => setTokenMode('generate')} />
-            <div>
-              <strong>Generate a token for this operation (recommended)</strong>
-              <div className="small muted">Created from your GitHub App, limited to this repository and the minimum permission, used directly by Git and revoked right afterwards.</div>
-            </div>
-          </label>
-          <label className={`radio-card ${tokenMode === 'existing' ? 'selected' : ''}`}>
-            <input type="radio" checked={tokenMode === 'existing'} onChange={() => setTokenMode('existing')} />
-            <div>
-              <strong>Use an installation token</strong>
-              <div className="small muted">Paste a token you already have, or generate one now and review it before continuing.</div>
-            </div>
-          </label>
-
-          {tokenMode === 'generate' && <div className="mt">{appFields}</div>}
+          {tokenMode === 'generate' && (
+            <>
+              {appFields}
+              <a className="small ga-alt" onClick={() => setTokenMode('existing')} title="Paste an installation token you already have">
+                or paste an installation token
+              </a>
+            </>
+          )}
 
           {tokenMode === 'existing' && (
             <div className="mt">
@@ -459,26 +479,17 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
                     {Object.entries(generated.permissions)
                       .map(([k, v]) => `${k}: ${v}`)
                       .join(', ')}{' '}
-                    · {generated.repositories.join(', ')} · auto-revoked {new Date(generated.clearsAt).toLocaleTimeString()}
+                    · revoked {new Date(generated.clearsAt).toLocaleTimeString()}
                   </div>
                 </div>
               ) : (
                 <>
-                  <div className="field">
-                    <label>Installation token</label>
-                    <input type="password" value={existingToken} onChange={(e) => setExistingToken(e.target.value)} placeholder="ghs_…" autoComplete="off" spellCheck={false} />
+                  <div className="ga-tok">
+                    <input type="password" value={existingToken} onChange={(e) => setExistingToken(e.target.value)} placeholder="Installation token · ghs_…" autoComplete="off" spellCheck={false} aria-label="Installation token" />
+                    <a className="small" onClick={() => setTokenMode('generate')}>
+                      generate instead
+                    </a>
                   </div>
-                  <details>
-                    <summary className="small" style={{ cursor: 'pointer' }}>
-                      Don't have one? Generate it now from your GitHub App
-                    </summary>
-                    <div className="mt">
-                      {appFields}
-                      <button className="btn primary" onClick={generateNow} disabled={generating || !keyFields || !appBase.appId || !appBase.owner || !appBase.repo}>
-                        {generating ? 'Generating…' : 'Generate token now'}
-                      </button>
-                    </div>
-                  </details>
                 </>
               )}
             </div>
@@ -487,10 +498,9 @@ export function AuthMethodPicker({ options, githubApp, remoteOwnerRepo, canSave,
       )}
 
       {!conn && method === 'system' && (
-        <div className="auth-form small">
-          Git pushes exactly as it would from your terminal: an SSH remote uses your ssh-agent or default <code>~/.ssh</code> keys, an HTTPS remote uses Git Credential Manager. No
-          credentials are entered here. If that setup needs a passphrase that is not loaded in ssh-agent, choose <strong>SSH</strong> instead.
-        </div>
+        <p className="small muted auth-via" title="SSH remotes use ssh-agent / ~/.ssh; HTTPS remotes use Git Credential Manager">
+          💻 Uses the Git sign-in already on this computer.
+        </p>
       )}
     </div>
   );
