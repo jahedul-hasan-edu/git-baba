@@ -6122,3 +6122,20 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .acn-state { margin-left: 4px; font-size: 10.5px; font-weight: 500; padding: 0 7px; border-radius: 999px; }
 .acn-state.off { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
 .acn-state.part { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+
+/* Stage-then-commit picker */
+.sp { display: flex; flex-direction: column; gap: 8px; }
+.sp-all, .sp-row { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.sp-all { padding: 8px 10px; border-radius: 10px; background: var(--bg-3); font-size: 12.5px; font-weight: 600; }
+.sp-meter { width: 70px; height: 4px; border-radius: 2px; background: var(--bg-4); overflow: hidden; }
+.sp-meter i { display: block; height: 100%; background: linear-gradient(90deg, var(--brand-a), var(--brand-b)); transition: width 0.2s; }
+.sp-list { max-height: 300px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.sp-row { padding: 6px 10px; border-radius: 8px; font-size: 12.5px; opacity: 0.55; transition: background 0.12s, opacity 0.12s; }
+.sp-row:hover { background: var(--bg-3); opacity: 0.85; }
+.sp-row.on { opacity: 1; }
+.sp-name { flex: 1; min-width: 0; font-family: var(--mono); }
+.sp-dir { font-family: inherit; color: var(--text-3); font-size: 11px; }
+.sp-box { flex: none; position: relative; width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--border-2); transition: background 0.15s, border-color 0.15s; }
+.sp-row.on .sp-box, .sp-all.on .sp-box, .sp-all.some .sp-box { border-color: transparent; background: linear-gradient(135deg, var(--brand-a), var(--brand-b)); }
+.sp-row.on .sp-box::after, .sp-all.on .sp-box::after { content: ''; position: absolute; left: 4.5px; top: 1.5px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.sp-all.some .sp-box::after { content: ''; position: absolute; left: 3px; right: 3px; top: 6px; height: 2px; background: #fff; border-radius: 1px; }

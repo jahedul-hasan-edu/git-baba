@@ -7,6 +7,7 @@ import { KindIcon, fileKey } from '../components/FileList';
 import { Spinner } from '../components/Modal';
 import { CommitDialog } from '../dialogs/CommitDialog';
 import { ConfirmDialog } from '../dialogs/ConfirmDialog';
+import { StagePickDialog } from '../dialogs/StagePickDialog';
 import { call } from '../services/api';
 import { useApp } from '../state/AppState';
 import { CommitComposer } from './changes/CommitComposer';
@@ -602,16 +603,12 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
         />
       )}
       {stageThenCommit && (
-        <ConfirmDialog
-          title="Stage Files for Commit"
-          explanation="Nothing is staged yet. These changed files will be staged so they can be included in the commit. You will review the commit and confirm it in the next step."
-          impact="Only the staging area changes. Your files are not modified, and nothing is committed or pushed yet."
-          affected={unstagedAll}
-          confirmLabel={`Stage ${unstagedAll.length} file(s) & continue`}
+        <StagePickDialog
+          files={[...status.unstaged, ...status.untracked]}
           onCancel={() => setStageThenCommit(false)}
-          onConfirm={async () => {
+          onStage={async (paths) => {
             try {
-              await call('git:stage', { repoId, paths: unstagedAll });
+              await call('git:stage', { repoId, paths });
               await reload();
               bump();
               setStageThenCommit(false);
