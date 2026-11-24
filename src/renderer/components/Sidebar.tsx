@@ -267,20 +267,19 @@ export function Sidebar() {
       {sideSlot &&
         createPortal(
           <div className="sidebar-title ah-side-title">
-            <span className="row" style={{ gap: 8 }}>
-              Repositories <span className="ah-side-n">{mainRepos.length}</span>
-            </span>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search repositories…"
+              aria-label="Search repositories"
+              style={{ flex: 1, minWidth: 0, textTransform: 'none', letterSpacing: 'normal', fontWeight: 'normal' }}
+            />
             <button className="sb-hide" onClick={toggleRail} title="Hide sidebar (Ctrl+B)" aria-label="Hide sidebar">
               <PaneIcon />
             </button>
           </div>,
           sideSlot,
         )}
-      {mainRepos.length > 5 && (
-        <div style={{ padding: '0 12px 8px' }}>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search repositories…" />
-        </div>
-      )}
 
       <div className="repo-list">
         {mainRepos.length === 0 && <div className="small muted" style={{ padding: 8 }}>No repositories yet. Use “+ Add”.</div>}
