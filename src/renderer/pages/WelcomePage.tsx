@@ -7,8 +7,6 @@ import type { RepoSummary } from '../../shared/types';
 import { CloneDialog, isLocalPath } from '../dialogs/CloneDialog';
 import { CreateRepoWizard } from '../dialogs/CreateRepoWizard';
 import { useAddExisting } from '../dialogs/LinkAccountDialog';
-import { NotificationBell } from '../components/NotificationBell';
-import { useSidebarHidden } from '../services/sidebarState';
 import { call } from '../services/api';
 import { useApp } from '../state/AppState';
 
@@ -50,8 +48,6 @@ const ICON: Record<NonNullable<Detected>['kind'], string> = { github: '🐙', ur
 /** Launchpad shown when no repository is open: one smart box, three actions, and recent repositories. */
 export function WelcomePage() {
   const { info, bump, selectRepo } = useApp();
-  // With the sidebar hidden the header is gone, so the bell sits by the title.
-  const sidebarHidden = useSidebarHidden();
   const [dialog, setDialog] = useState<'create' | 'clone' | null>(null);
   const [quick, setQuick] = useState('');
   const [cloneFrom, setCloneFrom] = useState<string | undefined>(undefined);
@@ -98,7 +94,6 @@ export function WelcomePage() {
           </div>
           <div className="lp-title">
             <h1>Every Git, one place</h1>
-            {sidebarHidden && <NotificationBell />}
           </div>
         </div>
 

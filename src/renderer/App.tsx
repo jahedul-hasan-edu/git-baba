@@ -3,7 +3,7 @@ import { Modal, Spinner } from './components/Modal';
 import { AppFooter } from './components/AppFooter';
 import { AppHeader } from './components/AppHeader';
 import { GlobalErrorDialog } from './components/ErrorPanel';
-import { Sidebar } from './components/Sidebar';
+import { RepoSwitcher } from './components/RepoSwitcher';
 import { AddAccountDialog } from './dialogs/AddAccountDialog';
 import { TitleBar } from './components/TitleBar';
 import { RepoView } from './pages/RepoView';
@@ -31,7 +31,7 @@ function Main() {
       <TitleBar />
       <AppHeader />
       <div className="app">
-        <Sidebar />
+        <RepoSwitcher />
         <main className="main">
 <Suspense fallback={<div className="content"><Spinner label="Loading…" /></div>}>
           {view === 'repo' && activeRepo && <RepoView key={activeRepo.id} />}

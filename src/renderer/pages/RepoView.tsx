@@ -10,6 +10,7 @@ import { Spinner } from '../components/Modal';
 import type { PullResult } from '../../shared/types';
 import type { RepoAccess } from '../../shared/github';
 import { RepoSyncBar } from '../components/RepoSyncBar';
+import { RepoSwitcherSlot } from '../components/RepoSwitcher';
 import { AddAccountDialog } from '../dialogs/AddAccountDialog';
 import { FetchDialog } from '../dialogs/FetchDialog';
 import { GitHubAppSetupDialog } from '../dialogs/GitHubAppSetupDialog';
@@ -419,8 +420,8 @@ function RepoIdentity() {
       )}
       <div className="deck-main">
         <div className="deck-title">
-          <h1 className="deck-name ellipsis" title={activeRepo.name}>
-            {activeRepo.name}
+          <h1 className="deck-name">
+            <RepoSwitcherSlot />
           </h1>
           {vis && (
             <span className={`deck-vis ${vis}`} title={vis === 'private' ? 'Private repository: only people with access can see it' : 'Public repository: anyone can see it'}>

@@ -2,29 +2,24 @@ import type { Theme } from '../services/theme';
 import { useApp } from '../state/AppState';
 import { AppMenus } from './AppMenus';
 import { NotificationBell } from './NotificationBell';
-import { useSidebarHidden } from '../services/sidebarState';
+import { RepoSwitcherSlot } from './RepoSwitcher';
 
 /** The slot RepoView fills with the open repository's name, branch, Fetch and Push. */
 export const HEADER_REPO_SLOT = 'app-header-repo';
-/** The slot above the sidebar, filled with the sidebar's title. */
-export const HEADER_SIDE_SLOT = 'app-header-side';
 
-/** Global header: notifications on the left (when no repository is open), then the open repository's controls. The account follows the repository; accounts are managed from File → Accounts. */
+/** Global header: with no repository open, the repository dropdown and notifications on the left; otherwise the open repository's controls (its name is the dropdown). The account follows the repository; accounts are managed from File → Accounts. */
 export function AppHeader() {
   const { view, activeRepo } = useApp();
-  // With a repository open, the bell sits with its controls (before the branch menu); otherwise here.
+  // With a repository open, the dropdown and the bell sit with its controls; otherwise here.
   const repoOpen = view === 'repo' && !!activeRepo;
-  // Welcome screen with the sidebar hidden: nothing would be left in the header, so it steps aside
-  // (the bell moves next to the welcome title).
-  const sidebarHidden = useSidebarHidden();
-  if (!repoOpen && sidebarHidden) return <AppMenus />;
   return (
     <header className="app-header">
-      <div className="ah-left">
-        {/* The sidebar puts its "Repositories" title here, so the column above it is the sidebar's own head. */}
-        <div id={HEADER_SIDE_SLOT} className="ah-side" />
-        {!repoOpen && <NotificationBell />}
-      </div>
+      {!repoOpen && (
+        <div className="ah-left">
+          <RepoSwitcherSlot />
+          <NotificationBell />
+        </div>
+      )}
       <AppMenus />
       <div id={HEADER_REPO_SLOT} className="ah-repo" />
     </header>

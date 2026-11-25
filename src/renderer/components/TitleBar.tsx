@@ -4,8 +4,6 @@ import logoUrl from '../assets/logo.png';
 import { call } from '../services/api';
 import { getTheme } from '../services/theme';
 import { useApp } from '../state/AppState';
-import { setSidebarHidden, useSidebarHidden } from '../services/sidebarState';
-import { PaneIcon } from './PaneIcon';
 
 const LABEL: Record<AppMenuId, string> = { file: 'File', view: 'View', help: 'Help' };
 
@@ -28,7 +26,6 @@ export function TitleBar() {
   const [open, setOpen] = useState<AppMenuId | null>(null);
   const refs = useRef<Partial<Record<AppMenuId, HTMLButtonElement | null>>>({});
   const mac = info?.platform === 'darwin';
-  const sidebarHidden = useSidebarHidden();
 
   useEffect(() => {
     void call('app:menus').then(setMenus).catch(() => undefined);
@@ -95,12 +92,6 @@ export function TitleBar() {
           </button>
         ))}
       </nav>
-      {sidebarHidden && (
-        <button className="tb-pane" onClick={() => setSidebarHidden(false)} title="Show repositories (Ctrl+B)" aria-label="Show repositories">
-          <PaneIcon />
-          <span>Open Repositories</span>
-        </button>
-      )}
     </div>
   );
 }
