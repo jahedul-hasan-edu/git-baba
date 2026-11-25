@@ -162,6 +162,8 @@ export interface RepoStatus {
   untracked: FileChange[];
   conflicted: FileChange[];
   operation: InProgressOperation;
+  /** ISO time of the last fetch or pull (FETCH_HEAD), or null when the repository never fetched. */
+  lastFetchAt?: string | null;
 }
 
 export type DiffLineType = 'context' | 'add' | 'del' | 'meta';

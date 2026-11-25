@@ -7,6 +7,15 @@ import { requestQuickMerge } from '../services/quickMerge';
 import { isPublished } from '../../shared/publish';
 import { requestRailAction, type RailAction } from '../services/railActions';
 import { BranchPickerPanel, toPickerItems } from './BranchPicker';
+import { relTime } from './github/common';
+
+function DownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 4v12M6.5 10.5 12 16l5.5-5.5M5 20h14" />
+    </svg>
+  );
+}
 
 const REMOTE_CHECK_MS = 3 * 60 * 1000;
 
@@ -21,7 +30,10 @@ interface Props {
   disabled: boolean;
   onRefresh: () => void;
   onFetch: () => void;
+  /** Direct pull: fetch and update the branch in one step. */
   onPull: () => void;
+  /** Pull with the review step (fetch, scan, review, then update). */
+  onPullReview: () => void;
   onPush: () => void;
 }
 
@@ -49,7 +61,7 @@ function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, clo
  * turns into "Pull ↓N" when there is something to bring in (counted locally and, for GitHub repositories,
  * checked against the remote in the background), and a Push button that shows what is waiting to go out.
  */
-export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, inOperation, disabled, onRefresh, onFetch, onPull, onPush }: Props) {
+export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, inOperation, disabled, onRefresh, onFetch, onPull, onPullReview, onPush }: Props) {
   const { revision, repoTab, setRepoTab, bump, refreshRepos } = useApp();
   const [incoming, setIncoming] = useState<number | null>(null);
   const [lastCheck, setLastCheck] = useState<Date | null>(null);
@@ -84,6 +96,13 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
   useEffect(() => {
     setIncoming(null);
   }, [repoId]);
+
+  // Re-render now and then so "fetched 3 minutes ago" stays current.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = window.setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
 
   useEffect(() => {
     void checkRemote();
@@ -136,164 +155,164 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
     ? 'This branch is not published yet'
     : `${ahead} commit(s) to push · ${st?.behind ?? 0} fetched commit(s) to pull${incoming ? ` · ${incoming} new on the remote (not fetched yet)` : ''}${lastCheck ? `\nRemote checked ${lastCheck.toLocaleTimeString()}` : ''}`;
 
+  const slash = branch.lastIndexOf('/');
+  const branchPre = st?.branch && slash > 0 ? branch.slice(0, slash) : st?.detached ? 'detached' : 'branch';
+  const branchLeaf = slash > 0 ? branch.slice(slash + 1) : branch;
+  const fetchedText = !hasRemote ? 'no remote' : st?.lastFetchAt ? `fetched ${relTime(st.lastFetchAt)}` : 'never fetched';
+
   return (
     <>
-      <div className="row sync-bar">
-        {/* Branch picker */}
-        <div className="pop-anchor" ref={branchRef}>
-          <button className={`pill pill-btn hb-trigger ${branchOpen ? 'open' : ''}`} onClick={() => setBranchOpen((o) => !o)} disabled={disabled} title={`${branch}
-Switch branch`}>
-            <span className="sb-dot" />
-            <span className="hb-trig-ico">⎇</span>
-            <span className="hb-trig-name">
-              {branch.includes('/') && <span className="hb-trig-pre">{branch.slice(0, branch.lastIndexOf('/') + 1)}</span>}
-              <strong className="hb-trig-leaf">{branch.slice(branch.lastIndexOf('/') + 1)}</strong>
-            </span>
-            <span className="caret">▾</span>
-          </button>
-          {branchOpen && view === 'stashes' && (
-            <StashPanel
-              repoId={repoId}
-              stashes={stashes ?? []}
-              dirty={dirty}
-              onBack={() => setView('branches')}
-              onStash={() => rail('stash')}
-              onChanged={() => {
-                bump();
-                void loadStashes();
-              }}
-            />
-          )}
-          {branchOpen && view === 'branches' && (
-            <BranchPickerPanel
-              className="hb-pop pop-in"
-              value={st?.branch ?? ''}
-              items={branches ? toPickerItems(branches) : []}
-              recentKey="header-switch"
-              hideSubject
-              tree
-              onRowContextMenu={(it, e) => {
-                // The dropdown stays open behind the menu.
-                if (repoTab !== 'changes') setRepoTab('changes');
-                requestRailAction({ kind: 'branch-menu', name: it.name, x: e.clientX, y: e.clientY });
-              }}
-              onClose={() => !menuOpen() && setBranchOpen(false)}
-              onPick={(it) => {
-                if (it.current) return setBranchOpen(false);
-                if (!it.remote) return pickBranch(it.name, 'local');
-                // A remote branch that already has a local copy: switch to the local one.
-                const short = it.name.split('/').slice(1).join('/');
-                if (localNames.has(short)) pickBranch(short, 'local');
-                else pickBranch(it.name, 'remote');
-              }}
-              footer={
-                <div className="hb-acts">
-                  <button onClick={() => rail('new-branch')} title="New branch from here">
-                    ＋ Branch
-                  </button>
-                  <button
-                    onClick={() => {
-                      setBranchOpen(false);
-                      requestQuickMerge({ source: st?.branch ?? undefined });
-                    }}
-                    title="Merge this branch into another — or open a pull request"
-                  >
-                    ⤵ Merge
-                  </button>
-                  <button
-                    disabled={dirty === 0 && !stashes?.length}
-                    onClick={() => (stashes?.length ? setView('stashes') : rail('stash'))}
-                    title={stashes?.length ? 'Your stashes' : dirty ? 'Shelve your uncommitted changes' : 'Nothing to stash'}
-                  >
-                    📦 Stash{stashes?.length ? <span className="hb-n">{stashes.length}</span> : null}
-                  </button>
-                </div>
-              }
-            />
-          )}
-        </div>
+      <span className="ab-sep" aria-hidden>
+        /
+      </span>
 
-        {/* Ahead / behind */}
-        {st?.branch && !hasRemote && (
-          <button className="pill pill-btn sync-pill" onClick={() => setRepoTab('settings')} title="This repository has no remote yet. Add one (for example a new empty GitHub repository) in Settings to push and pull.">
-            <span className="zero">no remote</span>
-          </button>
+      {/* Branch capsule: icon tile · namespace over branch name · ahead/behind · chevron */}
+      <div className="pop-anchor" ref={branchRef}>
+        <button className={`ab-cap ab-branch ${branchOpen ? 'on' : ''}`} onClick={() => setBranchOpen((o) => !o)} disabled={disabled} title={`${branch}\n${syncTitle}\nSwitch branch`}>
+          <span className="ab-tile branch" aria-hidden>
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="6" cy="5" r="2.2" />
+              <circle cx="6" cy="19" r="2.2" />
+              <circle cx="18" cy="7" r="2.2" />
+              <path d="M6 7.2v9.6M18 9.2c0 5-6 4-12 7.6" />
+            </svg>
+          </span>
+          <span className="ab-text">
+            <span className="ab-pre">{branchPre}</span>
+            <span className="ab-name">{branchLeaf}</span>
+          </span>
+          {st?.branch && hasRemote && !hasUpstream && <span className="ab-count warn">not published</span>}
+          {st?.branch && hasUpstream && ahead > 0 && <span className="ab-count out">↑{ahead}</span>}
+          {st?.branch && hasUpstream && behind > 0 && <span className="ab-count in">↓{behind}</span>}
+          <span className="ab-chev" aria-hidden>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2.5 3.8 5 6.3l2.5-2.5" />
+            </svg>
+          </span>
+        </button>
+        {branchOpen && view === 'stashes' && (
+          <StashPanel
+            repoId={repoId}
+            stashes={stashes ?? []}
+            dirty={dirty}
+            onBack={() => setView('branches')}
+            onStash={() => rail('stash')}
+            onChanged={() => {
+              bump();
+              void loadStashes();
+            }}
+          />
         )}
-        {st?.branch && hasRemote && (
-          <button
-            className={`pill pill-btn sync-pill ${ahead ? 'has-out' : ''} ${behind ? 'has-in' : ''}`}
-            disabled={!canSync}
-            title={`${syncTitle}\nClick to ${behind ? 'pull' : ahead || !hasUpstream ? 'push' : 'fetch'}`}
-            onClick={() => (behind ? onPull() : ahead || !hasUpstream ? onPush() : onFetch())}
-          >
-            {hasUpstream ? (
-              <>
-                <span className={ahead ? 'out' : 'zero'}>↑{ahead}</span>
-                <span className={behind ? 'in' : 'zero'}>↓{behind}</span>
-              </>
-            ) : (
-              <span className="out">not published</span>
-            )}
-          </button>
+        {branchOpen && view === 'branches' && (
+          <BranchPickerPanel
+            className="hb-pop pop-in"
+            value={st?.branch ?? ''}
+            items={branches ? toPickerItems(branches) : []}
+            recentKey="header-switch"
+            hideSubject
+            tree
+            onRowContextMenu={(it, e) => {
+              // The dropdown stays open behind the menu.
+              if (repoTab !== 'changes') setRepoTab('changes');
+              requestRailAction({ kind: 'branch-menu', name: it.name, x: e.clientX, y: e.clientY });
+            }}
+            onClose={() => !menuOpen() && setBranchOpen(false)}
+            onPick={(it) => {
+              if (it.current) return setBranchOpen(false);
+              if (!it.remote) return pickBranch(it.name, 'local');
+              // A remote branch that already has a local copy: switch to the local one.
+              const short = it.name.split('/').slice(1).join('/');
+              if (localNames.has(short)) pickBranch(short, 'local');
+              else pickBranch(it.name, 'remote');
+            }}
+            footer={
+              <div className="hb-acts">
+                <button onClick={() => rail('new-branch')} title="New branch from here">
+                  ＋ Branch
+                </button>
+                <button
+                  onClick={() => {
+                    setBranchOpen(false);
+                    requestQuickMerge({ source: st?.branch ?? undefined });
+                  }}
+                  title="Merge this branch into another — or open a pull request"
+                >
+                  ⤵ Merge
+                </button>
+                <button
+                  disabled={dirty === 0 && !stashes?.length}
+                  onClick={() => (stashes?.length ? setView('stashes') : rail('stash'))}
+                  title={stashes?.length ? 'Your stashes' : dirty ? 'Shelve your uncommitted changes' : 'Nothing to stash'}
+                >
+                  📦 Stash{stashes?.length ? <span className="hb-n">{stashes.length}</span> : null}
+                </button>
+              </div>
+            }
+          />
         )}
       </div>
 
-      <div className="row">
-        {/* Fetch / Pull */}
-        <div className="split-btn pop-anchor" ref={syncRef}>
-          {behind > 0 ? (
-            <button className="btn attention" onClick={onPull} disabled={!canSync} title={syncTitle}>
-              ⬇ Pull <span className="btn-count">{behind}</span>
-              {incoming ? <span className="pulse-dot" title="New commits on the remote" /> : null}
-            </button>
-          ) : (
-            <button className="btn" onClick={onFetch} disabled={disabled || !hasRemote} title={!hasRemote ? 'No remote to fetch from yet' : `Fetch from the remote (your files are not changed)${lastCheck ? `\nRemote checked ${lastCheck.toLocaleTimeString()}: up to date` : ''}`}>
-              ⬇ Fetch
-            </button>
-          )}
-          <button className={`btn caret-btn ${behind > 0 ? 'attention' : ''}`} onClick={() => setSyncMenu((o) => !o)} disabled={disabled || !hasRemote} aria-label="More sync options">
-            ▾
-          </button>
-          {syncMenu && (
-            <div className="dropdown pop-in" onClick={() => setSyncMenu(false)}>
-              <div className="dropdown-item" onClick={onFetch}>
-                <span className="ctx-ico">⬇</span>
-                <div>
-                  <div>Fetch</div>
-                  <div className="small muted">Download new commits; your files are not changed</div>
-                </div>
-              </div>
-              <div className={`dropdown-item ${canSync ? '' : 'disabled'}`} onClick={canSync ? onPull : undefined}>
-                <span className="ctx-ico">🛡</span>
-                <div>
-                  <div>Pull (review)</div>
-                  <div className="small muted">Fetch, review incoming changes, then update your branch</div>
-                </div>
-              </div>
-              {isGitHub && (
-                <>
-                  <div className="dropdown-sep" />
-                  <div className="dropdown-item" onClick={() => void checkRemote()}>
-                    <span className="ctx-ico">☁</span>
-                    <div>
-                      <div>Check remote now</div>
-                      <div className="small muted">{lastCheck ? `Last checked ${lastCheck.toLocaleTimeString()}` : 'Not checked yet'}</div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+      <span className="grow" />
 
-        {/* Push */}
-        {!hasRemote ? (
-          <button className="btn push-btn" onClick={() => setRepoTab('settings')} disabled={disabled} title="Add a remote in Settings, then publish this branch to it">
-            ＋ Add remote
+      {/* When the remote was last fetched */}
+      <span className="ab-fetched" title={st?.lastFetchAt ? `Last fetch: ${new Date(st.lastFetchAt).toLocaleString()}${lastCheck ? `\nRemote checked ${lastCheck.toLocaleTimeString()}` : ''}` : undefined}>
+        {fetchedText}
+      </span>
+
+      {/* Fetch / Pull: an icon button that becomes "Pull N" when there is something to bring in */}
+      <div className="ab-split pop-anchor" ref={syncRef}>
+        {behind > 0 ? (
+          <button className="ab-btn attention" onClick={onPull} disabled={!canSync} title={syncTitle}>
+            <DownIcon /> Pull <span className="ab-badge">{behind}</span>
+            {incoming ? <span className="pulse-dot" title="New commits on the remote" /> : null}
           </button>
         ) : (
+          <button className="ab-btn icon" onClick={onFetch} disabled={disabled || !hasRemote} title={!hasRemote ? 'No remote to fetch from yet' : `Fetch from the remote (your files are not changed)${lastCheck ? `\nRemote checked ${lastCheck.toLocaleTimeString()}: up to date` : ''}`} aria-label="Fetch">
+            <DownIcon />
+          </button>
+        )}
+        <button className={`ab-btn caret ${behind > 0 ? 'attention' : ''}`} onClick={() => setSyncMenu((o) => !o)} disabled={disabled || !hasRemote} aria-label="More sync options">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M2.5 3.8 5 6.3l2.5-2.5" />
+          </svg>
+        </button>
+        {syncMenu && (
+          <div className="dropdown pop-in" onClick={() => setSyncMenu(false)}>
+            <div className="dropdown-item" onClick={onFetch}>
+              <span className="ctx-ico">⬇</span>
+              <div>
+                <div>
+                  Fetch <span className="ab-default">default</span>
+                </div>
+                <div className="small muted">Download new commits; your files are not changed</div>
+              </div>
+            </div>
+            <div className={`dropdown-item ${canSync ? '' : 'disabled'}`} onClick={canSync ? onPull : undefined}>
+              <span className="ctx-ico">⤓</span>
+              <div>
+                <div>Pull</div>
+                <div className="small muted">Fetch and update your branch in one step</div>
+              </div>
+            </div>
+            <div className={`dropdown-item ${canSync ? '' : 'disabled'}`} onClick={canSync ? onPullReview : undefined}>
+              <span className="ctx-ico">🛡</span>
+              <div>
+                <div>Pull (review)</div>
+                <div className="small muted">Fetch, review incoming changes, then update your branch</div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Push: blue with the count when there is something to push; quiet otherwise */}
+      {!hasRemote ? (
+        <button className="ab-btn" onClick={() => setRepoTab('settings')} disabled={disabled} title="Add a remote in Settings, then publish this branch to it">
+          ＋ Add remote
+        </button>
+      ) : (
         <button
-          className={`btn ${canPush ? 'primary' : ''} push-btn`}
+          className={`ab-btn push ${canPush ? 'primary' : ''}`}
           onClick={onPush}
           disabled={!canPush}
           title={
@@ -308,11 +327,13 @@ Switch branch`}>
               : 'Nothing to push — everything is on the remote'
           }
         >
-          ⬆ {hasUpstream ? 'Push' : 'Publish'}
-          {ahead > 0 && <span className="btn-count">{ahead}</span>}
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M12 19V7M6.5 12.5 12 7l5.5 5.5M5 4h14" />
+          </svg>
+          {hasUpstream ? 'Push' : 'Publish'}
+          {ahead > 0 && <span className="ab-badge">{ahead}</span>}
         </button>
-        )}
-      </div>
+      )}
 
       {switching && (
         <SwitchBranchDialog

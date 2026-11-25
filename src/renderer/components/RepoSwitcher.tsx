@@ -22,26 +22,36 @@ export function repoSubtitle(r: RepoSummary): string {
 // ---------------------------------------------------------------------------------------------
 // Where the trigger renders: the header puts a <RepoSwitcherSlot /> where the repository name goes.
 
+type Visibility = 'private' | 'public' | null;
 let slotEl: HTMLElement | null = null;
+let slotVis: Visibility = null;
 const slotListeners = new Set<() => void>();
+const emit = () => slotListeners.forEach((l) => l());
 function setSlot(el: HTMLElement | null, prev: HTMLElement | null) {
   if (el === null && slotEl !== prev) return; // another slot already took over
   slotEl = el;
-  slotListeners.forEach((l) => l());
+  emit();
 }
-function useSlot() {
-  return useSyncExternalStore(
-    (l) => {
-      slotListeners.add(l);
-      return () => slotListeners.delete(l);
-    },
-    () => slotEl,
-  );
-}
+const subscribe = (l: () => void) => {
+  slotListeners.add(l);
+  return () => {
+    slotListeners.delete(l);
+  };
+};
+const useSlot = () => useSyncExternalStore(subscribe, () => slotEl);
+const useSlotVisibility = () => useSyncExternalStore(subscribe, () => slotVis);
 
-/** Marks where the repository dropdown's trigger goes (in place of the repository name). */
-export function RepoSwitcherSlot() {
+/** Marks where the repository dropdown's trigger goes (in place of the repository name); `visibility` badges its logo. */
+export function RepoSwitcherSlot({ visibility = null }: { visibility?: Visibility }) {
   const mine = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    slotVis = visibility;
+    emit();
+    return () => {
+      slotVis = null;
+      emit();
+    };
+  }, [visibility]);
   return (
     <span
       className="rs-slot"
@@ -56,6 +66,13 @@ export function RepoSwitcherSlot() {
       }}
     />
   );
+}
+
+/** The owner shown above the repository name: GitHub owner, provider namespace, or where it lives. */
+function repoOwner(r: RepoSummary): string {
+  if (r.github) return r.github.owner;
+  if (r.provider) return r.provider.path.includes('/') ? r.provider.path.slice(0, r.provider.path.lastIndexOf('/')) : r.provider.host;
+  return r.remoteUrl ? 'other remote' : 'local';
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -99,6 +116,7 @@ type RepoDialog = { kind: 'duplicate' | 'contributors' | 'lastCommit' | 'remove'
 export function RepoSwitcher() {
   const { repos, activeRepoId, activeRepo, selectRepo, view, showError, bump, toast } = useApp();
   const slot = useSlot();
+  const vis = useSlotVisibility();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -264,9 +282,9 @@ export function RepoSwitcher() {
     );
   };
 
-  const repoIcon = (r: RepoSummary) => {
+  const repoIcon = (r: RepoSummary, size = 16) => {
     const id = r.github ? 'github' : r.provider?.id;
-    if (id) return <ProviderMono id={id} size={16} />;
+    if (id) return <ProviderMono id={id} size={size} />;
     return <span className="rs-local" title={r.remoteUrl ? 'Remote on this computer or network' : 'Local only — no remote'}>{r.remoteUrl ? '🖧' : '💻'}</span>;
   };
 
@@ -336,9 +354,24 @@ export function RepoSwitcher() {
             aria-expanded={open}
             title={`${current ? `${current.name} — switch repository` : 'Choose a repository'} (Ctrl+B)`}
           >
-            <span className="ellipsis">{current ? current.name : 'Choose a repository'}</span>
+            <span className="rs-logo">
+              {current ? repoIcon(current, 22) : <span className="rs-local">🗂</span>}
+              {current && vis && (
+                <span className={`rs-vis ${vis}`} title={vis === 'private' ? 'Private repository: only people with access can see it' : 'Public repository: anyone can see it'} aria-label={vis === 'private' ? 'Private' : 'Public'}>
+                  <svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d={vis === 'private' ? 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v9H5z' : 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z'} />
+                  </svg>
+                </span>
+              )}
+            </span>
+            <span className="rs-text">
+              <span className="rs-owner">{current ? repoOwner(current) : `${mainRepos.length} repositories`}</span>
+              <span className="rs-name">{current ? current.name : 'Choose a repository'}</span>
+            </span>
             <span className="rs-chev" aria-hidden>
-              ▾
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2.5 3.8 5 6.3l2.5-2.5" />
+              </svg>
             </span>
           </button>,
           slot,

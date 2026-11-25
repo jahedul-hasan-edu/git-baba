@@ -17,11 +17,16 @@ export function AppHeader() {
       {!repoOpen && (
         <div className="ah-left">
           <RepoSwitcherSlot />
-          <NotificationBell />
         </div>
       )}
       <AppMenus />
       <div id={HEADER_REPO_SLOT} className="ah-repo" />
+      {/* Notifications sit at the far right; with a repository open, RepoView puts the bell after Push. */}
+      {!repoOpen && (
+        <div className="ah-end">
+          <NotificationBell />
+        </div>
+      )}
     </header>
   );
 }

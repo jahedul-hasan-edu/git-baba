@@ -5196,6 +5196,7 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .ah-deck .deck-acts { margin-top: 0; flex-wrap: nowrap; }
 .ah-deck .deck-acts:empty { display: none; }
 .ah-left .ax-switch-pop, .ah-left .nb-pop { left: 0; right: auto; }
+.ah-end { flex: none; margin-left: auto; display: flex; align-items: center; padding: 6px 14px; }
 
 /* Compare and Search wait until the repository's own account is active */
 .tabs.dock .tab-compare:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
@@ -5992,14 +5993,29 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .acr-msg { flex-direction: row; align-items: center; justify-content: space-between; padding: 12px; font-size: 12.5px; }
 
 /* Repository dropdown: the repository name in the header opens it. */
+/* The capsule: logo · owner over name · chevron, one button that keeps its natural width (up to a cap). */
+.ah-deck .deck-id { flex: 0 1 auto; }
+.ah-deck .deck-title { flex-wrap: nowrap; }
+.ah-deck .deck-name { flex: 0 1 auto; min-width: 0; display: flex; font-size: inherit; }
 .rs-slot { display: inline-flex; min-width: 0; max-width: 100%; }
-.rs-trigger { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; margin: 0 0 0 -6px; padding: 3px 6px 3px 6px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-weight: inherit; cursor: pointer; transition: background .15s, border-color .15s; }
-.rs-trigger:hover, .rs-trigger.on { background: var(--bg-3); border-color: var(--border-2); }
-.rs-trigger.empty { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--text-2); }
-.rs-trigger.empty:hover, .rs-trigger.empty.on { color: var(--text); }
-.rs-chev { flex: none; font-size: 11px; color: var(--text-3); transition: transform .18s, color .15s; }
+.rs-trigger { display: inline-flex; align-items: center; gap: 9px; min-width: 0; max-width: 340px; height: 38px; padding: 0 9px 0 5px; border: 1px solid var(--border); border-radius: 11px; background: linear-gradient(180deg, color-mix(in srgb, var(--bg-3) 70%, transparent), var(--bg-2)); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s, box-shadow .2s, background .15s; }
+.rs-trigger:hover { border-color: var(--border-2); background: var(--bg-3); }
+.rs-trigger.on { border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); background: var(--bg-3); }
+.rs-logo { position: relative; flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); transition: transform .2s; }
+/* Visibility: a small lock (private, amber) or globe (public, green) badge on the logo's corner. */
+.rs-vis { position: absolute; right: -5px; bottom: -5px; width: 15px; height: 15px; display: grid; place-items: center; border-radius: 50%; border: 2px solid var(--bg-2); animation: rs-pop .25s ease-out; }
+.rs-vis.private { background: var(--warn); color: #1a1205; }
+.rs-vis.public { background: var(--success, #3ecf8e); color: #06210f; }
+.rs-trigger:hover .rs-vis, .rs-trigger.on .rs-vis { border-color: var(--bg-3); }
+@keyframes rs-pop { from { transform: scale(0); } 70% { transform: scale(1.15); } to { transform: none; } }
+.rs-trigger:hover .rs-logo { transform: rotate(-5deg) scale(1.05); }
+.rs-logo .rs-local { font-size: 15px; }
+.rs-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.rs-owner { font-size: 10.5px; font-weight: 500; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rs-name { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rs-chev { flex: none; display: grid; place-items: center; width: 18px; height: 18px; margin-left: 2px; border-radius: 6px; color: var(--text-3); background: var(--bg-3); transition: transform .2s, color .15s, background .15s; }
 .rs-trigger:hover .rs-chev { color: var(--text); }
-.rs-trigger.on .rs-chev { transform: rotate(180deg); color: var(--accent); }
+.rs-trigger.on .rs-chev { transform: rotate(180deg); color: #fff; background: var(--accent); }
 .rs-panel { position: fixed; z-index: 200; width: 340px; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-2); border: 1px solid var(--border-2); border-radius: 12px; box-shadow: 0 22px 54px rgba(0, 0, 0, 0.5); animation: rs-in .14s ease-out; transform-origin: top left; }
 @keyframes rs-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
 .rs-search { flex: none; padding: 8px; border-bottom: 1px solid var(--border); }
@@ -6312,3 +6328,56 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .run-head { box-sizing: border-box; min-height: 32px; height: auto; padding-top: 4px; padding-bottom: 4px; }
 .commit-row { box-sizing: border-box; }
 .cr { padding-top: 3px; padding-bottom: 3px; }
+
+/* ---------- App bar (repository header), matching the "Push ready" design ---------- */
+.ah-deck { gap: 12px; padding: 8px 16px 8px 14px; }
+/* Repository capsule: borderless, the logo tile carries the frame. */
+.rs-trigger { height: 40px; padding: 0 8px 0 4px; gap: 10px; border-color: transparent; background: transparent; }
+.rs-trigger:hover { background: var(--bg-3); border-color: transparent; }
+.rs-trigger.on { background: var(--bg-3); border-color: transparent; box-shadow: none; }
+.rs-logo { width: 30px; height: 30px; border-radius: 9px; background: var(--bg-3); border-color: var(--border-2); }
+.rs-owner { font-size: 11px; }
+.rs-name { font-size: 14.5px; }
+.rs-chev { background: transparent; width: 16px; }
+.rs-trigger.on .rs-chev { background: transparent; color: var(--text); }
+
+.ab-sep { flex: none; color: var(--text-3); font-size: 18px; font-weight: 300; margin: 0 2px; user-select: none; }
+.ab-cap { display: inline-flex; align-items: center; gap: 10px; height: 40px; padding: 0 8px 0 4px; border: 0; border-radius: 11px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background .15s; max-width: 360px; min-width: 0; }
+.ab-cap:hover:not(:disabled), .ab-cap.on { background: var(--bg-3); }
+.ab-cap:disabled { opacity: .55; cursor: not-allowed; }
+.ab-tile { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; }
+.ab-tile.branch { background: color-mix(in srgb, #3ecf8e 16%, var(--bg-3)); color: #3ecf8e; border: 1px solid color-mix(in srgb, #3ecf8e 28%, transparent); }
+.ab-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.ab-pre { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ab-name { font-size: 14.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ab-count { flex: none; padding: 1px 7px; border-radius: 999px; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ab-count.out { background: color-mix(in srgb, #7b6cf6 24%, transparent); color: #b7adff; }
+.ab-count.in { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
+.ab-count.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); font-weight: 500; }
+.ab-chev { flex: none; display: grid; place-items: center; width: 16px; color: var(--text-3); transition: transform .2s, color .15s; }
+.ab-cap:hover .ab-chev { color: var(--text); }
+.ab-cap.on .ab-chev { transform: rotate(180deg); color: var(--text); }
+
+.ab-fetched { flex: none; font-size: 12.5px; color: var(--text-3); white-space: nowrap; margin-right: 4px; }
+.ab-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 14px; border: 1px solid var(--border-2); border-radius: 9px; background: var(--bg-2); color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, box-shadow .15s, transform .1s; }
+.ab-btn:hover:not(:disabled) { background: var(--bg-3); border-color: var(--text-3); }
+.ab-btn:active:not(:disabled) { transform: translateY(1px); }
+.ab-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ab-btn.icon { width: 42px; padding: 0; }
+.ab-split { display: inline-flex; }
+.ab-split > .ab-btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.ab-split > .ab-btn.caret { width: 28px; padding: 0; margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; color: var(--text-2); }
+.ab-btn.attention { border-color: color-mix(in srgb, var(--warn) 55%, var(--border-2)); color: var(--warn); }
+.ab-btn.push { min-width: 104px; padding: 0 16px; }
+.ab-btn.push.primary { background: #7b6cf6; border-color: #7b6cf6; color: #fff; box-shadow: 0 4px 14px color-mix(in srgb, #7b6cf6 35%, transparent); }
+.ab-btn.push.primary:hover:not(:disabled) { background: #8a7cff; border-color: #8a7cff; }
+.ab-badge { min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; display: inline-grid; place-items: center; font-size: 11.5px; font-weight: 700; background: color-mix(in srgb, currentColor 22%, transparent); }
+.ab-btn.push.primary .ab-badge { background: rgba(255, 255, 255, .25); color: #fff; }
+.ab-divider { flex: none; width: 1px; height: 26px; background: var(--border-2); margin: 0 2px; }
+.ah-deck .nb-btn, .ah-end .nb-btn { width: 38px; height: 38px; border-radius: 9px; background: var(--bg-2); }
+.ah-deck .nb-count, .ah-end .nb-count { top: -6px; right: -6px; border-color: var(--bg-2); }
+.ab-default { margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 600; color: var(--text-3); background: var(--bg-3); vertical-align: 1px; }
+/* Repository name, branch name and Push label match the tab labels (Changes, Code, …): 13px, semibold. */
+.rs-name, .ab-name, .ab-btn, .ab-btn.push { font-size: 13px; font-weight: 600; }
+/* The branch capsule sits on the left of the bar now: its dropdown opens from the capsule's left edge. */
+.ah-deck .bp-pop.hb-pop { left: 0; right: auto; transform-origin: top left; }

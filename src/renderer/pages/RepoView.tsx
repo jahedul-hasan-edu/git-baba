@@ -1,6 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { providerInfo, providerLinks } from '../../shared/providers';
-import { ProviderMono } from '../components/ProviderMono';
 import { ProviderHub } from './provider/ProviderHub';
 import { createPortal } from 'react-dom';
 import { HEADER_REPO_SLOT } from '../components/AppHeader';
@@ -45,15 +44,15 @@ export function RepoView() {
     void refreshRepos().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRepo?.id]);
-  const [dialog, setDialog] = useState<'fetch' | 'pull' | 'push' | null>(null);
+  const [dialog, setDialog] = useState<'fetch' | 'pull' | 'pull-review' | 'push' | null>(null);
   const lockedRef = useRef(false);
   lockedRef.current = !!otherAccount;
   // Other screens (e.g. the clean Changes screen) can open the sync dialogs.
   useEffect(() => {
     const on = (e: Event) => {
-      const d = (e as CustomEvent<'fetch' | 'pull' | 'push'>).detail;
+      const d = (e as CustomEvent<'fetch' | 'pull' | 'pull-review' | 'push'>).detail;
       if (lockedRef.current) return;
-      if (d === 'fetch' || d === 'pull' || d === 'push') setDialog(d);
+      if (d === 'fetch' || d === 'pull' || d === 'pull-review' || d === 'push') setDialog(d);
     };
     window.addEventListener('gb:repo-dialog', on);
     return () => window.removeEventListener('gb:repo-dialog', on);
@@ -182,7 +181,6 @@ export function RepoView() {
       <div className="ah-deck">
         <RepoIdentity />
         {st?.operation && <span className="badge danger">{st.operation} in progress</span>}
-        <NotificationBell />
         <RepoSyncBar
           repoId={repoId}
           isGitHub={!!activeRepo.github}
@@ -194,8 +192,11 @@ export function RepoView() {
           onRefresh={() => bump()}
           onFetch={() => setDialog('fetch')}
           onPull={() => setDialog('pull')}
+          onPullReview={() => setDialog('pull-review')}
           onPush={() => setDialog('push')}
         />
+        <span className="ab-divider" aria-hidden />
+        <NotificationBell />
       </div>,
           headerSlot,
         )}
@@ -321,7 +322,8 @@ export function RepoView() {
       )}
       {appSetupRepoId === activeRepo.id && <GitHubAppSetupDialog repo={activeRepo} onClose={() => requestAppSetup(null)} />}
       <QuickMergeHost repoId={repoId} />
-      {dialog === 'pull' && <PullDialog repoId={repoId} onClose={() => setDialog(null)} onDone={onPullDone} />}
+      {dialog === 'pull' && <PullDialog direct repoId={repoId} onClose={() => setDialog(null)} onDone={onPullDone} />}
+      {dialog === 'pull-review' && <PullDialog repoId={repoId} onClose={() => setDialog(null)} onDone={onPullDone} />}
       {dialog === 'push' && (
         <PushDialog
           repoId={repoId}
@@ -345,33 +347,10 @@ export function RepoView() {
   );
 }
 
-const DECK_COLORS = ['#5b8cff', '#3ecf8e', '#f5b84a', '#ff6b6b', '#b18cff', '#6cc4ff', '#ff9f6b', '#9fd36b'];
-const deckColor = (s: string) => {
-  let h = 0;
-  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return DECK_COLORS[h % DECK_COLORS.length];
-};
 
 /** Repository identity: monogram tile, name and interactive chips (remote, account, owner, folder). */
 /** Visibility of GitHub repositories, by repo id: fetched once per session. */
 const visibilityCache = new Map<string, 'private' | 'public'>();
-
-const ICONS = {
-  github: 'M12 2C6.48 2 2 6.58 2 12.22c0 4.5 2.87 8.32 6.84 9.67.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.36-3.37-1.36-.46-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.56 2.350 1.11 2.92.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.030 1.64 1.03 2.76 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.81c0 .27.18.6.69.49A10.1 10.1 0 0 0 22 12.22C22 6.58 17.52 2 12 2z',
-  cloud: 'M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 9.1 4.5 4.5 0 0 0 7 18z',
-  folder: 'M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2h8.4A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z',
-  copy: 'M9 9h10v10H9zM5 15V5h10',
-  lock: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v9H5z',
-  globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z',
-} as const;
-
-function Ic({ d, fill }: { d: string; fill?: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden fill={fill ? 'currentColor' : 'none'} stroke={fill ? 'none' : 'currentColor'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d={d} />
-    </svg>
-  );
-}
 
 function RepoIdentity() {
   const { activeRepo, repos, selectRepo, ghKey } = useApp();
@@ -403,37 +382,18 @@ function RepoIdentity() {
   }, [repoId, isGh, ghKey]);
   if (!activeRepo) return null;
   const mainRepo = activeRepo.worktreeOf ? repos.find((r) => r.id === activeRepo.worktreeOf) : undefined;
-  const c = deckColor(activeRepo.identity ?? activeRepo.name);
   const remote = activeRepo.remoteUrl ?? activeRepo.identity;
   // The provider's logo stands in for the repository tile; a repository with no remote gets a folder.
   const provId = activeRepo.github ? 'github' : (activeRepo.provider?.id ?? null);
   return (
     <div className="deck-id">
-      {provId ? (
-        <span className="deck-logo" title={`${providerInfo(provId).name}${remote ? ` · ${remote}` : ''}`}>
-          <ProviderMono id={provId} size={30} />
-        </span>
-      ) : (
-        <div className="deck-tile local" style={{ ['--rc' as string]: c }} title="Local repository — no remote">
-          📁
-        </div>
-      )}
       <div className="deck-main">
         <div className="deck-title">
-          <h1 className="deck-name">
-            <RepoSwitcherSlot />
+          {/* The repository capsule (provider logo, owner, name) is the repository dropdown. */}
+          <h1 className="deck-name" title={provId ? `${providerInfo(provId).name}${remote ? ` · ${remote}` : ''}` : 'Local repository — no remote'}>
+            {/* Private / public shows as a lock or globe badge on the capsule's logo. */}
+            <RepoSwitcherSlot visibility={vis} />
           </h1>
-          {vis && (
-            <span className={`deck-vis ${vis}`} title={vis === 'private' ? 'Private repository: only people with access can see it' : 'Public repository: anyone can see it'}>
-              <Ic d={vis === 'private' ? ICONS.lock : ICONS.globe} />
-              {vis === 'private' ? 'Private' : 'Public'}
-            </span>
-          )}
-          {!remote && (
-            <span className="deck-vis local" title="This repository has no remote">
-              Local only
-            </span>
-          )}
         </div>
         <div className="deck-acts">
           {mainRepo && (

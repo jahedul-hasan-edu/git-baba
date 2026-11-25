@@ -16,6 +16,11 @@ interface Props {
   repoId: string;
   onClose: () => void;
   onDone: (result: PullResult | null) => void;
+  /**
+   * Direct pull: fetch and integrate in one go, without the review step (fast-forward when possible,
+   * otherwise a merge). If the security scan flags anything, it still stops on the review.
+   */
+  direct?: boolean;
 }
 
 type Step = 'auth' | 'fetching' | 'review' | 'pulling' | 'result';
@@ -27,7 +32,7 @@ const STRATEGIES: [PullStrategy, 'ff' | 'merge' | 'rebase', string, string][] = 
 ];
 
 /** Pull = fetch → scan → review → explicit confirmation → integrate the exact reviewed commit. */
-export function PullDialog({ repoId, onClose, onDone }: Props) {
+export function PullDialog({ repoId, onClose, onDone, direct = false }: Props) {
   const { repos, info } = useApp();
   const repo = repos.find((r) => r.id === repoId);
   const [step, setStep] = useState<Step>('auth');
@@ -55,9 +60,23 @@ export function PullDialog({ repoId, onClose, onDone }: Props) {
     try {
       const p = await call('pull:prepare', { repoId, auth: auth.input });
       setPreview(p);
-      setStrategy(p.canFastForward ? 'ff-only' : 'merge');
+      const strat: PullStrategy = p.canFastForward ? 'ff-only' : 'merge';
+      setStrategy(strat);
       setTab(p.report.status === 'NO_ISSUES_DETECTED' ? 'files' : 'security');
       setSelected(p.files[0] ?? null);
+      // Direct pull: integrate straight away unless the scan flagged something.
+      if (direct && p.report.status === 'NO_ISSUES_DETECTED') {
+        setStep('pulling');
+        try {
+          setResult(await call('pull:execute', { repoId, reviewId: p.reviewId, strategy: strat, acknowledgedRisk: false }));
+          setStep('result');
+        } catch (err) {
+          setError(toFriendly(err));
+          setPreview(null);
+          setStep('auth');
+        }
+        return;
+      }
       setStep('review');
     } catch (err) {
       setError(toFriendly(err));
@@ -123,7 +142,7 @@ export function PullDialog({ repoId, onClose, onDone }: Props) {
           Cancel
         </button>
         <button className="btn primary" onClick={fetchAndReview} disabled={!auth.input || step === 'fetching'}>
-          Fetch &amp; review →
+          {direct ? '⬇ Pull' : <>Fetch &amp; review →</>}
         </button>
       </>
     ) : (
@@ -189,7 +208,9 @@ export function PullDialog({ repoId, onClose, onDone }: Props) {
               onChange={setAuth}
             />
           )}
-          <div className="pl-safe">🛡 Your files stay untouched until you confirm the reviewed changes.</div>
+          <div className="pl-safe">
+            {direct ? '🛡 Fetches and updates your branch in one step; it stops for review only if the security scan flags something.' : '🛡 Your files stay untouched until you confirm the reviewed changes.'}
+          </div>
         </div>
       )}
 

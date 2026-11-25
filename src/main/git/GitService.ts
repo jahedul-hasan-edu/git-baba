@@ -193,7 +193,17 @@ export class GitService {
     const out = await this.gitOut(['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all'], {
       env: { GIT_OPTIONAL_LOCKS: '0' },
     });
-    return { ...parseStatusV2(out), operation: await this.operationInProgress() };
+    const [operation, lastFetchAt] = await Promise.all([this.operationInProgress(), this.lastFetchAt()]);
+    return { ...parseStatusV2(out), operation, lastFetchAt };
+  }
+
+  /** When this repository last fetched (FETCH_HEAD is rewritten by every fetch and pull); null if never. */
+  async lastFetchAt(): Promise<string | null> {
+    try {
+      return (await fs.stat(path.join(await this.gitDir(), 'FETCH_HEAD'))).mtime.toISOString();
+    } catch {
+      return null;
+    }
   }
 
   async operationInProgress(): Promise<InProgressOperation> {
