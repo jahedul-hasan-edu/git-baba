@@ -221,10 +221,10 @@ export function RepoSwitcher() {
     if (el && ctxMenu) fitMenu(el, ctxMenu.x, ctxMenu.y);
   }, [ctxMenu]);
 
-  // Ctrl/Cmd + B opens the repository list (it used to toggle the sidebar).
+  // Ctrl/Cmd + P opens the repository list (Ctrl+B is the branch picker).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'b') return;
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'p') return;
       const t = e.target as HTMLElement | null;
       if (t && t !== searchRef.current && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       e.preventDefault();
@@ -370,7 +370,7 @@ export function RepoSwitcher() {
             onClick={() => (open && anchor?.mode === 'replace' ? close() : show())}
             aria-haspopup="listbox"
             aria-expanded={open}
-            title={`${current ? `${current.name} — switch repository` : 'Choose a repository'} (Ctrl+B)`}
+            title={`${current ? `${current.name} — switch repository` : 'Choose a repository'} (Ctrl+P)`}
           >
             <span className="rs-logo">
               {current ? repoIcon(current, 22) : <span className="rs-local">🗂</span>}

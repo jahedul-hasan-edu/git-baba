@@ -1086,6 +1086,7 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
       const { repo, git } = ctx.git(p.repoId);
       const message = asString(p.message, 'Commit message', { max: 20_000 });
       const signing = asEnum(p.signing, 'signing', ['none', 'gpg', 'ssh', 'x509'] as const);
+      const amend = p.amend === true;
       await guardAccount(repo, git, 'commit');
       const asAccount = p.authorAccount === true ? await accountAuthor(repo, git) : null;
       if (p.authorAccount === true && !asAccount) throw new AppError({ code: 'changed-since-review', title: 'Account Changed', message: 'The active account changed after you reviewed the commit. Review it again.' });
@@ -1095,9 +1096,16 @@ export function createHandlers(ctx: AppContext, getWindow: () => BrowserWindow |
         if (!identity.name || !identity.email) {
           throw new AppError({ code: 'identity-missing', title: 'Git Identity Not Configured', message: 'Set your name and email before committing.', actions: ['set-identity'] });
         }
+        if (amend) {
+          // Amending rewrites the last commit: only while it exists locally only.
+          if (!review.headOid) throw new AppError({ code: 'no-commits', title: 'No Commit to Amend', message: 'Make a first commit, then you can amend it.' });
+          if (await git.isOnRemote(review.headOid)) {
+            throw new AppError({ code: 'already-pushed', title: 'Last Commit Already Pushed', message: 'The last commit is already on the remote. Amending it would rewrite shared history — make a new commit instead.' });
+          }
+        }
         try {
-          const commit = await git.commit(message, signing, asAccount ? { author: { name: asAccount.name, email: asAccount.email } } : {});
-          ctx.recordOperation(repo, 'Commit', 'SUCCESS', `${commit.shortHash} "${commit.subject}" (${review.fileCount} file(s), ${signing === 'none' ? 'unsigned' : `${signing} signed`})`);
+          const commit = await git.commit(message, signing, { amend, ...(asAccount ? { author: { name: asAccount.name, email: asAccount.email } } : {}) });
+          ctx.recordOperation(repo, amend ? 'Amend commit' : 'Commit', 'SUCCESS', `${commit.shortHash} "${commit.subject}" (${review.fileCount} file(s), ${signing === 'none' ? 'unsigned' : `${signing} signed`})`);
           return commit;
         } catch (err) {
           ctx.recordOperation(repo, 'Commit', 'FAILED', `${review.fileCount} file(s)`);

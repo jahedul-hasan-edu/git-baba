@@ -329,7 +329,10 @@ export function GitHistoryPage({ workspace }: Props = {}) {
   const [mainRef, setMainRef] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; commit: GraphCommit } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // In the Changes workspace the right panel (working changes / commit details) is pinned: always a sidebar, never hidden.
+  const pinned = !!ws;
   const [placement, setPlacement] = useState<'sidebar' | 'modal'>(() => {
+    if (pinned) return 'sidebar';
     try {
       return localStorage.getItem('gb.history.placement') === 'modal' ? 'modal' : 'sidebar';
     } catch {
@@ -339,14 +342,16 @@ export function GitHistoryPage({ workspace }: Props = {}) {
   const [paneW, setPaneW] = useState<number>(() => {
     try {
       // The workspace keeps the graph wider by default: the rail already takes room on the left.
-      return Number(localStorage.getItem(ws ? 'gb.ws.paneW' : 'gb.history.paneW')) || (ws ? 40 : 54);
+      const saved = Number(localStorage.getItem(ws ? 'gb.ws.paneW' : 'gb.history.paneW')) || (ws ? 36 : 54);
+      // A width saved before the Changes panel's narrower range still lands inside it.
+      return ws ? Math.max(30, Math.min(42, saved)) : saved;
     } catch {
       return 54;
     }
   });
   const [modalOpen, setModalOpen] = useState(false);
-  /** The right-hand sidebar starts hidden; selecting working changes or a commit opens it. */
-  const [sideOpen, setSideOpen] = useState(false);
+  /** The right-hand sidebar starts hidden (pinned open in the workspace); selecting working changes or a commit opens it. */
+  const [sideOpen, setSideOpen] = useState(pinned);
   const [switching, setSwitching] = useState<{ target: string; kind: 'local' | 'remote' } | null>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const [head, setHead] = useState<{ oid: string | null; dirty: number; branch: string | null; detached: boolean }>({ oid: null, dirty: 0, branch: null, detached: false });
@@ -589,8 +594,8 @@ export function GitHistoryPage({ workspace }: Props = {}) {
       toast(`Nothing to commit on ${ws?.status?.branch ?? 'this branch'}`, 'info');
       return;
     }
-    // Clicking the active working-changes pill again hides the panel.
-    if (wip && (placement === 'sidebar' ? sideOpen : modalOpen)) {
+    // Clicking the active working-changes pill again hides the panel (except when it is pinned).
+    if (!pinned && wip && (placement === 'sidebar' ? sideOpen : modalOpen)) {
       setSideOpen(false);
       setModalOpen(false);
       return;
@@ -725,17 +730,17 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     />
   );
 
-  // Picking a graph view puts the working changes away (the ✎ pill goes quiet) until it is opened again.
+  // Picking a graph view closes an open file diff; the pinned right panel stays where it is.
   const pickGraph = (v: 'lanes' | 'explorer') => {
     window.dispatchEvent(new Event(CLOSE_DOCK_EVENT));
     setGraphView(v);
-    if (ws && wip) {
+    if (!pinned && ws && wip) {
       setWip(false);
       setSideOpen(false);
       setModalOpen(false);
     }
   };
-  const showSide = placement === 'sidebar' && sideOpen;
+  const showSide = placement === 'sidebar' && (sideOpen || pinned);
   const panelOpen = placement === 'sidebar' ? sideOpen : modalOpen;
   const pane = (
     <>
@@ -1008,6 +1013,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
             ⟿ Explorer
           </button>
         </div>
+        {!pinned && (
         <div className="seg" title="Where commit details open">
           {(
             [
@@ -1040,6 +1046,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
             </button>
           ))}
         </div>
+        )}
       </div>
       {actions.undoBar}
       {studio && <CompareStudio repoId={repoId} initialSources={selected && !wip ? [selected] : []} initialTarget={refs?.current ?? null} onClose={() => setStudio(false)} />}
@@ -1260,12 +1267,14 @@ export function GitHistoryPage({ workspace }: Props = {}) {
             <div
               className="hist-resizer"
               title="Drag to resize · double-click to reset"
-              onDoubleClick={() => setPaneW(ws ? 40 : 54)}
+              onDoubleClick={() => setPaneW(ws ? 36 : 54)}
               onMouseDown={(e) => {
                 e.preventDefault();
                 const box = splitRef.current?.getBoundingClientRect();
                 if (!box) return;
-                const move = (ev: MouseEvent) => setPaneW(Math.max(28, Math.min(72, ((box.right - ev.clientX) / box.width) * 100)));
+                // The Changes panel resizes a little (30–42% of the width); other views keep the wide range.
+                const [lo, hi] = ws ? [30, 42] : [28, 72];
+                const move = (ev: MouseEvent) => setPaneW(Math.max(lo, Math.min(hi, ((box.right - ev.clientX) / box.width) * 100)));
                 const up = () => {
                   window.removeEventListener('mousemove', move);
                   window.removeEventListener('mouseup', up);

@@ -1,26 +1,28 @@
 import { CLOSE_DOCK_EVENT } from '../services/dock';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { FileChange, FileDiff, FriendlyError, RepoStatus } from '../../shared/types';
+import type { ChangeKind, FileChange, FileDiff, FriendlyError, RepoStatus } from '../../shared/types';
 import { ErrorPanel } from '../components/ErrorPanel';
-import { KindIcon, fileKey } from '../components/FileList';
+import { fileKey } from '../components/FileList';
 import { Spinner } from '../components/Modal';
+import { fitMenu } from '../components/menuFit';
 import { CommitDialog } from '../dialogs/CommitDialog';
 import { ConfirmDialog } from '../dialogs/ConfirmDialog';
 import { StagePickDialog } from '../dialogs/StagePickDialog';
 import { call } from '../services/api';
 import { useApp } from '../state/AppState';
-import { CommitComposer } from './changes/CommitComposer';
+import { isPublished } from '../../shared/publish';
+import { CommitComposer, type CommitAction } from './changes/CommitComposer';
 import { CleanSlate } from './changes/CleanSlate';
+import { EmptyChanges } from './changes/EmptyChanges';
 import { HunkDiff, type PartialAction } from './changes/HunkDiff';
-import { fileIcon } from './history/CommitFilesExplorer';
 
 interface Props {
   status: RepoStatus | null;
   reload: () => Promise<void>;
   error: FriendlyError | null;
   /**
-   * Inside the Changes workspace: only the file lanes and the composer render here; a picked
+   * Inside the Changes workspace: only the file list and the composer render here; a picked
    * file's diff opens in `diffHost` (over the graph), and `clean` replaces the empty screen.
    */
   docked?: { diffHost: HTMLElement | null; clean: ReactNode };
@@ -28,16 +30,28 @@ interface Props {
   tree?: boolean;
 }
 
-type LaneId = 'conflicted' | 'changes' | 'staged';
-const DRAG_MIME = 'application/x-gitbaba-files';
-const GROUP_KEY = 'gb.changes.grouped';
+type TabId = 'changes' | 'staged';
+const VIEW_KEY = 'gb.changes.grouped';
 
 const dirOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 const baseOf = (p: string) => p.slice(p.lastIndexOf('/') + 1);
 
+/** One letter per kind of change, coloured like the rest of the app. */
+const KIND: Record<ChangeKind, [string, string, string]> = {
+  modified: ['M', 'mod', 'Modified'],
+  added: ['A', 'add', 'Added'],
+  deleted: ['D', 'del', 'Deleted'],
+  renamed: ['R', 'ren', 'Renamed'],
+  copied: ['C', 'ren', 'Copied'],
+  typechange: ['T', 'mod', 'Type changed'],
+  untracked: ['U', 'add', 'New file (untracked)'],
+  conflicted: ['!', 'del', 'Conflict'],
+};
+
 export function ChangesPage({ status, reload, error, docked, tree }: Props) {
   const { activeRepo, showError, bump, toast, setRepoTab } = useApp();
   const repoId = activeRepo!.id;
+  const [tab, setTab] = useState<TabId>('changes');
   const [selected, setSelected] = useState<FileChange | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
@@ -45,40 +59,41 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
   const [diffLoading, setDiffLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [commitOpen, setCommitOpen] = useState(false);
+  const [committing, setCommitting] = useState(false);
   const [discard, setDiscard] = useState<string[] | null>(null);
   const [discardLines, setDiscardLines] = useState<{ path: string; selection: { hunk: number; lines?: number[] }[]; count: number } | null>(null);
   const [stageThenCommit, setStageThenCommit] = useState(false);
   const [filter, setFilter] = useState('');
-  const [grouped, setGrouped] = useState(() => {
+  const [treeView, setTreeView] = useState(() => {
     if (tree) return true;
     try {
-      return localStorage.getItem(GROUP_KEY) !== 'flat';
+      return localStorage.getItem(VIEW_KEY) === 'grouped';
     } catch {
-      return true;
+      return false;
     }
   });
-  const [collapsed, setCollapsed] = useState<Set<LaneId>>(new Set());
   const [foldedDirs, setFoldedDirs] = useState<Set<string>>(new Set());
-  const [dropLane, setDropLane] = useState<LaneId | null>(null);
   const [busy, setBusy] = useState(false);
   const [stats, setStats] = useState<{ staged: Record<string, [number, number]>; unstaged: Record<string, [number, number]> }>({ staged: {}, unstaged: {} });
   const [flash, setFlash] = useState<Set<string>>(new Set());
+  const [menu, setMenu] = useState<{ f: FileChange; x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
-      localStorage.setItem(GROUP_KEY, grouped ? 'grouped' : 'flat');
+      localStorage.setItem(VIEW_KEY, treeView ? 'grouped' : 'flat');
     } catch {
       /* convenience only */
     }
-  }, [grouped]);
+  }, [treeView]);
 
   useEffect(() => {
     if (!status) return;
     call('git:changeStats', { repoId }).then(setStats).catch(() => undefined);
   }, [status, repoId]);
 
-  // Keep the selection valid when status changes (a staged file keeps focus as it moves lanes).
+  // Keep the selection valid when status changes (a staged file keeps focus as it moves tabs).
   useEffect(() => {
     if (!status || !selected) return;
     const all = [...status.conflicted, ...status.staged, ...status.unstaged, ...status.untracked];
@@ -124,17 +139,28 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
     bump();
   };
 
-  const lanes = useMemo(() => {
-    if (!status) return [];
-    const q = filter.trim().toLowerCase();
-    const f = (list: FileChange[]) => (q ? list.filter((x) => x.path.toLowerCase().includes(q)) : list);
-    const out: { id: LaneId; title: string; files: FileChange[]; total: number }[] = [];
-    if (status.conflicted.length) out.push({ id: 'conflicted', title: 'Conflicts', files: f(status.conflicted), total: status.conflicted.length });
-    out.push({ id: 'changes', title: 'Changes', files: f([...status.unstaged, ...status.untracked]), total: status.unstaged.length + status.untracked.length });
-    out.push({ id: 'staged', title: 'Staged', files: f(status.staged), total: status.staged.length });
-    return out;
-  }, [status, filter]);
-  const flat = useMemo(() => lanes.flatMap((l) => (collapsed.has(l.id) ? [] : l.files)), [lanes, collapsed]);
+  const q = filter.trim().toLowerCase();
+  const changesAll = useMemo(() => (status ? [...status.conflicted, ...status.unstaged, ...status.untracked] : []), [status]);
+  const stagedAll = useMemo(() => status?.staged ?? [], [status]);
+  const list = useMemo(() => {
+    const src = tab === 'changes' ? changesAll : stagedAll;
+    return q ? src.filter((x) => x.path.toLowerCase().includes(q)) : src;
+  }, [tab, changesAll, stagedAll, q]);
+
+  // An empty tab gives way to the other one (staging everything lands you on Staged, unstaging on Changes).
+  // Only when a tab *becomes* empty — clicking an empty tab yourself stays there.
+  const prevCounts = useRef<{ changes: number; staged: number } | null>(null);
+  useEffect(() => {
+    if (!status) return;
+    const prev = prevCounts.current;
+    prevCounts.current = { changes: changesAll.length, staged: stagedAll.length };
+    if (!prev) return;
+    if (tab === 'changes' && prev.changes > 0 && changesAll.length === 0 && stagedAll.length > 0) setTab('staged');
+    else if (tab === 'staged' && prev.staged > 0 && stagedAll.length === 0 && changesAll.length > 0) setTab('changes');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, changesAll.length, stagedAll.length]);
+  // Switching tabs clears the ticked files.
+  useEffect(() => setPicked(new Set()), [tab]);
 
   // Docked: picking Lanes / Explorer closes the file diff.
   useEffect(() => {
@@ -159,6 +185,22 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
     return () => window.removeEventListener('keydown', on);
   }, [isDocked, selected]);
 
+  // Right-click menu on a file.
+  useLayoutEffect(() => {
+    if (menu && menuRef.current) fitMenu(menuRef.current, menu.x, menu.y);
+  }, [menu]);
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: MouseEvent) => !menuRef.current?.contains(e.target as Node) && setMenu(null);
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(null);
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', key);
+    };
+  }, [menu]);
+
   if (error) return <div className="content"><ErrorPanel error={error} /></div>;
   if (!status) return <div className="content"><Spinner label="Reading repository status…" /></div>;
 
@@ -166,87 +208,66 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
   const total = status.staged.length + unstagedAll.length + status.conflicted.length;
   const nothing = total === 0;
   // Nothing to commit: a full-width overview instead of an empty two-pane layout.
-  if (nothing) return docked ? <div className="ws-clean">{docked.clean}</div> : <div className="content flush"><CleanSlate repoId={repoId} status={status} /></div>;
+  if (nothing) return docked ? <EmptyChanges repoId={repoId} status={status} /> :<div className="content flush"><CleanSlate repoId={repoId} status={status} /></div>;
   const statOf = (f: FileChange) => (f.area === 'staged' ? stats.staged[f.path] : stats.unstaged[f.path]);
-  const sum = (rec: Record<string, [number, number]>) => Object.values(rec).reduce((a, [x, y]) => ({ add: a.add + x, del: a.del + y }), { add: 0, del: 0 });
-  const stagedStats = sum(stats.staged);
-  const maxChange = Math.max(1, ...Object.values(stats.unstaged).map(([a, d]) => a + d), ...Object.values(stats.staged).map(([a, d]) => a + d));
-  const progress = total ? status.staged.length / (status.staged.length + unstagedAll.length) || 0 : 0;
+  const progress = total ? status.staged.length / total : 0;
 
-  const pickedFiles = flat.filter((f) => picked.has(fileKey(f)));
-  const pickedStageable = pickedFiles.filter((f) => f.area === 'unstaged' || f.area === 'untracked').map((f) => f.path);
-  const pickedUnstageable = pickedFiles.filter((f) => f.area === 'staged').map((f) => f.path);
+  const pickedFiles = list.filter((f) => picked.has(fileKey(f)));
+  const allPicked = list.length > 0 && pickedFiles.length === list.length;
+  const stageable = (fs: FileChange[]) => fs.filter((f) => f.area === 'unstaged' || f.area === 'untracked').map((f) => f.path);
 
   const stage = (paths: string[]) => paths.length && act(() => call('git:stage', { repoId, paths }), paths);
   const unstage = (paths: string[]) => paths.length && act(() => call('git:unstage', { repoId, paths }), paths);
   const toggleStage = (f: FileChange) => (f.area === 'staged' ? unstage([f.path]) : f.area === 'conflicted' ? setRepoTab('conflicts') : stage([f.path]));
+  const togglePick = (k: string) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
 
   const clickRow = (f: FileChange, e: React.MouseEvent) => {
     const k = fileKey(f);
     if (e.ctrlKey || e.metaKey) {
-      setPicked((p) => {
-        const n = new Set(p);
-        if (n.has(k)) n.delete(k);
-        else n.add(k);
-        return n;
-      });
+      togglePick(k);
       setAnchor(k);
       return;
     }
     if (e.shiftKey && anchor) {
-      const a = flat.findIndex((x) => fileKey(x) === anchor);
-      const b = flat.findIndex((x) => fileKey(x) === k);
-      if (a !== -1 && b !== -1) setPicked(new Set(flat.slice(Math.min(a, b), Math.max(a, b) + 1).map(fileKey)));
+      const a = list.findIndex((x) => fileKey(x) === anchor);
+      const b = list.findIndex((x) => fileKey(x) === k);
+      if (a !== -1 && b !== -1) setPicked(new Set(list.slice(Math.min(a, b), Math.max(a, b) + 1).map(fileKey)));
       return;
     }
-    setPicked(new Set([k]));
     setAnchor(k);
     setSelected(f);
   };
 
   const onBoardKey = (e: React.KeyboardEvent) => {
     if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
-    const i = selected ? flat.findIndex((f) => fileKey(f) === fileKey(selected)) : -1;
+    const i = selected ? list.findIndex((f) => fileKey(f) === fileKey(selected)) : -1;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      const next = flat[Math.max(0, Math.min(flat.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+      const next = list[Math.max(0, Math.min(list.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
       if (next) {
         setSelected(next);
-        setPicked(new Set([fileKey(next)]));
         setAnchor(fileKey(next));
         boardRef.current?.querySelector(`[data-key="${CSS.escape(fileKey(next))}"]`)?.scrollIntoView({ block: 'nearest' });
       }
-    } else if (e.key === ' ' && selected) {
+    } else if (e.key === ' ' && (selected || pickedFiles.length)) {
       e.preventDefault();
       if (pickedFiles.length > 1) {
-        void stage(pickedStageable);
-        void unstage(pickedUnstageable);
-      } else void toggleStage(selected);
-    } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected && selected.area !== 'staged' && selected.area !== 'conflicted') {
+        if (tab === 'changes') void stage(stageable(pickedFiles));
+        else void unstage(pickedFiles.map((f) => f.path));
+      } else if (selected) void toggleStage(selected);
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && tab === 'changes' && (pickedFiles.length || (selected && selected.area !== 'staged' && selected.area !== 'conflicted'))) {
       e.preventDefault();
-      setDiscard(pickedFiles.length > 1 ? pickedFiles.filter((f) => f.area !== 'staged').map((f) => f.path) : [selected.path]);
+      setDiscard(pickedFiles.length ? stageable(pickedFiles) : [selected!.path]);
     } else if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
       e.preventDefault();
-      setPicked(new Set(flat.map(fileKey)));
+      setPicked(new Set(list.map(fileKey)));
     } else if (e.key === 'Escape') setPicked(new Set());
-  };
-
-  const dragStart = (f: FileChange, e: React.DragEvent) => {
-    const keys = picked.has(fileKey(f)) ? pickedFiles : [f];
-    e.dataTransfer.setData(DRAG_MIME, JSON.stringify(keys.map((x) => ({ path: x.path, area: x.area }))));
-    e.dataTransfer.effectAllowed = 'move';
-  };
-  const dropOn = (lane: LaneId, e: React.DragEvent) => {
-    e.preventDefault();
-    setDropLane(null);
-    let items: { path: string; area: FileChange['area'] }[] = [];
-    try {
-      items = JSON.parse(e.dataTransfer.getData(DRAG_MIME) || '[]');
-    } catch {
-      return;
-    }
-    if (lane === 'staged') void stage(items.filter((x) => x.area === 'unstaged' || x.area === 'untracked').map((x) => x.path));
-    if (lane === 'changes') void unstage(items.filter((x) => x.area === 'staged').map((x) => x.path));
   };
 
   const applyPartial = (action: PartialAction, selection: { hunk: number; lines?: number[] }[]) => {
@@ -266,79 +287,139 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
     void (action === 'stage' ? stage([selected.path]) : unstage([selected.path]));
   };
 
-  const row = (f: FileChange, lane: LaneId) => {
+  // ------------------------------------------------------------------ commit
+
+  const hasUpstream = isPublished(status);
+  const amendAllowed = !!status.headOid && !(hasUpstream && status.ahead === 0);
+  const amendHint = !status.headOid ? 'No commit yet' : amendAllowed ? 'Add to the last commit (not pushed yet)' : 'The last commit is already pushed';
+
+  /** Commit straight away (the review dialog only when asked for, or when the author still has to be set). */
+  const commit = async (action: CommitAction) => {
+    if (action === 'review') {
+      if (status.staged.length === 0) setStageThenCommit(true);
+      else setCommitOpen(true);
+      return;
+    }
+    setCommitting(true);
+    try {
+      if (status.staged.length === 0) await call('git:stage', { repoId, paths: unstagedAll });
+      const p = await call('commit:prepare', { repoId });
+      const a = p.accountAuthor;
+      const mine = !!a && [p.identity.name, p.identity.email].some((v) => (v ?? '').toLowerCase().includes(a.login.toLowerCase()));
+      const asAccount = !!a && !mine;
+      if ((!p.identity.name || !p.identity.email) && !asAccount) {
+        // No author yet: the review dialog asks for a name and email.
+        setCommitOpen(true);
+        return;
+      }
+      const c = await call('commit:execute', { repoId, confirmationId: p.confirmationId, message, signing: p.defaultSigning, authorAccount: asAccount, amend: action === 'amend' });
+      try {
+        localStorage.removeItem(`gb.draft.${repoId}`);
+      } catch {
+        /* drafts are a convenience */
+      }
+      setMessage('');
+      toast(`${action === 'amend' ? 'Amended' : 'Committed'} ${c.shortHash}: ${c.subject}`);
+      if (action === 'commit-push') window.dispatchEvent(new CustomEvent('gb:repo-dialog', { detail: 'push' }));
+    } catch (err) {
+      showError(err);
+    } finally {
+      setCommitting(false);
+      await reload();
+      bump();
+    }
+  };
+
+  const blockedReason = status.conflicted.length
+    ? 'Resolve the conflicts before committing.'
+    : !message.trim()
+      ? 'Write a summary to commit.'
+      : status.staged.length === 0 && unstagedAll.length === 0
+        ? 'Nothing to commit.'
+        : null;
+  const primaryLabel = status.staged.length === 0 ? `Stage all & commit (${unstagedAll.length})` : `Commit staged (${status.staged.length})`;
+  const stagedForComposer = status.staged.map((f) => ({ path: f.path, kind: f.kind, add: stats.staged[f.path]?.[0] ?? 0, del: stats.staged[f.path]?.[1] ?? 0 }));
+
+  // ------------------------------------------------------------------ rows
+
+  const row = (f: FileChange, depth = 0) => {
     const k = fileKey(f);
     const st = statOf(f);
     const isSel = selected && fileKey(selected) === k;
+    const [letter, tone, kindTitle] = KIND[f.area === 'conflicted' ? 'conflicted' : f.kind] ?? KIND.modified;
+    const dir = dirOf(f.path);
     return (
       <div
         key={k}
         data-key={k}
-        className={`cb-row ${isSel ? 'focus' : ''} ${picked.has(k) ? 'picked' : ''} ${flash.has(f.path) ? 'flash' : ''}`}
+        className={`chg-row ${isSel ? 'focus' : ''} ${picked.has(k) ? 'picked' : ''} ${flash.has(f.path) ? 'flash' : ''}`}
+        style={depth ? { paddingLeft: 10 + depth * 16 } : undefined}
         onClick={(e) => clickRow(f, e)}
-        draggable={lane !== 'conflicted'}
-        onDragStart={(e) => dragStart(f, e)}
+        onDoubleClick={() => void toggleStage(f)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenu({ f, x: e.clientX, y: e.clientY });
+        }}
         title={f.origPath ? `${f.origPath} → ${f.path}` : f.path}
       >
-        <button
-          className={`cb-toggle ${f.area === 'staged' ? 'on' : ''}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            void toggleStage(f);
-          }}
-          title={f.area === 'staged' ? 'Unstage (Space)' : f.area === 'conflicted' ? 'Resolve in Conflicts' : 'Stage (Space)'}
-          disabled={busy}
-        >
-          {f.area === 'staged' ? '✓' : f.area === 'conflicted' ? '!' : ''}
-        </button>
-        <KindIcon kind={f.kind} />
-        <span className="cb-ico">{fileIcon(f.path)}</span>
-        <span className="cb-name ellipsis">
-          {baseOf(f.path)}
-          {!grouped && dirOf(f.path) && <span className="cb-dir"> {dirOf(f.path)}</span>}
+        <input
+          type="checkbox"
+          className="chg-check"
+          checked={picked.has(k)}
+          onClick={(e) => e.stopPropagation()}
+          onChange={() => togglePick(k)}
+          aria-label={`Select ${f.path}`}
+        />
+        <span className={`chg-kind ${tone}`} title={kindTitle}>
+          {letter}
         </span>
-        {st && (
-          <span className="cb-stat">
+        <span className="chg-path">
+          {!treeView && dir && <span className="chg-dir">{dir}/</span>}
+          <span className="chg-file">{baseOf(f.path)}</span>
+        </span>
+        {st && (st[0] > 0 || st[1] > 0) && (
+          <span className="chg-stat">
             <span className="text-ok">+{st[0]}</span> <span className="text-danger">−{st[1]}</span>
-            <span className="fx-bar" style={{ width: Math.max(6, Math.round(((st[0] + st[1]) / maxChange) * 40)) }}>
-              <span className="fx-bar-add" style={{ width: `${st[0] + st[1] ? (st[0] / (st[0] + st[1])) * 100 : 0}%` }} />
-              <span className="fx-bar-del" style={{ width: `${st[0] + st[1] ? (st[1] / (st[0] + st[1])) * 100 : 0}%` }} />
-            </span>
           </span>
         )}
-        <span className="cb-actions" onClick={(e) => e.stopPropagation()}>
-          {lane === 'changes' && (
-            <button title={f.area === 'untracked' ? 'Delete this new file' : 'Discard changes'} onClick={() => setDiscard([f.path])}>
-              ↺
+        <span className="chg-acts" onClick={(e) => e.stopPropagation()}>
+          {f.area === 'conflicted' ? (
+            <button onClick={() => setRepoTab('conflicts')} title="Resolve in Conflicts">
+              ⚠
             </button>
+          ) : f.area === 'staged' ? (
+            <button onClick={() => void unstage([f.path])} disabled={busy} title="Unstage (Space)">
+              −
+            </button>
+          ) : (
+            <>
+              <button className="danger" onClick={() => setDiscard([f.path])} title={f.area === 'untracked' ? 'Delete this new file' : 'Discard changes'}>
+                ↺
+              </button>
+              <button onClick={() => void stage([f.path])} disabled={busy} title="Stage (Space)">
+                +
+              </button>
+            </>
           )}
-          <button title="Copy path" onClick={() => call('app:copyText', { text: f.path }).then(() => toast('Path copied')).catch(showError)}>
-            ⧉
-          </button>
-          <button title="Show in folder" onClick={() => call('graph:reveal', { repoId, path: f.path }).catch(showError)}>
-            📂
-          </button>
         </span>
       </div>
     );
   };
 
-  /**
-   * Folder tree: nested folders you can fold, with single-child chains joined ("src/renderer") so the
-   * tree stays shallow. Files sit under their folder, indented by depth with a faint guide line.
-   */
-  const laneBody = (lane: { id: LaneId; files: FileChange[] }) => {
-    if (!grouped) return lane.files.map((f) => row(f, lane.id));
+  /** Folder tree: folders fold, single-child chains are joined ("src/renderer"), counts per folder. */
+  const treeBody = (files: FileChange[]) => {
     type Node = { name: string; path: string; dirs: Map<string, Node>; files: FileChange[] };
     const root: Node = { name: '', path: '', dirs: new Map(), files: [] };
-    for (const f of [...lane.files].sort((x, y) => x.path.localeCompare(y.path))) {
+    for (const f of [...files].sort((x, y) => x.path.localeCompare(y.path))) {
       let n = root;
-      const parts = f.path.split('/');
-      parts.slice(0, -1).forEach((part) => {
-        const path = n.path ? `${n.path}/${part}` : part;
-        if (!n.dirs.has(part)) n.dirs.set(part, { name: part, path, dirs: new Map(), files: [] });
-        n = n.dirs.get(part)!;
-      });
+      f.path
+        .split('/')
+        .slice(0, -1)
+        .forEach((part) => {
+          const path = n.path ? `${n.path}/${part}` : part;
+          if (!n.dirs.has(part)) n.dirs.set(part, { name: part, path, dirs: new Map(), files: [] });
+          n = n.dirs.get(part)!;
+        });
       n.files.push(f);
     }
     const count = (n: Node): number => n.files.length + [...n.dirs.values()].reduce((a, d) => a + count(d), 0);
@@ -351,29 +432,23 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
           d = [...d.dirs.values()][0];
           label += `/${d.name}`;
         }
-        const key = `${lane.id}:${d.path}`;
+        const key = `${tab}:${d.path}`;
         const shut = foldedDirs.has(key);
         out.push(
-          <div key={`d:${key}`} className="cb-tree-dir" style={{ paddingLeft: 6 + depth * 14 }} onClick={() => toggleDir(key)} title={d.path}>
-            <span className={`cb-tree-caret ${shut ? 'shut' : ''}`}>▾</span>
-            <span aria-hidden>{shut ? '📁' : '📂'}</span>
-            <span className="ellipsis grow">{label}</span>
-            <span className="cb-count">{count(d)}</span>
+          <div key={`d:${key}`} className="chg-dir-row" style={{ paddingLeft: 10 + depth * 16 }} onClick={() => toggleDir(key)} title={d.path}>
+            <span className={`chg-caret ${shut ? 'shut' : ''}`}>▾</span>
+            <span className="chg-folder" aria-hidden>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round">
+                <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2h8.4A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" />
+              </svg>
+            </span>
+            <span className="chg-dir-name">{label}</span>
+            <span className="chg-n">{count(d)}</span>
           </div>,
         );
-        if (!shut)
-          out.push(
-            <div key={`g:${key}`} className="cb-tree-kids" style={{ ['--guide' as string]: `${13 + depth * 14}px` }}>
-              {render(d, depth + 1)}
-            </div>,
-          );
+        if (!shut) out.push(...render(d, depth + 1));
       }
-      for (const f of n.files)
-        out.push(
-          <div key={`f:${fileKey(f)}`} className="cb-tree-file" style={{ paddingLeft: depth * 14 }}>
-            {row(f, lane.id)}
-          </div>,
-        );
+      for (const f of n.files) out.push(row(f, depth));
       return out;
     };
     return render(root, 0);
@@ -386,151 +461,131 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
       return n;
     });
 
-  const blockedReason = status.conflicted.length
-    ? 'Resolve the conflicts before committing.'
-    : !message.trim()
-      ? 'Write a summary to commit.'
-      : status.staged.length === 0 && unstagedAll.length === 0
-        ? 'Nothing to commit.'
-        : null;
-  const primaryLabel =
-    status.staged.length === 0 && unstagedAll.length > 0 ? `Stage all ${unstagedAll.length} & review commit…` : `Review & commit ${status.staged.length} file${status.staged.length === 1 ? '' : 's'}`;
+  const changesCount = changesAll.length;
+  const stagedCount = stagedAll.length;
 
   return (
     <div className={`content flush ${docked ? 'ws-dock-wrap' : ''}`}>
       <div className={`split cb-split ${docked ? 'ws-dock' : ''}`}>
-        <div className="left cb-left" ref={boardRef} tabIndex={0} onKeyDown={onBoardKey}>
-          <div className="cb-head">
-            <svg className="cb-ring" viewBox="0 0 36 36" width={36} height={36} aria-hidden>
+        <div className="left cb-left chg" ref={boardRef} tabIndex={0} onKeyDown={onBoardKey}>
+          <div className="chg-head">
+            <svg className="cb-ring" viewBox="0 0 36 36" width={32} height={32} aria-hidden>
               <circle cx={18} cy={18} r={15} className="cb-ring-track" />
               <circle cx={18} cy={18} r={15} className="cb-ring-fill" strokeDasharray={`${progress * 94.25} 94.25`} transform="rotate(-90 18 18)" />
             </svg>
             <div className="grow">
-              <div className="cb-title">{nothing ? 'Working tree clean' : `${status.staged.length} of ${total} staged`}</div>
-              <div className="small muted">
+              <div className="chg-title">
+                {status.staged.length} of {total} staged
+              </div>
+              <div className="chg-branch">
                 ⎇ {status.branch ?? 'detached HEAD'}
                 {status.ahead ? ` · ↑${status.ahead}` : ''}
                 {status.behind ? ` · ↓${status.behind}` : ''}
               </div>
             </div>
-            <div className="seg">
-              <button className={grouped ? 'on' : ''} onClick={() => setGrouped(true)} title="Folder tree">
-                🗂
+          </div>
+
+          <div className="chg-tabs" role="tablist">
+            <button role="tab" aria-selected={tab === 'changes'} className={tab === 'changes' ? 'on' : ''} onClick={() => setTab('changes')}>
+              Changes <span className="chg-tab-n">{changesCount}</span>
+            </button>
+            <button role="tab" aria-selected={tab === 'staged'} className={tab === 'staged' ? 'on' : ''} onClick={() => setTab('staged')}>
+              Staged <span className="chg-tab-n">{stagedCount}</span>
+            </button>
+          </div>
+
+          <div className="chg-filter">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="m20 20-4.2-4.2" />
+            </svg>
+            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter changed files" spellCheck={false} aria-label="Filter changed files" />
+          </div>
+
+          <div className="chg-bar">
+            <label className="chg-all">
+              <input
+                type="checkbox"
+                checked={allPicked}
+                ref={(el) => {
+                  if (el) el.indeterminate = pickedFiles.length > 0 && !allPicked;
+                }}
+                onChange={() => setPicked(allPicked ? new Set() : new Set(list.map(fileKey)))}
+                disabled={!list.length}
+              />
+              {pickedFiles.length ? `${pickedFiles.length} selected` : 'Select all'}
+            </label>
+            <span className="grow" />
+            <div className="chg-seg" role="group" aria-label="View">
+              <button className={!treeView ? 'on' : ''} onClick={() => setTreeView(false)} title="Paths">
+                ☰ Path
               </button>
-              <button className={!grouped ? 'on' : ''} onClick={() => setGrouped(false)} title="Flat list">
-                ☰
+              <button className={treeView ? 'on' : ''} onClick={() => setTreeView(true)} title="Folder tree">
+                ⊞ Tree
               </button>
             </div>
+            {tab === 'changes' ? (
+              <>
+                <button
+                  className="chg-btn"
+                  disabled={busy || (pickedFiles.length ? !stageable(pickedFiles).length : !unstagedAll.length)}
+                  onClick={() => (pickedFiles.length ? void stage(stageable(pickedFiles)) : act(() => call('git:stageAll', { repoId }), unstagedAll))}
+                >
+                  {pickedFiles.length ? 'Stage selected' : 'Stage all'}
+                </button>
+                <button
+                  className="chg-icon danger"
+                  disabled={pickedFiles.length ? !stageable(pickedFiles).length : !unstagedAll.length}
+                  onClick={() => setDiscard(pickedFiles.length ? stageable(pickedFiles) : unstagedAll)}
+                  title={pickedFiles.length ? 'Discard the selected changes' : 'Discard all unstaged changes'}
+                >
+                  ↺
+                </button>
+              </>
+            ) : (
+              <button
+                className="chg-btn"
+                disabled={busy || !stagedCount}
+                onClick={() => (pickedFiles.length ? void unstage(pickedFiles.map((f) => f.path)) : act(() => call('git:unstageAll', { repoId }), status.staged.map((f) => f.path)))}
+              >
+                {pickedFiles.length ? 'Unstage selected' : 'Unstage all'}
+              </button>
+            )}
           </div>
-          {!nothing && <input className="cb-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter changed files…" spellCheck={false} />}
 
-          <div className="cb-lanes">
-            {nothing && (
-              <div className="cb-clean">
-                <div className="cb-clean-ico">✓</div>
-                <div>Nothing to commit — your files match the last commit.</div>
+          {tab === 'staged' && stagedCount > 0 && (
+            <div className="chg-note">
+              {stagedCount} file{stagedCount === 1 ? '' : 's'} ready to commit
+            </div>
+          )}
+          {tab === 'changes' && status.conflicted.length > 0 && (
+            <button className="chg-conflicts" onClick={() => setRepoTab('conflicts')}>
+              ⚠ {status.conflicted.length} conflict{status.conflicted.length === 1 ? '' : 's'} to resolve <span className="grow" /> Resolve →
+            </button>
+          )}
+
+          <div className="chg-list">
+            {list.length === 0 && (
+              <div className="chg-empty">
+                {q ? `No file matches “${filter}”.` : tab === 'staged' ? 'Tip: press Space on a file in Changes to stage it.' : 'No unstaged changes.'}
               </div>
             )}
-            {!nothing &&
-              lanes.map((lane) => (
-                <div
-                  key={lane.id}
-                  className={`cb-lane ${lane.id} ${dropLane === lane.id ? 'drop' : ''}`}
-                  onDragOver={(e) => {
-                    if (!e.dataTransfer.types.includes(DRAG_MIME) || lane.id === 'conflicted') return;
-                    e.preventDefault();
-                    if (dropLane !== lane.id) setDropLane(lane.id);
-                  }}
-                  onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setDropLane(null)}
-                  onDrop={(e) => dropOn(lane.id, e)}
-                >
-                  <div className="cb-lane-head">
-                    <button
-                      className="cb-caret"
-                      onClick={() =>
-                        setCollapsed((c) => {
-                          const n = new Set(c);
-                          if (n.has(lane.id)) n.delete(lane.id);
-                          else n.add(lane.id);
-                          return n;
-                        })
-                      }
-                    >
-                      {collapsed.has(lane.id) ? '▸' : '▾'}
-                    </button>
-                    <span className="cb-lane-title">{lane.title}</span>
-                    <span className="cb-count">{lane.files.length !== lane.total ? `${lane.files.length}/${lane.total}` : lane.total}</span>
-                    <span className="spacer" />
-                    {lane.id === 'conflicted' && (
-                      <button className="btn sm" onClick={() => setRepoTab('conflicts')}>
-                        Resolve…
-                      </button>
-                    )}
-                    {lane.id === 'changes' && lane.total > 0 && (
-                      <>
-                        <button className="btn sm ghost danger" onClick={() => setDiscard(unstagedAll)} title="Discard all unstaged changes">
-                          ↺ all
-                        </button>
-                        <button className="btn sm" disabled={busy} onClick={() => act(() => call('git:stageAll', { repoId }), unstagedAll)}>
-                          Stage all ⤵
-                        </button>
-                      </>
-                    )}
-                    {lane.id === 'staged' && lane.total > 0 && (
-                      <button className="btn sm ghost" disabled={busy} onClick={() => act(() => call('git:unstageAll', { repoId }), status.staged.map((f) => f.path))}>
-                        ⤴ Unstage all
-                      </button>
-                    )}
-                  </div>
-                  {!collapsed.has(lane.id) && (
-                    <div className="cb-lane-body">
-                      {lane.files.length === 0 && <div className="cb-empty">{lane.id === 'staged' ? 'Drag files here, or press Space on a file, to stage it' : filter ? 'No match' : 'No unstaged changes'}</div>}
-                      {laneBody(lane)}
-                    </div>
-                  )}
-                </div>
-              ))}
+            {treeView ? treeBody(list) : list.map((f) => row(f))}
           </div>
 
-          {pickedFiles.length > 1 && (
-            <div className="cb-bulk">
-              <strong>{pickedFiles.length}</strong> selected
-              <span className="spacer" />
-              {pickedStageable.length > 0 && (
-                <button className="btn sm primary" disabled={busy} onClick={() => void stage(pickedStageable)}>
-                  Stage {pickedStageable.length}
-                </button>
-              )}
-              {pickedUnstageable.length > 0 && (
-                <button className="btn sm" disabled={busy} onClick={() => void unstage(pickedUnstageable)}>
-                  Unstage {pickedUnstageable.length}
-                </button>
-              )}
-              {pickedStageable.length > 0 && (
-                <button className="btn sm danger" onClick={() => setDiscard(pickedStageable)}>
-                  Discard
-                </button>
-              )}
-              <button className="btn sm ghost" onClick={() => setPicked(new Set())} title="Clear (Esc)">
-                ✕
-              </button>
-            </div>
-          )}
-
-          {!nothing && (
-            <CommitComposer
-              repoId={repoId}
-              message={message}
-              setMessage={setMessage}
-              stagedPaths={status.staged.map((f) => f.path)}
-              stagedStats={stagedStats}
-              branch={status.branch}
-              canCommit={!blockedReason}
-              primaryLabel={primaryLabel}
-              blockedReason={blockedReason}
-              onCommit={() => (status.staged.length === 0 ? setStageThenCommit(true) : setCommitOpen(true))}
-            />
-          )}
+          <CommitComposer
+            repoId={repoId}
+            message={message}
+            setMessage={setMessage}
+            staged={stagedForComposer}
+            canCommit={!blockedReason}
+            primaryLabel={primaryLabel}
+            blockedReason={blockedReason}
+            amendAllowed={amendAllowed}
+            amendHint={amendHint}
+            busy={committing}
+            onCommit={(a) => void commit(a)}
+          />
         </div>
         {docked ? (
           selected &&
@@ -585,6 +640,35 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
         )}
       </div>
 
+      {menu && (
+        <div ref={menuRef} className="ctx-menu" style={{ left: menu.x, top: menu.y }} onContextMenu={(e) => e.preventDefault()}>
+          {menu.f.area === 'conflicted' ? (
+            <div className="dropdown-item" onClick={() => (setMenu(null), setRepoTab('conflicts'))}>
+              <span className="ctx-ico">⚠</span> Resolve in Conflicts
+            </div>
+          ) : menu.f.area === 'staged' ? (
+            <div className="dropdown-item" onClick={() => (setMenu(null), void unstage([menu.f.path]))}>
+              <span className="ctx-ico">−</span> Unstage
+            </div>
+          ) : (
+            <>
+              <div className="dropdown-item" onClick={() => (setMenu(null), void stage([menu.f.path]))}>
+                <span className="ctx-ico">+</span> Stage
+              </div>
+              <div className="dropdown-item danger" onClick={() => (setMenu(null), setDiscard([menu.f.path]))}>
+                <span className="ctx-ico">↺</span> {menu.f.area === 'untracked' ? 'Delete new file…' : 'Discard changes…'}
+              </div>
+            </>
+          )}
+          <div className="dropdown-sep" />
+          <div className="dropdown-item" onClick={() => (setMenu(null), void call('app:copyText', { text: menu.f.path }).then(() => toast('Path copied')).catch(showError))}>
+            <span className="ctx-ico">⧉</span> Copy path
+          </div>
+          <div className="dropdown-item" onClick={() => (setMenu(null), void call('graph:reveal', { repoId, path: menu.f.path }).catch(showError))}>
+            <span className="ctx-ico">📂</span> Show in folder
+          </div>
+        </div>
+      )}
       {commitOpen && (
         <CommitDialog
           repoId={repoId}

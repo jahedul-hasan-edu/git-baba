@@ -8,6 +8,11 @@ import { isPublished } from '../../shared/publish';
 import { requestRailAction, type RailAction } from '../services/railActions';
 import { BranchPickerPanel, toPickerItems } from './BranchPicker';
 import { relTime } from './github/common';
+import { requestNewBranch } from '../pages/changes/CleanSlate';
+
+/** Opens the branch picker in the repository bar. */
+export const OPEN_BRANCH_PICKER = 'gb:open-branch-picker';
+export const requestBranchPicker = () => window.dispatchEvent(new Event(OPEN_BRANCH_PICKER));
 
 function DownIcon() {
   return (
@@ -62,7 +67,7 @@ function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, clo
  * checked against the remote in the background), and a Push button that shows what is waiting to go out.
  */
 export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, inOperation, disabled, onRefresh, onFetch, onPull, onPullReview, onPush }: Props) {
-  const { revision, repoTab, setRepoTab, bump, refreshRepos } = useApp();
+  const { revision, repoTab, setRepoTab, bump, refreshRepos, showError } = useApp();
   const [incoming, setIncoming] = useState<number | null>(null);
   const [lastCheck, setLastCheck] = useState<Date | null>(null);
   const [branchOpen, setBranchOpen] = useState(false);
@@ -96,6 +101,35 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
   useEffect(() => {
     setIncoming(null);
   }, [repoId]);
+
+  // Ctrl+B opens the branch picker (also on request: the empty Changes panel's "Switch branch");
+  // Ctrl+Shift+N starts a new branch from here; Ctrl+Shift+O opens the repository in VS Code.
+  useEffect(() => {
+    const open = () => !disabled && setBranchOpen(true);
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if (!e.shiftKey && k === 'b') {
+        e.preventDefault();
+        if (!disabled) setBranchOpen((o) => !o);
+      } else if (e.shiftKey && k === 'n') {
+        e.preventDefault();
+        if (repoTab !== 'changes') setRepoTab('changes');
+        requestNewBranch(st?.branch ?? undefined);
+      } else if (e.shiftKey && k === 'o') {
+        e.preventDefault();
+        void call('repo:openInEditor', { repoId }).catch(showError);
+      }
+    };
+    window.addEventListener(OPEN_BRANCH_PICKER, open);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener(OPEN_BRANCH_PICKER, open);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [disabled, repoId, repoTab, setRepoTab, st?.branch, showError]);
 
   // Re-render now and then so "fetched 3 minutes ago" stays current.
   const [, setTick] = useState(0);

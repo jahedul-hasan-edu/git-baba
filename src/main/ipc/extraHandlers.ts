@@ -65,6 +65,7 @@ export type ExtraChannels =
   | 'graph:blame'
   | 'code:fileHistory'
   | 'graph:reveal'
+  | 'repo:openInEditor'
   | 'graph:branchChanges'
   | 'graph:mergeForecast'
   | 'code:info'
@@ -397,6 +398,16 @@ export function createExtraHandlers(
       if (target.kind === 'item') return shell.showItemInFolder(target.full);
       const err = await shell.openPath(target.full);
       if (err) throw new AppError({ code: 'reveal-failed', title: 'Could Not Open the Folder', message: err });
+    },
+    'repo:openInEditor': async (payload) => {
+      const { repo } = ctx.git(asObject(payload).repoId);
+      // VS Code's own link (vscode://file/<folder>) opens the folder; nothing from the repository is run.
+      const folder = repo.path.replace(/\\/g, '/').replace(/^\/?/, '/');
+      try {
+        await shell.openExternal(`vscode://file${encodeURI(folder)}`);
+      } catch {
+        throw new AppError({ code: 'reveal-failed', title: 'VS Code Not Found', message: 'Install Visual Studio Code (it registers the vscode:// link), then try again.' });
+      }
     },
 
     // ---------------- Code browser ----------------

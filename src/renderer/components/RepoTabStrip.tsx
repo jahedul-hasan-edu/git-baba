@@ -184,7 +184,7 @@ export function RepoTabStrip() {
             const b = e.currentTarget.getBoundingClientRect();
             requestRepoPicker({ x: b.left - 8, y: b.bottom + 6, mode: 'new' });
           }}
-          title="Open another repository in a new tab (Ctrl+B)"
+          title="Open another repository in a new tab (Ctrl+P)"
           aria-label="Open repository in a new tab"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden>

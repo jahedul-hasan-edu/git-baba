@@ -279,7 +279,7 @@ export interface ApiMap {
   'git:fetch': { req: R & { auth: AuthInput }; res: { remote: string } };
 
   'commit:prepare': { req: R; res: CommitPreview };
-  'commit:execute': { req: R & { confirmationId: string; message: string; signing: SigningMethod; authorAccount?: boolean }; res: CommitInfo };
+  'commit:execute': { req: R & { confirmationId: string; message: string; signing: SigningMethod; authorAccount?: boolean; /** Rewrite the last (unpushed) commit instead of making a new one. */ amend?: boolean }; res: CommitInfo };
 
   'push:prepare': { req: R; res: PushPreview };
   'push:execute': { req: R & { confirmationId: string; auth: AuthInput }; res: { summary: string; authDescription: string; tokenRevoked: boolean | null } };
@@ -639,6 +639,8 @@ export interface ApiMap {
   'history:list': { req: void; res: HistoryEntry[] };
   'history:clear': { req: void; res: void };
   'shell:openExternal': { req: { url: string }; res: void };
+  /** Opens the repository folder in VS Code. */
+  'repo:openInEditor': { req: R; res: void };
 }
 
 export type AppMenuId = 'file' | 'view' | 'help';

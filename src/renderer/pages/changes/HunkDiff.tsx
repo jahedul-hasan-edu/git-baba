@@ -14,7 +14,7 @@ interface Props {
   onWhole: (action: PartialAction) => void;
 }
 
-const VIEW_KEY = 'gb.changes.diffView';
+const VIEW_KEY = 'gb.changes.diffLayout';
 
 /**
  * Working-tree diff you can act on: stage / unstage / discard a whole hunk, or click and drag over
@@ -22,11 +22,13 @@ const VIEW_KEY = 'gb.changes.diffView';
  */
 export function HunkDiff({ file, diff, busy, onApply, onWhole }: Props) {
   const [sel, setSel] = useState<Sel>(new Map());
-  const [view, setView] = useState<'interactive' | 'split'>(() => {
+  // Unified (default) and Side by side are read-only; Interactive picks lines and hunks to stage.
+  const [view, setView] = useState<'unified' | 'split' | 'interactive'>(() => {
     try {
-      return localStorage.getItem(VIEW_KEY) === 'split' ? 'split' : 'interactive';
+      const v = localStorage.getItem(VIEW_KEY);
+      return v === 'split' || v === 'interactive' ? v : 'unified';
     } catch {
-      return 'interactive';
+      return 'unified';
     }
   });
   const drag = useRef<{ hunk: number; add: boolean } | null>(null);
@@ -106,26 +108,25 @@ export function HunkDiff({ file, diff, busy, onApply, onWhole }: Props) {
         <span className="small muted">
           {diff.hunks.length} hunk{diff.hunks.length === 1 ? '' : 's'}
         </span>
+        <div className="hd-seg" role="radiogroup" aria-label="Diff layout">
+          {(
+            [
+              ['unified', 'Unified', 'Read-only, one column'],
+              ['split', 'Side by side', 'Read-only, old and new next to each other'],
+              ['interactive', 'Interactive', 'Click or drag over lines to stage, unstage or discard just those'],
+            ] as const
+          ).map(([v, label, hint]) => (
+            <button key={v} role="radio" aria-checked={view === v} className={view === v ? 'on' : ''} onClick={() => setView(v)} title={hint}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="hd-more" ref={menuRef}>
           <button className={`hd-more-btn ${menu ? 'on' : ''}`} onClick={() => setMenu((m) => !m)} title="View and file actions" aria-haspopup="menu" aria-expanded={menu}>
             ⋮
           </button>
           {menu && (
             <div className="hd-menu" role="menu">
-              <div className="hd-menu-h">View</div>
-              {(
-                [
-                  ['interactive', '✋', 'Interactive', 'Pick lines and hunks'],
-                  ['split', '◫', 'Side-by-side', 'Read-only'],
-                ] as const
-              ).map(([v, ico, label, hint]) => (
-                <button key={v} role="menuitemradio" aria-checked={view === v} className={`hd-mi ${view === v ? 'on' : ''}`} onClick={() => (setView(v), setMenu(false))}>
-                  <span className="hd-mi-ico">{ico}</span>
-                  <span className="grow">{label}</span>
-                  <span className="hd-mi-hint">{view === v ? '✓' : hint}</span>
-                </button>
-              ))}
-              <div className="hd-menu-sep" />
               <button role="menuitem" className="hd-mi" disabled={busy} onClick={() => (onWhole(primary), setMenu(false))}>
                 <span className="hd-mi-ico">{staged ? '−' : '+'}</span>
                 <span className="grow">{staged ? 'Unstage file' : 'Stage file'}</span>
@@ -141,9 +142,10 @@ export function HunkDiff({ file, diff, busy, onApply, onWhole }: Props) {
         </div>
       </div>
 
-      {view === 'split' ? (
+      {view !== 'interactive' ? (
         <div className="hd-split">
-          <DiffViewer diff={diff} />
+          {/* One bar only: this view's header — the viewer's own is hidden. */}
+          <DiffViewer diff={diff} hideHeader forceMode={view} />
         </div>
       ) : (
         <div className="hd-wrap">

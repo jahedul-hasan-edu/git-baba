@@ -395,7 +395,7 @@ export class GitService {
   // Commit
   // ---------------------------------------------------------------------
 
-  async commit(message: string, signing: SigningMethod, opts: { allowEmpty?: boolean; author?: { name: string; email: string } } = {}): Promise<CommitInfo> {
+  async commit(message: string, signing: SigningMethod, opts: { allowEmpty?: boolean; amend?: boolean; author?: { name: string; email: string } } = {}): Promise<CommitInfo> {
     const args = this.signingArgs(signing);
     // Author/committer for this commit only (the repository's git config is not changed).
     if (opts.author) args.push('-c', `user.name=${opts.author.name}`, '-c', `user.email=${opts.author.email}`);
@@ -403,6 +403,8 @@ export class GitService {
     args.push('commit', '--file=-', '--cleanup=whitespace');
     args.push(signing === 'none' ? '--no-gpg-sign' : '--gpg-sign');
     if (opts.allowEmpty) args.push('--allow-empty');
+    // Rewrites the last commit with the staged changes and this message (callers check it was not pushed).
+    if (opts.amend) args.push('--amend');
     await this.git(args, { input: message, timeoutMs: 5 * 60_000 });
     const [head] = await this.log({ limit: 1 });
     return head;
@@ -556,6 +558,12 @@ export class GitService {
     this.assertOid(oid);
     if (!isValidRemoteName(remote)) throw new AppError({ code: 'invalid-remote', title: 'Invalid Remote', message: 'Invalid remote name.' });
     return parseLog(await this.gitOut(['log', `--format=${LOG_FORMAT}`, `-n${limit}`, oid, '--not', `--remotes=${remote}`, '--']));
+  }
+
+  /** Whether a commit is already on any remote-tracking branch (so rewriting it would rewrite shared history). */
+  async isOnRemote(oid: string): Promise<boolean> {
+    this.assertRevision(oid);
+    return (await this.gitOut(['branch', '-r', '--contains', oid])).trim().length > 0;
   }
 
   async isAncestor(a: string, b: string): Promise<boolean> {
