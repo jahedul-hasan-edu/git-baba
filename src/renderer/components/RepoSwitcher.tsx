@@ -10,6 +10,7 @@ import { ContributorsDialog, DuplicateRepoDialog, hueOf, LastCommitDialog, Remov
 import { call, onNotify } from '../services/api';
 import { useApp } from '../state/AppState';
 import { fitMenu, markScroll } from './menuFit';
+import { openTab, replaceTab, REPO_PICKER_EVENT, type RepoPickerRequest } from '../services/repoTabs';
 
 /** "jahedul-hasan-kaz, inride" / "jahedul-hasan-kaz, personal" / "local repository". */
 export function repoSubtitle(r: RepoSummary): string {
@@ -118,6 +119,8 @@ export function RepoSwitcher() {
   const slot = useSlot();
   const vis = useSlotVisibility();
   const [open, setOpen] = useState(false);
+  // Where the panel opens and what a pick does: replace the current tab's repository (the name capsule) or open a new tab (+).
+  const [anchor, setAnchor] = useState<RepoPickerRequest | null>(null);
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const [dialog, setDialog] = useState<'create' | 'clone' | null>(null);
@@ -148,7 +151,9 @@ export function RepoSwitcher() {
     setOpen(false);
     setCtxMenu(null);
   };
-  const show = () => {
+  const show = (req?: RepoPickerRequest) => {
+    const t = triggerRef.current?.getBoundingClientRect();
+    setAnchor(req ?? (t ? { x: t.left - 8, y: t.bottom + 6, mode: 'replace' } : { x: 16, y: 90, mode: 'new' }));
     setQuery('');
     const i = mainRepos.length ? groupByAccount(mainRepos).flatMap((g) => g.repos).findIndex((r) => r.id === currentFamily) : -1;
     setCursor(Math.max(0, i));
@@ -156,16 +161,27 @@ export function RepoSwitcher() {
   };
   const pick = (r: RepoSummary) => {
     close();
+    // The capsule switches this tab's repository; + (or no repository open) opens a new tab.
+    if (anchor?.mode === 'replace' && current && current.id !== r.id) replaceTab(current.id, r.id);
+    else openTab(r.id, current?.id);
     selectRepo(r.id);
   };
 
-  // Position the panel under the trigger, inside the window.
+  // The tab strip's + button (and others) open the picker here.
+  const showRef = useRef(show);
+  showRef.current = show;
+  useEffect(() => {
+    const on = (e: Event) => showRef.current((e as CustomEvent<RepoPickerRequest>).detail);
+    window.addEventListener(REPO_PICKER_EVENT, on);
+    return () => window.removeEventListener(REPO_PICKER_EVENT, on);
+  }, []);
+
+  // Position the panel at its anchor (under the trigger or the + button), inside the window.
   useLayoutEffect(() => {
-    if (!open || !panelRef.current || !triggerRef.current) return;
-    const t = triggerRef.current.getBoundingClientRect();
-    fitMenu(panelRef.current, t.left - 8, t.bottom + 6);
+    if (!open || !panelRef.current || !anchor) return;
+    fitMenu(panelRef.current, anchor.x, anchor.y);
     searchRef.current?.focus();
-  }, [open]);
+  }, [open, anchor]);
 
   // Keep the keyboard cursor in view.
   useEffect(() => {
@@ -179,7 +195,8 @@ export function RepoSwitcher() {
       const n = e.target as Node;
       if (ctxRef.current?.contains(n)) return;
       setCtxMenu(null);
-      if (panelRef.current?.contains(n) || triggerRef.current?.contains(n)) return;
+      // The + button toggles the panel itself.
+      if (panelRef.current?.contains(n) || triggerRef.current?.contains(n) || (n instanceof Element && n.closest('.rt-add'))) return;
       setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -212,7 +229,7 @@ export function RepoSwitcher() {
       if (t && t !== searchRef.current && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       e.preventDefault();
       if (open) close();
-      else if (slotEl) show();
+      else show();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -235,6 +252,7 @@ export function RepoSwitcher() {
   openExistingRef.current = openExisting;
 
   const onCreated = (repo: RepoSummary) => {
+    openTab(repo.id, current?.id);
     bump();
     selectRepo(repo.id);
   };
@@ -349,7 +367,7 @@ export function RepoSwitcher() {
           <button
             ref={triggerRef}
             className={`rs-trigger ${open ? 'on' : ''} ${current ? '' : 'empty'}`}
-            onClick={() => (open ? close() : show())}
+            onClick={() => (open && anchor?.mode === 'replace' ? close() : show())}
             aria-haspopup="listbox"
             aria-expanded={open}
             title={`${current ? `${current.name} — switch repository` : 'Choose a repository'} (Ctrl+B)`}

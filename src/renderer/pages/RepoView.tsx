@@ -3,7 +3,6 @@ import { providerInfo, providerLinks } from '../../shared/providers';
 import { ProviderHub } from './provider/ProviderHub';
 import { createPortal } from 'react-dom';
 import { HEADER_REPO_SLOT } from '../components/AppHeader';
-import { NotificationBell } from '../components/NotificationBell';
 import { requestCompare } from '../services/compareRequest';
 import { Spinner } from '../components/Modal';
 import type { PullResult } from '../../shared/types';
@@ -195,8 +194,6 @@ export function RepoView() {
           onPullReview={() => setDialog('pull-review')}
           onPush={() => setDialog('push')}
         />
-        <span className="ab-divider" aria-hidden />
-        <NotificationBell />
       </div>,
           headerSlot,
         )}

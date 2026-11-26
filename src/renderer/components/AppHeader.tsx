@@ -1,8 +1,7 @@
 import type { Theme } from '../services/theme';
 import { useApp } from '../state/AppState';
 import { AppMenus } from './AppMenus';
-import { NotificationBell } from './NotificationBell';
-import { RepoSwitcherSlot } from './RepoSwitcher';
+import { RepoTabStrip } from './RepoTabStrip';
 
 /** The slot RepoView fills with the open repository's name, branch, Fetch and Push. */
 export const HEADER_REPO_SLOT = 'app-header-repo';
@@ -13,21 +12,17 @@ export function AppHeader() {
   // With a repository open, the dropdown and the bell sit with its controls; otherwise here.
   const repoOpen = view === 'repo' && !!activeRepo;
   return (
-    <header className="app-header">
-      {!repoOpen && (
-        <div className="ah-left">
-          <RepoSwitcherSlot />
-        </div>
-      )}
+    <>
+      {/* Top layer: open repositories as tabs, + to open another, notifications, settings and the account. */}
+      <RepoTabStrip />
       <AppMenus />
-      <div id={HEADER_REPO_SLOT} className="ah-repo" />
-      {/* Notifications sit at the far right; with a repository open, RepoView puts the bell after Push. */}
-      {!repoOpen && (
-        <div className="ah-end">
-          <NotificationBell />
-        </div>
+      {/* The open repository's bar: name (the repository dropdown), branch, Fetch and Push. */}
+      {repoOpen && (
+        <header className="app-header">
+          <div id={HEADER_REPO_SLOT} className="ah-repo" />
+        </header>
       )}
-    </header>
+    </>
   );
 }
 

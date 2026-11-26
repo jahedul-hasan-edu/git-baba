@@ -6381,3 +6381,53 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .rs-name, .ab-name, .ab-btn, .ab-btn.push { font-size: 13px; font-weight: 600; }
 /* The branch capsule sits on the left of the bar now: its dropdown opens from the capsule's left edge. */
 .ah-deck .bp-pop.hb-pop { left: 0; right: auto; transform-origin: top left; }
+
+/* ---------- Repository tabs: the layer above the repository bar ---------- */
+/* The shell stacks title bar, tabs, the repository bar (only with a repository open), the page and the footer. */
+.shell { display: flex; flex-direction: column; }
+.shell > .app { flex: 1 1 auto; min-height: 0; }
+.shell > .titlebar, .shell > .rt-strip, .shell > .app-header, .shell > footer, .shell > .app-footer { flex: none; }
+
+.rt-strip { display: flex; align-items: flex-end; gap: 8px; min-height: 46px; padding: 6px 12px 0 10px; background: var(--bg); border-bottom: 1px solid var(--border); position: relative; z-index: 31; }
+.rt-tabs { flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 4px; overflow: hidden; }
+.rt-tab { position: relative; flex: none; width: 180px; height: 40px; display: flex; align-items: center; gap: 9px; padding: 0 6px 0 12px; border: 1px solid transparent; border-bottom: 0; border-radius: 10px 10px 0 0; color: var(--text-2); cursor: pointer; user-select: none; transition: background .15s, color .15s; outline: none; }
+.rt-tab:hover:not(.on) { background: var(--bg-2); color: var(--text); }
+.rt-tab.on { background: var(--bg-2); border-color: var(--border); color: var(--text); margin-bottom: -1px; height: 41px; }
+.rt-tab.on::before { content: ''; position: absolute; left: 10px; right: 10px; top: -1px; height: 2px; border-radius: 0 0 2px 2px; background: #7b6cf6; }
+.rt-tab:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); }
+.rt-tab.dragging { opacity: .45; }
+.rt-tab.over { box-shadow: inset 2px 0 0 #7b6cf6; }
+.rt-tab + .rt-tab:not(.on):not(:hover)::after { content: ''; position: absolute; left: -3px; top: 11px; bottom: 11px; width: 1px; background: var(--border); }
+.rt-tab.on + .rt-tab::after, .rt-tab:hover + .rt-tab::after { display: none; }
+.rt-prov { flex: none; display: inline-flex; opacity: .9; }
+.rt-local { font-size: 13px; line-height: 1; }
+.rt-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.rt-name { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-tab:not(.on) .rt-name { font-weight: 500; }
+.rt-branch { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+.rt-dot.warn { background: var(--warn); }
+.rt-dot.danger { background: var(--danger); }
+.rt-x { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--text-3); font-size: 16px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s, color .12s; }
+.rt-tab:hover .rt-x, .rt-tab.on .rt-x, .rt-more-item:hover .rt-x, .rt-x:focus-visible { opacity: 1; }
+.rt-x:hover { background: var(--bg-4); color: var(--text); }
+.rt-add, .rt-more { flex: none; align-self: center; margin-bottom: 4px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--text-2); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+.rt-add { width: 32px; }
+.rt-add:hover, .rt-more:hover { background: var(--bg-2); color: var(--text); }
+.rt-more { padding: 0 10px; border-color: color-mix(in srgb, #7b6cf6 55%, var(--border)); color: var(--text); }
+.rt-more.on { background: color-mix(in srgb, #7b6cf6 16%, transparent); }
+.rt-more.on svg { transform: rotate(180deg); }
+.rt-more-menu { width: 300px; padding: 6px; }
+.rt-more-item { display: flex; align-items: center; gap: 9px; padding: 7px 6px 7px 10px; border-radius: 8px; cursor: pointer; }
+.rt-more-item:hover { background: var(--bg-3); }
+.rt-end { flex: none; align-self: center; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.rt-icon { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--text-2); cursor: pointer; transition: background .15s, color .15s; }
+.rt-icon:hover { background: var(--bg-2); color: var(--text); }
+.rt-account { display: inline-flex; align-items: center; gap: 4px; height: 34px; padding: 0 6px 0 3px; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--text-3); cursor: pointer; transition: background .15s; }
+.rt-account:hover { background: var(--bg-2); color: var(--text); }
+.rt-avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .3px; }
+.rt-end .nb-btn { width: 34px; height: 34px; border-radius: 9px; border-color: transparent; background: transparent; }
+.rt-end .nb-btn:hover, .rt-end .nb-btn.on { background: var(--bg-2); border-color: transparent; }
+.rt-end .nb-count { top: -3px; right: -3px; border-color: var(--bg); }
+/* The repository bar sits under the active tab, in the tab's colour, so the two read as one surface. */
+.rt-strip + .app-header, .rt-strip ~ .app-header { background: var(--bg-2); }
