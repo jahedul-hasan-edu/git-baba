@@ -210,7 +210,6 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
   // Nothing to commit: a full-width overview instead of an empty two-pane layout.
   if (nothing) return docked ? <EmptyChanges repoId={repoId} status={status} /> :<div className="content flush"><CleanSlate repoId={repoId} status={status} /></div>;
   const statOf = (f: FileChange) => (f.area === 'staged' ? stats.staged[f.path] : stats.unstaged[f.path]);
-  const progress = total ? status.staged.length / total : 0;
 
   const pickedFiles = list.filter((f) => picked.has(fileKey(f)));
   const allPicked = list.length > 0 && pickedFiles.length === list.length;
@@ -468,23 +467,6 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
     <div className={`content flush ${docked ? 'ws-dock-wrap' : ''}`}>
       <div className={`split cb-split ${docked ? 'ws-dock' : ''}`}>
         <div className="left cb-left chg" ref={boardRef} tabIndex={0} onKeyDown={onBoardKey}>
-          <div className="chg-head">
-            <svg className="cb-ring" viewBox="0 0 36 36" width={32} height={32} aria-hidden>
-              <circle cx={18} cy={18} r={15} className="cb-ring-track" />
-              <circle cx={18} cy={18} r={15} className="cb-ring-fill" strokeDasharray={`${progress * 94.25} 94.25`} transform="rotate(-90 18 18)" />
-            </svg>
-            <div className="grow">
-              <div className="chg-title">
-                {status.staged.length} of {total} staged
-              </div>
-              <div className="chg-branch">
-                ⎇ {status.branch ?? 'detached HEAD'}
-                {status.ahead ? ` · ↑${status.ahead}` : ''}
-                {status.behind ? ` · ↓${status.behind}` : ''}
-              </div>
-            </div>
-          </div>
-
           <div className="chg-tabs" role="tablist">
             <button role="tab" aria-selected={tab === 'changes'} className={tab === 'changes' ? 'on' : ''} onClick={() => setTab('changes')}>
               Changes <span className="chg-tab-n">{changesCount}</span>

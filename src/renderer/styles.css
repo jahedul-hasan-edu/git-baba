@@ -6604,3 +6604,64 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .hd-seg button { height: 22px; padding: 0 9px; border: 0; border-radius: 4px; background: transparent; color: var(--text-3); font: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s; }
 .hd-seg button:hover { color: var(--text); }
 .hd-seg button.on { background: color-mix(in srgb, var(--violet) 22%, var(--bg-3)); color: var(--text); }
+
+/* Selected commit (workspace right pane): back bar + pager, message card, quick actions, files */
+.cdv { display: flex; flex-direction: column; gap: 12px; margin-bottom: 6px; font-size: 13px; }
+.cdv button { font: inherit; margin: 0; box-shadow: none; transform: none; }
+.cdv-svg { flex: none; display: block; }
+.cdv-grow { flex: 1 1 auto; min-width: 0; }
+.cdv-top { display: flex; align-items: center; gap: 8px; }
+.cdv-back { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 8px 0 9px; border-radius: 8px; border: 1px solid var(--border-2); background: transparent; color: var(--text); font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.cdv-back:hover { background: var(--bg-3); }
+.cdv-count { display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 6px; background: var(--bg-4); color: var(--text-2); font-size: 11px; font-weight: 600; line-height: 1; }
+.cdv-count.dirty { background: var(--warn-bg); color: var(--warn); }
+.cdv-pager { flex: none; display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--border-2); border-radius: 8px; overflow: hidden; }
+.cdv-pager button { display: grid; place-items: center; width: 30px; padding: 0; border: none; border-radius: 0; background: transparent; color: var(--text-2); cursor: pointer; }
+.cdv-pager button:hover:not(:disabled) { background: var(--bg-3); color: var(--text); }
+.cdv-pager button:disabled { opacity: 0.35; cursor: default; }
+.cdv-pos { display: grid; place-items: center; padding: 0 10px; font-size: 12px; color: var(--text-2); white-space: nowrap; border-left: 1px solid var(--border-2); border-right: 1px solid var(--border-2); }
+.cdv-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-2); animation: cdv-in 0.16s ease-out; }
+@keyframes cdv-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.cdv-title { margin: 0; font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0; line-height: 1.35; color: var(--text); cursor: pointer; overflow-wrap: anywhere; }
+.cdv-body { margin: -2px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
+.cdv-author { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cdv-avatar { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 9px; font-weight: 700; color: #fff; }
+.cdv-who { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.cdv-name { font-size: 12.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cdv-when { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.cdv-sha { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--border-2); background: var(--bg); color: var(--text-2); font-family: var(--mono); font-size: 11.5px; cursor: pointer; }
+.cdv-sha:hover { color: var(--text); border-color: var(--text-3); }
+.cdv-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; font-size: 11.5px; color: var(--text-3); }
+.cdv-branch { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 7px; border-radius: 5px; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: color-mix(in srgb, var(--violet) 65%, #fff); background: color-mix(in srgb, var(--violet) 24%, transparent); }
+.cdv-parent { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.cdv-parent button { padding: 0; border: none; background: none; color: var(--text-3); font-family: var(--mono); font-size: 11.5px; cursor: pointer; }
+.cdv-parent button:hover:not(:disabled) { color: var(--text); text-decoration: underline; }
+.cdv-parent button:disabled { cursor: default; }
+.cdv-stat { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 11.5px; }
+.cdv-add { color: var(--ok); }
+.cdv-del { color: var(--danger); }
+.cdv-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.cdv-act { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--border-2); background: var(--bg-2); color: var(--text); font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 0.12s, border-color 0.12s; }
+.cdv-act:hover { background: var(--bg-3); border-color: var(--text-3); }
+.cdv-more { height: 30px; padding: 0 8px; border: none; border-radius: 8px; background: transparent; color: var(--text-2); font-size: 14px; font-weight: 700; letter-spacing: 1px; cursor: pointer; }
+.cdv-more:hover { background: var(--bg-3); color: var(--text); }
+.cdv-files-h { display: flex; align-items: center; gap: 8px; padding: 4px 4px 2px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text); }
+.cdv-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border-2); border-radius: 7px; }
+.cdv-seg button { height: 22px; margin: 0; padding: 0 9px; border: none; border-radius: 5px; background: transparent; color: var(--text-2); font: inherit; font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; cursor: pointer; }
+.cdv-seg button.on { background: color-mix(in srgb, var(--violet) 30%, transparent); color: var(--text); }
+.fx-compact { gap: 4px; }
+.fx-compact .fx-list { padding: 0; border: none; background: transparent; max-height: none; overflow: visible; resize: none; }
+.fx-compact .fx-file { gap: 10px; min-height: 40px; padding-right: 6px; border-radius: 6px; font-family: var(--mono); font-size: 12.5px; box-shadow: none; background: transparent; }
+.fx-compact .fx-file:hover { background: var(--bg-3); }
+.fx-compact .fx-file.docked { background: color-mix(in srgb, var(--violet) 14%, transparent); }
+.fx-compact .fx-ico, .fx-compact .fx-bar { display: none; }
+.fx-compact .fx-name { color: var(--text); }
+.fx-compact .fx-dir { color: var(--text-3); }
+.fx-compact .fx-st { width: 16px; height: 16px; border-radius: 4px; border: 1px solid currentColor; background: transparent; font-size: 9.5px; font-weight: 700; }
+.fx-compact .fx-st.modified { color: #e3b341; }
+.fx-compact .fx-st.added { color: var(--ok); }
+.fx-compact .fx-st.deleted { color: var(--danger); }
+.fx-compact .fx-st.renamed, .fx-compact .fx-st.copied, .fx-compact .fx-st.typechange { color: #b18cff; }
+.fx-compact .fx-num { font-size: 12px; }
+.fx-compact .fx-folder { min-height: 32px; font-family: var(--mono); font-size: 12.5px; color: var(--text-2); }
+:root[data-theme='light'] .fx-compact .fx-list { background: transparent; }

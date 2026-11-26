@@ -13,6 +13,7 @@ import { call, toFriendly } from '../services/api';
 import { useApp } from '../state/AppState';
 
 import { useCommitActions, type CommitAction } from './history/CommitActions';
+import { CommitDetailHeader } from './history/CommitDetailHeader';
 import { CommitFilesExplorer } from './history/CommitFilesExplorer';
 import { CommitMenu, type CompareKind } from './history/CommitMenu';
 import { authorColor, initials } from './history/graphStyle';
@@ -529,6 +530,10 @@ export function GitHistoryPage({ workspace }: Props = {}) {
         e.preventDefault();
         return openWip();
       }
+      if (ws && e.key === 'Escape' && !wip && selected && !comparison && !compareMode && !document.querySelector('.ws-diff, .fx-dock')) {
+        e.preventDefault();
+        return openWip();
+      }
       const c = index >= 0 ? commits[index] : null;
       if (!c || e.ctrlKey || e.metaKey || e.altKey) return;
       const keys: Record<string, CommitAction> = { c: 'copy-sha', b: 'branch', t: 'tag', p: 'cherry-pick' };
@@ -833,60 +838,29 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           {!comparison && selected && detailsLoading && !details && <Spinner label="Loading commit…" />}
           {!comparison && details && (
             <>
-              <div className="cd-head">
-                {selectedCommit && (
-                  <div className="cd-bar">
-                    <button className="cab" onClick={() => navigate(-1)} disabled={index <= 0} title="Newer commit (↑)">
-                      <span className="cab-ico">↑</span>
-                    </button>
-                    <button className="cab" onClick={() => navigate(1)} disabled={index === -1 || index >= commits.length - 1} title="Older commit (↓)">
-                      <span className="cab-ico">↓</span>
-                    </button>
-                    <span className="spacer" />
-                    {ws && placement !== 'modal' && (
-                      <button className={`cd-wip ${head.dirty ? 'dirty' : ''}`} onClick={openWip} title={`Back to your working changes on ${head.branch ?? 'HEAD'} (W)`}>
-                        <span className="cd-wip-ico">←</span>
-                        <span className="cd-wip-label">Working changes</span>
-                        <span className="cd-wip-count">{head.dirty || '✓'}</span>
-                      </button>
-                    )}
-                    <button
-                      className="cab more"
-                      title="Cherry-pick, branch, tag, checkout, reset, rebase… (right-click a commit)"
-                      onClick={(e) => {
-                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              <CommitDetailHeader
+                details={details}
+                branch={selectedCommit?.branch ?? null}
+                index={index}
+                total={commits.length}
+                onStep={navigate}
+                onBack={ws && placement !== 'modal' ? openWip : undefined}
+                dirty={head.dirty}
+                onCopySha={() => copy(details.hash, 'Commit SHA')}
+                onParent={(p) => setSelected(p)}
+                canOpenParent={(p) => commits.some((c) => c.hash === p)}
+                onAction={selectedCommit ? (a) => runAction(a, selectedCommit) : undefined}
+                onMenu={
+                  selectedCommit
+                    ? (el) => {
+                        const r = el.getBoundingClientRect();
                         setMenu({ x: r.left - 180, y: r.bottom + 4, commit: selectedCommit });
-                      }}
-                    >
-                      <span className="cab-ico">⋯</span>
-                    </button>
-                  </div>
-                )}
-                <h2 className={`commit-title ${showInfo ? '' : 'ellipsis'}`} title={details.subject} onClick={() => setShowInfo((v) => !v)}>
-                  {details.subject}
-                </h2>
-                <div className="commit-summary">
-                  <span className="cd-avatar" style={{ background: authorColor(details.email || details.author) }}>
-                    {initials(details.author)}
-                  </span>
-                  <span className="ellipsis" title={details.email}>{details.author}</span>
-                  <span className="muted">{relative(details.date)}</span>
-                  <button className="cd-sha mono" onClick={() => copy(details.hash, 'Commit SHA')} title="Copy full SHA (C)">
-                    {details.hash.slice(0, 7)} <span className="cd-sha-ico">⧉</span>
-                  </button>
-                  <span className="mono">
-                    <span className="text-ok">+{details.additions}</span> <span className="text-danger">−{details.deletions}</span>
-                  </span>
-                  {selectedCommit?.merged && <span className="text-ok" title={`${mainRef} contains this commit`}>✓ {mainShort}</span>}
-                  <span className="ref-group">
-                    <RefPills refs={details.refs} laneColor={branchColor(selectedCommit?.branch ?? details.hash)} remotes={remoteNames} max={2} />
-                    <TagChips refs={details.refs} max={2} />
-                  </span>
-                  <button className={`cd-more ${showInfo ? 'on' : ''}`} onClick={() => setShowInfo((v) => !v)} title="Message, parents, release and more">
-                    Details <span className="cd-caret">⤢</span>
-                  </button>
-                </div>
-              </div>
+                      }
+                    : undefined
+                }
+                onTitle={() => setShowInfo(true)}
+                extra={<TagChips refs={details.refs} max={2} />}
+              />
               {showInfo && (
                 <Modal title={`Commit ${details.hash.slice(0, 7)}: ${details.subject}`} onClose={() => setShowInfo(false)}>
                 <div className="cd-info in-modal">
@@ -959,7 +933,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
                 </div>
                 </Modal>
               )}
-              <CommitFilesExplorer repoId={repoId} files={details.files} diffs={details.diffs} atCommit={details.hash} baseRev={commits.find((c) => c.hash === details.hash)?.parents[0] ?? null} dockHost={placement === 'modal' ? undefined : diffHost} split={placement === 'modal'} context={`${details.hash.slice(0, 7)} · ${details.subject} — ${details.author}`} />
+              <CommitFilesExplorer repoId={repoId} files={details.files} diffs={details.diffs} atCommit={details.hash} baseRev={commits.find((c) => c.hash === details.hash)?.parents[0] ?? null} dockHost={placement === 'modal' ? undefined : diffHost} split={placement === 'modal'} compact={!!ws && placement !== 'modal'} context={`${details.hash.slice(0, 7)} · ${details.subject} — ${details.author}`} />
             </>
           )}
     </>

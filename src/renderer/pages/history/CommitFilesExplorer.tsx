@@ -34,6 +34,7 @@ const EXT_ICON: [RegExp, string][] = [
 ];
 export const fileIcon = (p: string) => EXT_ICON.find(([re]) => re.test(p))?.[1] ?? '📄';
 const VIEW_KEY = 'gb.history.filesView';
+const VIEW_KEY_COMPACT = 'gb.ws.filesView';
 
 interface Folder {
   name: string;
@@ -92,10 +93,11 @@ function ChangeBar({ add, del, max }: { add: number; del: number; max: number })
  * `dockHost`: where a clicked file's diff opens (the centre pane, over the graph). Without it a click
  * only focuses the file and the diff opens inline or in the focus view.
  */
-export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, dockHost, split = false, baseRev }: { /** The older side, for line authors (the commit's parent; omitted: only the new side shows authors). */ baseRev?: string | null; repoId: string; files: CommitStatFile[]; diffs: FileDiff[]; atCommit: string | null; context?: string; dockHost?: HTMLElement | null; split?: boolean }) {
+export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, dockHost, split = false, baseRev, compact = false }: { /** Workspace commit pane: a plain "Files changed" header with a Path / Tree toggle. */ compact?: boolean; /** The older side, for line authors (the commit's parent; omitted: only the new side shows authors). */ baseRev?: string | null; repoId: string; files: CommitStatFile[]; diffs: FileDiff[]; atCommit: string | null; context?: string; dockHost?: HTMLElement | null; split?: boolean }) {
   const { toast, showError } = useApp();
   const [view, setView] = useState<View>(() => {
     try {
+      if (compact) return localStorage.getItem(VIEW_KEY_COMPACT) === 'tree' ? 'tree' : 'list';
       return (localStorage.getItem(VIEW_KEY) as View) || 'tree';
     } catch {
       return 'tree';
@@ -163,7 +165,7 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
 
   useEffect(() => {
     try {
-      localStorage.setItem(VIEW_KEY, view);
+      localStorage.setItem(compact ? VIEW_KEY_COMPACT : VIEW_KEY, view);
     } catch {
       /* per-viewer convenience only */
     }
@@ -257,7 +259,7 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
     <div
       key={f.path}
       data-file={f.path}
-      className={`fx-file ${focus === f.path ? 'on' : ''} ${docked && focus === f.path ? 'docked' : ''}`}
+      className={`fx-file ${focus === f.path && !compact ? 'on' : ''} ${docked && focus === f.path ? 'docked' : ''}`}
       style={{ paddingLeft: 8 + depth * 14 }}
       onClick={() => {
         setFocus(f.path);
@@ -325,11 +327,21 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
   };
 
   return (
-    <div className="fx" onKeyDown={(e) => {
+    <div className={`fx ${compact ? 'fx-compact' : ''}`} onKeyDown={(e) => {
       if ((e.target as HTMLElement).tagName === 'INPUT') return;
       if (e.key === ']' || (e.altKey && e.key === 'ArrowDown')) (e.preventDefault(), step(1));
       if (e.key === '[' || (e.altKey && e.key === 'ArrowUp')) (e.preventDefault(), step(-1));
     }}>
+      {compact ? (
+        <div className="cdv-files-h">
+          Files changed <span className="cdv-count">{files.length}</span>
+          <span className="grow" />
+          <div className="cdv-seg">
+            <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>Path</button>
+            <button className={view !== 'list' ? 'on' : ''} onClick={() => setView('tree')}>Tree</button>
+          </div>
+        </div>
+      ) : (
       <div className="fx-toolbar">
         <div className="seg">
           {(
@@ -378,6 +390,7 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
           )}
         </label>
       </div>
+      )}
 
       {view === 'stack' && !split && !dock ? (
         <FileDiffList repoId={repoId} files={shown} diffs={diffs} atCommit={atCommit} search={search} />
