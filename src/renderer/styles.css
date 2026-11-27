@@ -6916,3 +6916,6 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .rise .chg-tabs, .rn-changes .chg-tabs { box-sizing: border-box; height: 42px; align-items: stretch; border-radius: 10px; }
 .rise .chg-tabs button, .rn-changes .chg-tabs button { height: auto; border-radius: 7px; }
 .rise .chg-tabs + *, .rn-changes .chg-tabs + * { margin-top: max(6px, calc((var(--repo-bar-h, 54px) - 42px) / 2)); }
+/* Changes panel edges: one line under the band beside the repository bar, and the left divider from there down. */
+.hist-split > .right.rise, .rn-split > .rn-changes.rn-changes { background: linear-gradient(var(--border), var(--border)) left bottom / 1px calc(100% - var(--repo-bar-h, 0px)) no-repeat, linear-gradient(var(--border), var(--border)) 0 var(--repo-bar-h, 0px) / 100% 1px no-repeat, linear-gradient(var(--bg-2), var(--bg-2)) top / 100% var(--repo-bar-h, 0px) no-repeat, var(--bg) !important; }
+:root[data-theme='light'] .hist-split > .right.rise, :root[data-theme='light'] .rn-split > .rn-changes.rn-changes { background: linear-gradient(var(--border), var(--border)) left bottom / 1px calc(100% - var(--repo-bar-h, 0px)) no-repeat, linear-gradient(var(--border), var(--border)) 0 var(--repo-bar-h, 0px) / 100% 1px no-repeat, var(--bg) !important; }
