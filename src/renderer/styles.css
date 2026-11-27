@@ -6900,3 +6900,19 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .rise, .rn-changes { background: linear-gradient(var(--bg-2), var(--bg-2)) top / 100% var(--repo-bar-h, 0px) no-repeat, var(--bg); }
 .rn-changes .chg, .rise .chg { background: transparent; }
 :root[data-theme='light'] .rise, :root[data-theme='light'] .rn-changes { background: var(--bg); }
+/* No border around the Changes panel's top band: it reads as part of the repository bar. */
+.rise, .rn-changes { border-top: 0 !important; border-top-left-radius: 0 !important; }
+.hist-split > .right.rise, .rn-split > .rn-changes.rn-changes { border-radius: 0 !important; }
+/* Left edge of the Changes panel starts below its top band (no divider beside the repository bar). */
+.rise, .rn-changes { border-left: 0 !important; background: linear-gradient(var(--border), var(--border)) left bottom / 1px calc(100% - var(--repo-bar-h, 0px)) no-repeat, linear-gradient(var(--bg-2), var(--bg-2)) top / 100% var(--repo-bar-h, 0px) no-repeat, var(--bg); }
+:root[data-theme='light'] .rise, :root[data-theme='light'] .rn-changes { background: linear-gradient(var(--border), var(--border)) left bottom / 1px calc(100% - var(--repo-bar-h, 0px)) no-repeat, var(--bg); }
+.rise { background: linear-gradient(var(--border), var(--border)) left bottom / 1px calc(100% - var(--rise-h, var(--repo-bar-h, 0px))) no-repeat, linear-gradient(var(--bg-2), var(--bg-2)) top / 100% var(--repo-bar-h, 0px) no-repeat, var(--bg); }
+:root[data-theme='light'] .rise { background: linear-gradient(var(--border), var(--border)) left bottom / 1px calc(100% - var(--rise-h, var(--repo-bar-h, 0px))) no-repeat, var(--bg); }
+.app-header, .ah-deck { border-right: 0; }
+/* Changes panel: no divider beside the repository bar (outranks `.hist-split > .right { border-left: … !important }`). */
+.hist-split > .right.rise, .rn-split > .rn-changes.rn-changes { border-left: 0 !important; border-top: 0 !important; box-shadow: none !important; }
+/* Changes / Staged sits on the same line and height as the branch picker group (42px) in the repository bar. */
+.rise .chg, .rn-changes .chg { padding-top: max(6px, calc((var(--repo-bar-h, 54px) - 42px) / 2)); }
+.rise .chg-tabs, .rn-changes .chg-tabs { box-sizing: border-box; height: 42px; align-items: stretch; border-radius: 10px; }
+.rise .chg-tabs button, .rn-changes .chg-tabs button { height: auto; border-radius: 7px; }
+.rise .chg-tabs + *, .rn-changes .chg-tabs + * { margin-top: max(6px, calc((var(--repo-bar-h, 54px) - 42px) / 2)); }
