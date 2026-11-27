@@ -201,7 +201,7 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
         /
       </span>
 
-      {/* One bordered pill: branch · Fetch/Pull · Push */}
+      {/* One bordered pill: branch · Fetch · Pull · Push */}
       <div className="ab-group">
       {/* Branch capsule: icon tile · namespace over branch name · ahead/behind · chevron */}
       <div className="pop-anchor" ref={branchRef}>
@@ -289,48 +289,44 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
         )}
       </div>
 
-      {/* Fetch / Pull: an icon button that becomes "Pull N" when there is something to bring in */}
-      <div className="ab-split pop-anchor" ref={syncRef}>
-        {behind > 0 ? (
-          <button className="ab-btn attention" onClick={onPull} disabled={!canSync} title={syncTitle}>
-            <DownIcon /> Pull <span className="ab-badge">{behind}</span>
-            {incoming ? <span className="pulse-dot" title="New commits on the remote" /> : null}
-          </button>
-        ) : (
-          <button className="ab-btn" onClick={onFetch} disabled={disabled || !hasRemote} title={!hasRemote ? 'No remote to fetch from yet' : `Fetch from the remote (your files are not changed)
-${fetchedText}${lastCheck ? `
-Remote checked ${lastCheck.toLocaleTimeString()}: up to date` : ''}`}>
-            <DownIcon /> Fetch
-          </button>
-        )}
-        <button className={`ab-btn caret ${behind > 0 ? 'attention' : ''}`} onClick={() => setSyncMenu((o) => !o)} disabled={disabled || !hasRemote} aria-label="More sync options">
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M2.5 3.8 5 6.3l2.5-2.5" />
-          </svg>
+      {/* Fetch: download new commits; files are not changed */}
+      <button className="ab-btn" onClick={onFetch} disabled={disabled || !hasRemote} title={!hasRemote ? 'No remote to fetch from yet' : `Fetch from the remote (your files are not changed)
+${fetchedText}`}>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" />
+        </svg>
+        Fetch
+      </button>
+
+      {/* Pull: the whole button opens a small choice — a direct pull, or a pull with review */}
+      <div className="pop-anchor" ref={syncRef}>
+        <button
+          className={`ab-btn ${behind > 0 ? 'attention' : ''} ${syncMenu ? 'on' : ''}`}
+          onClick={() => setSyncMenu((o) => !o)}
+          disabled={!canSync || !hasRemote}
+          aria-haspopup="menu"
+          aria-expanded={syncMenu}
+          title={!hasRemote ? 'No remote to pull from yet' : `${syncTitle}
+${fetchedText}`}
+        >
+          <DownIcon /> Pull
+          {behind > 0 && <span className="ab-badge">{behind}</span>}
+          {incoming ? <span className="pulse-dot" title="New commits on the remote" /> : null}
         </button>
         {syncMenu && (
-          <div className="dropdown pop-in" onClick={() => setSyncMenu(false)}>
-            <div className="dropdown-item" onClick={onFetch}>
-              <span className="ctx-ico">⬇</span>
-              <div>
-                <div>
-                  Fetch <span className="ab-default">default</span>
-                </div>
-                <div className="small muted">Download new commits; your files are not changed</div>
-              </div>
-            </div>
-            <div className={`dropdown-item ${canSync ? '' : 'disabled'}`} onClick={canSync ? onPull : undefined}>
+          <div className="dropdown pop-in ab-pull-menu" role="menu" onClick={() => setSyncMenu(false)}>
+            <div className="dropdown-item" role="menuitem" onClick={onPull}>
               <span className="ctx-ico">⤓</span>
               <div>
                 <div>Pull</div>
-                <div className="small muted">Fetch and update your branch in one step</div>
+                <div className="small muted">Update your branch now</div>
               </div>
             </div>
-            <div className={`dropdown-item ${canSync ? '' : 'disabled'}`} onClick={canSync ? onPullReview : undefined}>
+            <div className="dropdown-item" role="menuitem" onClick={onPullReview}>
               <span className="ctx-ico">🛡</span>
               <div>
-                <div>Pull (review)</div>
-                <div className="small muted">Fetch, review incoming changes, then update your branch</div>
+                <div>Pull with review</div>
+                <div className="small muted">Review incoming changes first</div>
               </div>
             </div>
           </div>

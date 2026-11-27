@@ -535,10 +535,10 @@ export function ChangesPage({ status, reload, error, docked, tree, onOpenFile }:
             <span className="grow" />
             <div className="chg-seg" role="group" aria-label="View">
               <button className={!treeView ? 'on' : ''} onClick={() => setTreeView(false)} title="Paths">
-                ☰ Path
+                <span className="chg-seg-ico" aria-hidden>☰</span><span className="chg-seg-l">Path</span>
               </button>
               <button className={treeView ? 'on' : ''} onClick={() => setTreeView(true)} title="Folder tree">
-                ⊞ Tree
+                <span className="chg-seg-ico" aria-hidden>⊞</span><span className="chg-seg-l">Tree</span>
               </button>
             </div>
             {tab === 'changes' ? (

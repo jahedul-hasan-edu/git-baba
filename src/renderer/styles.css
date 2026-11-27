@@ -6495,7 +6495,7 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .chg-kind.add { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
 .chg-kind.del { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
 .chg-kind.ren { background: color-mix(in srgb, #6cc4ff 20%, transparent); color: #6cc4ff; }
-.chg-path { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: var(--fs-xs); }
+.chg-path { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: inherit; font-size: var(--fs-xs); }
 .chg-dir { color: var(--text-3); }
 .chg-file { font-weight: var(--fw-bold); color: var(--text); }
 .chg-stat { flex: none; font: var(--fs-xs) var(--font-mono); }
@@ -6852,3 +6852,41 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 :root[data-theme='light'] .app-header { background: var(--bg) !important; background-image: none !important; animation: none !important; }
 :root[data-theme='light'] .rt-tab.on { background: linear-gradient(180deg, color-mix(in srgb, var(--violet) 22%, var(--bg)) 0%, color-mix(in srgb, var(--violet) 8%, var(--bg)) 55%, var(--bg) 100%); }
 :root[data-theme='light'] .rt-tab.on .rt-name { color: var(--violet-text); }
+
+.ab-btn.on { background: var(--bg-3); color: var(--text); }
+.ab-pull-menu { min-width: 220px; }
+.ab-pull-menu .dropdown-item { padding-top: 6px; padding-bottom: 6px; }
+.ab-group .ab-btn:active:not(:disabled), .ab-group .ab-cap:active:not(:disabled) { transform: none; }
+.ab-group .ab-btn:focus { outline: none; }
+.ab-group .ab-btn:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); }
+.ws-toolbar .hq, .ws-toolbar .graph-view-seg { box-sizing: border-box; height: 32px; min-height: 32px; }
+.ws-toolbar .hq { padding-top: 0; padding-bottom: 0; }
+.ws-toolbar .hq input { padding-top: 0; padding-bottom: 0; height: 100%; }
+.ws-toolbar .hq > button, .ws-toolbar .hq-chip { max-height: 24px; }
+/* Changes tree: one font and style for folders and files; folders 13px, files 12px */
+.chg-dir-row, .chg-dir-row .chg-dir-name, .chg-row .chg-path, .chg-row .chg-dir, .chg-row .chg-file { font-family: inherit; font-weight: var(--fw-regular); letter-spacing: 0; line-height: 1.4; }
+.chg-dir-row, .chg-dir-row .chg-dir-name { font-size: var(--fs-sm); color: var(--text); }
+.chg-row .chg-path, .chg-row .chg-dir, .chg-row .chg-file { font-size: var(--fs-xs); }
+.chg-row .chg-file { color: var(--text); }
+.chg-row .chg-dir { color: var(--text-3); }
+.chg-dir-row .chg-folder svg { width: 14px; height: 14px; }
+/* Multi-select: adjacent selected rows join into one block, no notches between them */
+.chg-row:is(.picked, .focus):has(+ .chg-row:is(.picked, .focus)) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.chg-row:is(.picked, .focus) + .chg-row:is(.picked, .focus) { border-top-left-radius: 0; border-top-right-radius: 0; }
+/* Changes toolbar: never wraps; tightens as the pane narrows */
+.chg-bar { flex-wrap: nowrap; min-width: 0; container-type: inline-size; }
+.chg-all { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chg-seg, .chg-btn, .chg-icon { flex: none; white-space: nowrap; }
+.chg-seg button { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.chg-btn { overflow: hidden; text-overflow: ellipsis; }
+@container (max-width: 380px) { .chg-seg-l { display: none; } .chg-seg button { padding: 0 7px; } }
+@container (max-width: 300px) { .chg-btn { padding-left: 8px; padding-right: 8px; } .chg-bar { gap: 4px; } }
+/* History toolbar: search shrinks first so Linear / Graph always stays whole */
+.history-toolbar.ws-toolbar { container-type: inline-size; }
+.ws-toolbar > .hq { flex: 1 1 0; min-width: 0; }
+.ws-toolbar .hq input { min-width: 40px; width: 100%; }
+.ws-toolbar .graph-view-seg, .ws-toolbar .graph-view-seg button { flex: none; white-space: nowrap; }
+.ws-toolbar > .seg:not(.graph-view-seg), .ws-toolbar > button { flex: none; }
+@container (max-width: 460px) { .ws-toolbar .graph-view-seg button { padding: 0 9px; } }
+.ws-toolbar .hq-facets { flex: none; }
+@container (max-width: 520px) { .ws-toolbar .hq-facets { display: none; } }
