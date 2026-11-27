@@ -1,4 +1,4 @@
-import { CLOSE_DOCK_EVENT } from '../services/dock';
+import { CLOSE_DOCK_EVENT, FILE_DIFF_EVENT } from '../services/dock';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ChangeKind, FileChange, FileDiff, FriendlyError, RepoStatus } from '../../shared/types';
@@ -172,6 +172,12 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
     window.addEventListener(CLOSE_DOCK_EVENT, close);
     return () => window.removeEventListener(CLOSE_DOCK_EVENT, close);
   }, [docked]);
+  // Docked: tell the sidebar whether a file diff covers the history (History is unselected while it does).
+  const fileOpen = !!docked && !!selected;
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(FILE_DIFF_EVENT, { detail: fileOpen }));
+  }, [fileOpen]);
+  useEffect(() => () => void window.dispatchEvent(new CustomEvent(FILE_DIFF_EVENT, { detail: false })), []);
   // Docked: Esc closes the file diff and brings the graph back.
   const isDocked = !!docked;
   useEffect(() => {
@@ -576,7 +582,7 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
             <div className="ws-diff">
               <div className="ws-diff-body">
                 {diffLoading && !diff && <Spinner />}
-                {diff && <HunkDiff file={selected} diff={diff} busy={busy} onApply={applyPartial} onWhole={applyWhole} />}
+                {diff && <HunkDiff file={selected} diff={diff} busy={busy} onApply={applyPartial} onWhole={applyWhole} onClose={() => (setSelected(null), setDiff(null))} />}
                 {!diffLoading && !diff && <div className="empty">No textual changes for this file.</div>}
               </div>
             </div>,
@@ -616,7 +622,7 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
               <Spinner />
             </div>
           )}
-          {selected && diff && <HunkDiff file={selected} diff={diff} busy={busy} onApply={applyPartial} onWhole={applyWhole} />}
+          {selected && diff && <HunkDiff file={selected} diff={diff} busy={busy} onApply={applyPartial} onWhole={applyWhole} onClose={() => (setSelected(null), setDiff(null))} />}
           {selected && !diffLoading && !diff && <div className="empty">No textual changes for this file.</div>}
         </div>
         )}

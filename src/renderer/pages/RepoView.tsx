@@ -253,7 +253,7 @@ export function RepoView() {
           {missingAccount ? (
             <div className="content">
               <div className="empty-state" style={{ textAlign: 'center', padding: '60px 20px' }}>
-                <div style={{ fontSize: 36 }}>🔐</div>
+                <div style={{ fontSize: 'var(--fs-3xl)' }}>🔐</div>
                 <h2>Sign in to {missingAccount.login} to open this repository</h2>
                 <p className="muted">
                   {activeRepo.name}
@@ -268,7 +268,7 @@ export function RepoView() {
           ) : noAccount ? (
             <div className="content">
               <div className="empty-state" style={{ textAlign: 'center', padding: '60px 20px' }}>
-                <div style={{ fontSize: 36 }}>🔐</div>
+                <div style={{ fontSize: 'var(--fs-3xl)' }}>🔐</div>
                 <h2>Sign in to GitHub to open this repository</h2>
                 <p className="muted">
                   {activeRepo.name} is on GitHub. Add your GitHub account once — Git Baba also picks up a sign-in already on this PC — and it stays signed in.
@@ -281,7 +281,7 @@ export function RepoView() {
           ) : locked && otherAccount ? (
             <div className="content">
               <div className="empty-state" style={{ textAlign: 'center', padding: '60px 20px' }}>
-                <div style={{ fontSize: 36 }}>🔒</div>
+                <div style={{ fontSize: 'var(--fs-3xl)' }}>🔒</div>
                 <h2>Switch to {otherAccount.login} to open this repository</h2>
                 <p className="muted">
                   {activeRepo.name} belongs to {otherAccount.login}

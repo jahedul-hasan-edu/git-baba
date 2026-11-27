@@ -39,7 +39,7 @@ export function Modal({ title, icon, onClose, footer, size = 'normal', children,
     <div ref={backdrop} className="modal-backdrop" role="dialog" aria-modal="true">
       <div className={`modal ${size === 'normal' ? '' : size}`}>
         <div className="modal-header">
-          {icon && <span style={{ fontSize: 18 }}>{icon}</span>}
+          {icon && <span style={{ fontSize: 'var(--fs-xl)' }}>{icon}</span>}
           <h2>{title}</h2>
           <button className="btn ghost sm" onClick={onClose} disabled={locked} aria-label="Close">
             ✕

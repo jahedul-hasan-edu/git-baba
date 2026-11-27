@@ -3,6 +3,7 @@ import type { WorktreeInfo } from '../../shared/types';
 import { useAsync } from '../hooks/useAsync';
 import { call } from '../services/api';
 import { requestCompare } from '../services/compareRequest';
+import { CLOSE_DOCK_EVENT, FILE_DIFF_EVENT } from '../services/dock';
 import { requestQuickMerge } from '../services/quickMerge';
 import { FILTER_EVENT, requestClearFilter } from '../services/jump';
 import { useApp, type RepoTab } from '../state/AppState';
@@ -85,6 +86,13 @@ export function RepoNav({ tab, onPick, pullsLabel, pipelinesLabel, conflictCount
   const branches = useAsync(() => (adding ? call('git:branches', { repoId }) : Promise.resolve(null)), [repoId, adding]);
   const wts = [...(worktrees.data ?? [])].sort((a, b) => Number(b.current) - Number(a.current) || Number(b.main) - Number(a.main));
 
+  // A changed file open over the history: History is not the selected item then; clicking it closes the file.
+  const [fileOpen, setFileOpen] = useState(false);
+  useEffect(() => {
+    const on = (e: Event) => setFileOpen(!!(e as CustomEvent<boolean>).detail);
+    window.addEventListener(FILE_DIFF_EVENT, on);
+    return () => window.removeEventListener(FILE_DIFF_EVENT, on);
+  }, []);
   const [filtered, setFiltered] = useState(false);
   useEffect(() => {
     const on = (e: Event) => setFiltered(!!(e as CustomEvent<boolean>).detail);
@@ -183,7 +191,14 @@ export function RepoNav({ tab, onPick, pullsLabel, pipelinesLabel, conflictCount
         </button>
         {open.history && (
           <div className="rn-sub">
-            <button className={`rn-subitem ${tab === 'changes' ? 'on' : ''}`} disabled={locked} onClick={() => go('changes')}>
+            <button
+              className={`rn-subitem ${tab === 'changes' && !fileOpen ? 'on' : ''}`}
+              disabled={locked}
+              onClick={() => {
+                go('changes');
+                window.dispatchEvent(new Event(CLOSE_DOCK_EVENT));
+              }}
+            >
               History
               {filtered && tab === 'changes' && (
                 <span

@@ -35,8 +35,8 @@ export function HelpPage() {
         {items.map((h) => (
           <div key={h.command} id={`help-${h.command.replace(' ', '-')}`} className="card help-card">
             <h3>
-              <code style={{ fontSize: 15 }}>{h.command}</code>
-              <span className="muted" style={{ fontWeight: 400 }}>
+              <code style={{ fontSize: 'var(--fs-md)' }}>{h.command}</code>
+              <span className="muted" style={{ fontWeight: 'var(--fw-regular)' }}>
                 — {h.summary}
               </span>
             </h3>
@@ -54,7 +54,7 @@ export function HelpPage() {
               <dd>{h.avoidWhen}</dd>
               <dt>Example</dt>
               <dd>
-                <pre className="token-box" style={{ fontSize: 12 }}>
+                <pre className="token-box" style={{ fontSize: 'var(--fs-xs)' }}>
                   {h.example}
                 </pre>
               </dd>

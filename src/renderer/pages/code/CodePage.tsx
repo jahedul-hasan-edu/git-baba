@@ -729,7 +729,7 @@ export function CodePage() {
               )}
               {empty ? (
                 <div className="empty">
-                  <div style={{ fontSize: 28 }}>🌱</div>
+                  <div style={{ fontSize: 'var(--fs-3xl)' }}>🌱</div>
                   <strong>This repository is empty.</strong>
                   <div className="small">Add a README or any file to make the first commit.</div>
                   <button className="btn primary mt" disabled={!isCurrent} onClick={() => setView({ kind: 'edit', path: 'README.md', create: true, original: '', content: `# ${activeRepo!.name}\n\n` })}>

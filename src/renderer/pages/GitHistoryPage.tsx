@@ -942,7 +942,8 @@ export function GitHistoryPage({ workspace }: Props = {}) {
   return (
     <RefActionsContext.Provider value={refActions}>
     <div className="content flush" style={{ flexDirection: 'column' }}>
-      <div className={`history-toolbar ${ws ? 'ws-toolbar' : ''}`}>
+      {/* Search commits and Lanes / Explorer sit above the history; hidden while a changed file is open. */}
+      <div className={`history-toolbar ${ws ? 'ws-toolbar' : ''}`} hidden={diffOpen} style={diffOpen ? { display: 'none' } : showSide ? { paddingRight: `calc(${paneW}% + 12px)` } : undefined}>
         {ws?.railToggle}
         <HistoryQueryBar
           scope={scope}
@@ -973,12 +974,12 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           ⇄ Compare
         </button>
         )}
-        <div className="seg graph-view-seg" role="tablist" aria-label="Graph">
-          <button role="tab" aria-selected={!diffOpen && graphView === 'lanes'} className={!diffOpen && graphView === 'lanes' ? 'on' : ''} onClick={() => pickGraph('lanes')} title="Lanes: a commit list with the branch graph beside it">
-            ☰ Lanes
+        <div className="hd-seg graph-view-seg" role="tablist" aria-label="Graph">
+          <button role="tab" aria-selected={!diffOpen && graphView === 'lanes'} className={!diffOpen && graphView === 'lanes' ? 'on' : ''} onClick={() => pickGraph('lanes')} title="Linear: a commit list with the branch graph beside it">
+            Linear
           </button>
-          <button role="tab" aria-selected={!diffOpen && graphView === 'explorer'} className={!diffOpen && graphView === 'explorer' ? 'on' : ''} onClick={() => pickGraph('explorer')} title="Branch Explorer: time left to right, one row per branch">
-            ⟿ Explorer
+          <button role="tab" aria-selected={!diffOpen && graphView === 'explorer'} className={!diffOpen && graphView === 'explorer' ? 'on' : ''} onClick={() => pickGraph('explorer')} title="Graph: time left to right, one row per branch">
+            Graph
           </button>
         </div>
         {!pinned && (

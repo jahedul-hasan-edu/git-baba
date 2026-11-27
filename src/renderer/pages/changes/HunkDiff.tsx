@@ -6,6 +6,8 @@ type Sel = Map<number, Set<number>>;
 export type PartialAction = 'stage' | 'unstage' | 'discard';
 
 interface Props {
+  /** Closes the diff and brings the history back. */
+  onClose?: () => void;
   file: FileChange;
   diff: FileDiff;
   busy: boolean;
@@ -20,7 +22,7 @@ const VIEW_KEY = 'gb.changes.diffLayout';
  * Working-tree diff you can act on: stage / unstage / discard a whole hunk, or click and drag over
  * individual lines to act on just those. A "minimap" on the side shows where the changes are.
  */
-export function HunkDiff({ file, diff, busy, onApply, onWhole }: Props) {
+export function HunkDiff({ file, diff, busy, onApply, onWhole, onClose }: Props) {
   const [sel, setSel] = useState<Sel>(new Map());
   // Unified (default) and Side by side are read-only; Interactive picks lines and hunks to stage.
   const [view, setView] = useState<'unified' | 'split' | 'interactive'>(() => {
@@ -108,25 +110,32 @@ export function HunkDiff({ file, diff, busy, onApply, onWhole }: Props) {
         <span className="small muted">
           {diff.hunks.length} hunk{diff.hunks.length === 1 ? '' : 's'}
         </span>
-        <div className="hd-seg" role="radiogroup" aria-label="Diff layout">
-          {(
-            [
-              ['unified', 'Unified', 'Read-only, one column'],
-              ['split', 'Side by side', 'Read-only, old and new next to each other'],
-              ['interactive', 'Interactive', 'Click or drag over lines to stage, unstage or discard just those'],
-            ] as const
-          ).map(([v, label, hint]) => (
-            <button key={v} role="radio" aria-checked={view === v} className={view === v ? 'on' : ''} onClick={() => setView(v)} title={hint}>
-              {label}
-            </button>
-          ))}
-        </div>
+        {onClose && (
+          <button className="hd-more-btn" onClick={onClose} title="Close (Esc) — back to the history" aria-label="Close diff">
+            ✕
+          </button>
+        )}
         <div className="hd-more" ref={menuRef}>
           <button className={`hd-more-btn ${menu ? 'on' : ''}`} onClick={() => setMenu((m) => !m)} title="View and file actions" aria-haspopup="menu" aria-expanded={menu}>
             ⋮
           </button>
           {menu && (
             <div className="hd-menu" role="menu">
+              <div className="hd-menu-h">View</div>
+              {(
+                [
+                  ['unified', 'Unified', 'Read-only'],
+                  ['split', 'Side by side', 'Read-only'],
+                  ['interactive', 'Interactive', 'Pick lines'],
+                ] as const
+              ).map(([v, label, hint]) => (
+                <button key={v} role="menuitemradio" aria-checked={view === v} className={`hd-mi ${view === v ? 'on' : ''}`} onClick={() => (setView(v), setMenu(false))}>
+                  <span className="hd-mi-ico">{view === v ? '✓' : ''}</span>
+                  <span className="grow">{label}</span>
+                  <span className="hd-mi-hint">{hint}</span>
+                </button>
+              ))}
+              <div className="hd-menu-sep" />
               <button role="menuitem" className="hd-mi" disabled={busy} onClick={() => (onWhole(primary), setMenu(false))}>
                 <span className="hd-mi-ico">{staged ? '−' : '+'}</span>
                 <span className="grow">{staged ? 'Unstage file' : 'Stage file'}</span>
@@ -150,22 +159,6 @@ export function HunkDiff({ file, diff, busy, onApply, onWhole }: Props) {
       ) : (
         <div className="hd-wrap">
           <div className="hd-body" ref={bodyRef}>
-            {!splittable && (
-              <div className="banner info small" style={{ margin: 10 }}>
-                <span className="icon">ℹ</span>
-                <div>
-                  {file.area === 'untracked'
-                    ? 'This is a new file: stage it as a whole (it can be edited afterwards and re-staged).'
-                    : diff.binary
-                      ? 'Binary file — it can only be staged as a whole.'
-                      : diff.truncated
-                        ? 'This diff is too large to select lines from; stage the whole file.'
-                        : file.area === 'conflicted'
-                          ? 'Resolve this conflict in the Conflicts tab.'
-                          : 'Renamed files are staged as a whole.'}
-                </div>
-              </div>
-            )}
             {diff.binary && <div className="empty">Binary file — contents cannot be shown as text.</div>}
             {diff.hunks.map((h, hi) => {
               const hs = sel.get(hi);

@@ -388,7 +388,7 @@ export function MergeBranchesDialog({ repoId, source, target, initialMode = 'dir
                     </div>
                     <div>{i.explanation}</div>
                     {i.id === 'conflicts' && preview.predictedConflicts && (
-                      <div className="mono" style={{ fontSize: 11, maxHeight: 90, overflow: 'auto', margin: '4px 0' }}>
+                      <div className="mono" style={{ fontSize: 'var(--fs-xs)', maxHeight: 90, overflow: 'auto', margin: '4px 0' }}>
                         {preview.predictedConflicts.map((f) => (
                           <div key={f}>! {f}</div>
                         ))}

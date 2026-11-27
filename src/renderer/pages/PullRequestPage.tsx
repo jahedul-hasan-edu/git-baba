@@ -82,7 +82,7 @@ export function PullRequestPage() {
                 ))}
               </Select>
             </div>
-            <span style={{ fontSize: 20, marginTop: 10 }}>→</span>
+            <span style={{ fontSize: 'var(--fs-xl)', marginTop: 10 }}>→</span>
             <div className="field" style={{ minWidth: 240 }}>
               <label>Target branch (merge into)</label>
               <Select kind="branch" value={target} onChange={(e) => setTarget(e.target.value)}>

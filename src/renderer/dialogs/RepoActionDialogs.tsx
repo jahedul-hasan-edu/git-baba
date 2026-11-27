@@ -187,7 +187,7 @@ function CommitView({ repoId, hash, banner }: { repoId: string; hash: string; ba
       <div className="last-commit-hero">
         <Avatar name={commit.author} size={40} />
         <div className="grow" style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 15 }}>{commit.subject}</div>
+          <div style={{ fontWeight: 'var(--fw-semibold)', fontSize: 'var(--fs-md)' }}>{commit.subject}</div>
           <div className="small muted">
             <strong style={{ color: 'var(--text-2)' }}>{commit.author}</strong> &lt;{commit.email}&gt; committed {timeAgo(commit.date)} · {shortDate(commit.date)}
           </div>
