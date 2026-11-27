@@ -6836,3 +6836,19 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .rn-layout, .rn-main, .rn-split, .rn-main > .content.flush, .ws-main, .ws-main > .content.flush { overflow: visible; }
 .rise, .rn-changes { position: relative; z-index: 31; background: var(--bg); border-top: 1px solid var(--border); }
 .rn-changes { margin-top: calc(-1 * var(--repo-bar-h, 0px)); }
+
+/* Changes panel: rounded top-left corner; the selected tab is a different, raised fill with a slight shadow. */
+.rise, .rn-changes { border-top-left-radius: 12px; overflow: hidden; }
+.chg-tabs { background: var(--bg-2); }
+.chg-tabs button { background: transparent; color: var(--text-3); box-shadow: none; }
+.chg-tabs button:hover:not(.on) { color: var(--text); background: color-mix(in srgb, var(--bg-3) 50%, transparent); }
+.chg-tabs button.on { background: var(--bg-4); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--border-2); }
+
+/* The earlier `.hist-split > .right.ws-pane { border-radius: 0 }` outranked the plain class: raise the specificity. */
+.hist-split > .right.rise, .rn-split > .rn-changes.rn-changes { border-radius: 12px 0 0 0 !important; overflow: hidden; }
+
+/* Light theme only: the repository bar uses the tab strip's plain background (no texture, spotlight or animation),
+   and the selected tab is a soft violet gradient fading into it. Other themes keep their own look. */
+:root[data-theme='light'] .app-header { background: var(--bg) !important; background-image: none !important; animation: none !important; }
+:root[data-theme='light'] .rt-tab.on { background: linear-gradient(180deg, color-mix(in srgb, var(--violet) 22%, var(--bg)) 0%, color-mix(in srgb, var(--violet) 8%, var(--bg)) 55%, var(--bg) 100%); }
+:root[data-theme='light'] .rt-tab.on .rt-name { color: var(--violet-text); }
