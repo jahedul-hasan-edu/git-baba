@@ -1,14 +1,14 @@
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { providerInfo, providerLinks } from '../../shared/providers';
 import { ProviderHub } from './provider/ProviderHub';
 import { createPortal } from 'react-dom';
 import { HEADER_REPO_SLOT } from '../components/AppHeader';
-import { requestCompare } from '../services/compareRequest';
 import { Spinner } from '../components/Modal';
 import type { PullResult } from '../../shared/types';
 import type { RepoAccess } from '../../shared/github';
 import { RepoSyncBar } from '../components/RepoSyncBar';
 import { RepoSwitcherSlot } from '../components/RepoSwitcher';
+import { RepoNav } from './RepoNav';
 import { AddAccountDialog } from '../dialogs/AddAccountDialog';
 import { FetchDialog } from '../dialogs/FetchDialog';
 import { GitHubAppSetupDialog } from '../dialogs/GitHubAppSetupDialog';
@@ -17,7 +17,7 @@ import { PushDialog } from '../dialogs/PushDialog';
 import { QuickMergeHost } from '../dialogs/QuickMergeDialog';
 import { useAsync } from '../hooks/useAsync';
 import { call } from '../services/api';
-import { useApp, type RepoTab } from '../state/AppState';
+import { useApp } from '../state/AppState';
 import { MissingWorktree } from './MissingWorktree';
 import { RepoSettingsPage } from './RepoSettingsPage';
 
@@ -28,7 +28,6 @@ const ConflictsPage = lazy(() => import('./ConflictsPage').then((m) => ({ defaul
 const ActionsTab = lazy(() => import('./github/ActionsTab').then((m) => ({ default: m.ActionsTab })));
 const PullRequestsTab = lazy(() => import('./github/PullRequestsTab').then((m) => ({ default: m.PullRequestsTab })));
 const PullRequestPage = lazy(() => import('./PullRequestPage').then((m) => ({ default: m.PullRequestPage })));
-import { FILTER_EVENT, requestClearFilter } from '../services/jump';
 const RepoSettingsShell = lazy(() => import('./repoSettings/RepoSettingsShell').then((m) => ({ default: m.RepoSettingsShell })));
 
 export function RepoView() {
@@ -138,14 +137,6 @@ export function RepoView() {
   const otherLinks = other ? providerLinks(other) : null;
   const pullsLabel = other ? (otherInfo!.tabs.pulls && otherLinks!.pulls ? otherInfo!.tabs.pulls : null) : pullsOff ? null : 'Pull Requests';
   const pipelinesLabel = other ? (otherInfo!.tabs.pipelines && otherLinks!.pipelines ? otherInfo!.tabs.pipelines : null) : actionsOff ? null : 'Actions';
-  const tabs: [RepoTab, string, number | null, string][] = [
-    ['changes', 'Changes', st ? st.staged.length + st.unstaged.length + st.untracked.length : null, '✎'],
-    ['code', 'Code', null, '</>'],
-    ...(pullsLabel ? ([['pulls', pullsLabel, null, '⇄']] as [RepoTab, string, null, string][]) : []),
-    ...(pipelinesLabel ? ([['actions', pipelinesLabel, null, '▶']] as [RepoTab, string, null, string][]) : []),
-    ...(inOperation || conflictCount > 0 ? ([['conflicts', 'Conflicts', conflictCount, '⚠']] as [RepoTab, string, number, string][]) : []),
-    ['settings', 'Settings', null, '⚙'],
-  ];
 
   const switchToOwner = async () => {
     if (!otherAccount) return;
@@ -244,7 +235,20 @@ export function RepoView() {
             </div>
           )}
           </div>
-          <TabDock tabs={tabs} active={repoTab} onPick={setRepoTab} locked={locked} extra={access && (pullsOff || actionsOff || !!access.pulls.why) ? <AccessNote access={access} onRecheck={() => loadAccess(true)} /> : null} />
+          {/* The left sidebar replaces the Changes / Code / Pull Requests / Actions / Settings tab bar. */}
+          <div className="rn-layout">
+          <RepoNav
+            tab={repoTab}
+            onPick={setRepoTab}
+            pullsLabel={pullsLabel}
+            pipelinesLabel={pipelinesLabel}
+            conflictCount={conflictCount}
+            showConflicts={inOperation || conflictCount > 0}
+            locked={locked}
+            branch={st?.branch ?? null}
+            extra={access && (pullsOff || actionsOff || !!access.pulls.why) ? <AccessNote access={access} onRecheck={() => loadAccess(true)} /> : null}
+          />
+          <div className="rn-main">
 <Suspense fallback={<div className="content"><Spinner label="Loading…" /></div>}>
           {missingAccount ? (
             <div className="content">
@@ -304,6 +308,8 @@ export function RepoView() {
           </>
           )}
 </Suspense>
+          </div>
+          </div>
         </>
       )}
 
@@ -402,86 +408,6 @@ function RepoIdentity() {
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-/** Tab bar with icons, a sliding active indicator, counts and Ctrl+1…9 shortcuts. */
-function TabDock({ tabs, active, onPick: pick, locked, extra }: { tabs: [RepoTab, string, number | null, string][]; active: RepoTab; onPick: (t: RepoTab) => void; locked?: boolean; extra?: ReactNode }) {
-  const isOff = (_t: RepoTab) => !!locked;
-  const onPick = (t: RepoTab) => {
-    if (!isOff(t)) pick(t);
-  };
-  const ref = useRef<HTMLDivElement>(null);
-  const [ink, setInk] = useState<{ left: number; width: number } | null>(null);
-  useLayoutEffect(() => {
-    const el = ref.current?.querySelector<HTMLElement>(`[data-tab="${active}"]`);
-    if (!el) return setInk(null);
-    setInk({ left: el.offsetLeft, width: el.offsetWidth });
-  }, [active, tabs.length]);
-  useEffect(() => {
-    const on = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-      const n = Number(e.key);
-      if (n >= 1 && n <= 9 && tabs[n - 1]) {
-        e.preventDefault();
-        onPick(tabs[n - 1][0]);
-      }
-    };
-    window.addEventListener('keydown', on);
-    return () => window.removeEventListener('keydown', on);
-  }, [tabs, onPick]);
-  useEffect(() => {
-    const on = () => {
-      const el = ref.current?.querySelector<HTMLElement>(`[data-tab="${active}"]`);
-      if (el) setInk({ left: el.offsetLeft, width: el.offsetWidth });
-    };
-    window.addEventListener('resize', on);
-    return () => window.removeEventListener('resize', on);
-  }, [active]);
-  const [filtered, setFiltered] = useState(false);
-  useEffect(() => {
-    const on = (e: Event) => setFiltered(!!(e as CustomEvent<boolean>).detail);
-    window.addEventListener(FILTER_EVENT, on);
-    return () => window.removeEventListener(FILTER_EVENT, on);
-  }, []);
-  return (
-    <div className="tabs dock" ref={ref} role="tablist">
-      {tabs.map(([id, label, count, icon], i) => (
-        <div
-          key={id}
-          data-tab={id}
-          role="tab"
-          aria-selected={active === id}
-          aria-disabled={isOff(id)}
-          className={`tab ${active === id ? 'active' : ''} ${id === 'conflicts' ? 'alert' : ''}`}
-          style={isOff(id) ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-          onClick={() => onPick(id)}
-          title={isOff(id) ? `Switch account to use ${label}` : i < 9 ? `${label} (Ctrl+${i + 1})` : label}
-        >
-          <span className="tab-ico">{icon}</span>
-          {label}
-          {count !== null && count > 0 && <span className={`tab-count ${id === 'conflicts' ? 'danger' : ''}`}>{count}</span>}
-        </div>
-      ))}
-      {ink && <span className="tab-ink" style={{ transform: `translateX(${ink.left}px)`, width: ink.width }} />}
-      {extra}
-      <button
-        className="tab-compare"
-        disabled={!!locked}
-        onClick={() => {
-          if (active !== 'changes') pick('changes');
-          requestCompare();
-        }}
-        title={locked ? 'Switch to the account this repository belongs to first' : 'Compare branches, tags or commits'}
-      >
-        ⇄ Compare
-      </button>
-      {filtered && (
-        <button className="tab-clear" onClick={requestClearFilter} title="Show all commits again">
-          ✕ Clear search
-        </button>
-      )}
     </div>
   );
 }

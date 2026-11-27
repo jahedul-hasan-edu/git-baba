@@ -238,7 +238,7 @@ export function CommitComposer({ repoId, message, setMessage, staged, canCommit,
           </svg>
         </button>
       </div>
-      {blockedReason && <div className="cc2-foot">{blockedReason}</div>}
+      {blockedReason && blockedReason !== 'Write a summary to commit.' && <div className="cc2-foot">{blockedReason}</div>}
 
       {typeMenu && (
         <div ref={typeRef} className="ctx-menu cc2-menu" role="menu">

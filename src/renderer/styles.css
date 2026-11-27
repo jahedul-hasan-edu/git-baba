@@ -6665,3 +6665,62 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .fx-compact .fx-num { font-size: 12px; }
 .fx-compact .fx-folder { min-height: 32px; font-family: var(--mono); font-size: 12.5px; color: var(--text-2); }
 :root[data-theme='light'] .fx-compact .fx-list { background: transparent; }
+
+/* ---------- Repository sidebar (replaces the Changes / Code / … tab bar) ---------- */
+.rn-layout { flex: 1; min-height: 0; display: flex; }
+.rn-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.rn-main > .content { flex: 1; min-height: 0; }
+.rn { flex: none; width: 262px; display: flex; flex-direction: column; min-height: 0; background: var(--bg); border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.rn-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px 0 16px; }
+.rn-title { flex: 1; min-width: 0; font-size: 11.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rn-icon { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--text-3); cursor: pointer; }
+.rn-icon:hover { background: var(--bg-3); color: var(--text); }
+.rn-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+.rn-item { display: flex; align-items: center; gap: 10px; width: 100%; height: 34px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; transition: background .12s, color .12s; }
+.rn-item:hover:not(:disabled) { background: var(--bg-2); }
+.rn-item.on { background: color-mix(in srgb, var(--violet) 16%, var(--bg-2)); }
+.rn-item:disabled { opacity: .45; cursor: not-allowed; }
+.rn-item.danger { color: var(--danger); }
+.rn-ico { flex: none; display: inline-flex; color: var(--text-2); }
+.rn-item.on .rn-ico, .rn-group.here .rn-ico { color: var(--violet-text); }
+.rn-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rn-n { flex: none; min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--bg-3); color: var(--text-2); font-size: 11px; font-weight: 600; text-align: center; }
+.rn-n.danger { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+.rn-chev, .rn-caret { flex: none; width: 14px; text-align: center; color: var(--text-3); font-size: 15px; transition: transform .15s; }
+.rn-caret.open { transform: rotate(90deg); }
+.rn-sub { position: relative; display: flex; flex-direction: column; gap: 1px; margin: 2px 0 6px 18px; padding-left: 12px; }
+.rn-sub::before { content: ''; position: absolute; left: 0; top: 2px; bottom: 2px; width: 1px; background: var(--border); }
+.rn-subitem { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
+.rn-subitem:hover:not(:disabled) { background: var(--bg-2); color: var(--text); }
+.rn-subitem.on { background: color-mix(in srgb, var(--violet) 18%, var(--bg-2)); color: var(--text); font-weight: 700; }
+.rn-subitem:disabled { opacity: .45; cursor: not-allowed; }
+.rn-add { color: var(--text-3); }
+.rn-clear { margin-left: auto; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 500; color: var(--violet-text); background: color-mix(in srgb, var(--violet) 14%, transparent); }
+.rn-wt { display: flex; align-items: center; gap: 9px; width: 100%; padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.rn-wt:hover { background: var(--bg-2); }
+.rn-wt.on { background: var(--bg-2); cursor: default; }
+.rn-wt.gone { opacity: .5; }
+.rn-wt-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-3); }
+.rn-wt-dot.here { border-color: var(--ok); background: var(--ok); }
+.rn-wt-dot.dirty { border-color: var(--warn); }
+.rn-wt-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.rn-wt-name { font: 700 12px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rn-wt-sub { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rn-wt-n { flex: none; font-size: 11px; font-weight: 600; color: var(--warn); }
+.rn-extra { padding: 8px 10px 10px; border-top: 1px solid var(--border); }
+.rn-rail { width: 48px; align-items: center; padding: 8px 0 10px; gap: 4px; }
+.rn-rail-btn { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); cursor: pointer; transition: background .12s, color .12s; }
+.rn-rail-btn:hover:not(:disabled) { background: var(--bg-2); color: var(--text); }
+.rn-rail-btn.on { background: color-mix(in srgb, var(--violet) 18%, var(--bg-2)); color: var(--violet-text); }
+.rn-rail-btn:disabled { opacity: .45; cursor: not-allowed; }
+.rn-rail-sep { width: 22px; height: 1px; margin: 2px 0 4px; background: var(--border); }
+
+/* Notifications panel: slightly smaller. */
+.nb-pop { width: 380px !important; max-height: min(540px, calc(100vh - 100px)) !important; }
+
+/* Sidebar text matches the repository name and the commit list: 13px throughout. */
+.rn-item, .rn-subitem, .rn-wt-name { font-size: 13px; }
+.rn-item { font-weight: 600; }
+.rn-subitem { font-weight: 500; }
+.rn-subitem.on { font-weight: 600; }
+.rn-wt-name { font-family: var(--sans); font-weight: 600; }

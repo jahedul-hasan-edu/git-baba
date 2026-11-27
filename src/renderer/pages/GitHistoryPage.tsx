@@ -944,12 +944,6 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     <div className="content flush" style={{ flexDirection: 'column' }}>
       <div className={`history-toolbar ${ws ? 'ws-toolbar' : ''}`}>
         {ws?.railToggle}
-        {ws && (
-          <button className={`ws-wip-pill ${wip && panelOpen ? 'on' : ''} ${head.dirty ? 'dirty' : ''}`} onClick={openWip} title="Working changes: stage, review and commit (W)" aria-label="Working changes">
-            <span aria-hidden>✎</span>
-            {head.dirty > 0 && <span className="ws-wip-count">{head.dirty}</span>}
-          </button>
-        )}
         <HistoryQueryBar
           scope={scope}
           onScope={setScope}
