@@ -201,6 +201,8 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
         /
       </span>
 
+      {/* One bordered pill: branch · Fetch/Pull · Push */}
+      <div className="ab-group">
       {/* Branch capsule: icon tile · namespace over branch name · ahead/behind · chevron */}
       <div className="pop-anchor" ref={branchRef}>
         <button className={`ab-cap ab-branch ${branchOpen ? 'on' : ''}`} onClick={() => setBranchOpen((o) => !o)} disabled={disabled} title={`${branch}\n${syncTitle}\nSwitch branch`}>
@@ -287,13 +289,6 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
         )}
       </div>
 
-      <span className="grow" />
-
-      {/* When the remote was last fetched */}
-      <span className="ab-fetched" title={st?.lastFetchAt ? `Last fetch: ${new Date(st.lastFetchAt).toLocaleString()}${lastCheck ? `\nRemote checked ${lastCheck.toLocaleTimeString()}` : ''}` : undefined}>
-        {fetchedText}
-      </span>
-
       {/* Fetch / Pull: an icon button that becomes "Pull N" when there is something to bring in */}
       <div className="ab-split pop-anchor" ref={syncRef}>
         {behind > 0 ? (
@@ -302,8 +297,10 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
             {incoming ? <span className="pulse-dot" title="New commits on the remote" /> : null}
           </button>
         ) : (
-          <button className="ab-btn icon" onClick={onFetch} disabled={disabled || !hasRemote} title={!hasRemote ? 'No remote to fetch from yet' : `Fetch from the remote (your files are not changed)${lastCheck ? `\nRemote checked ${lastCheck.toLocaleTimeString()}: up to date` : ''}`} aria-label="Fetch">
-            <DownIcon />
+          <button className="ab-btn" onClick={onFetch} disabled={disabled || !hasRemote} title={!hasRemote ? 'No remote to fetch from yet' : `Fetch from the remote (your files are not changed)
+${fetchedText}${lastCheck ? `
+Remote checked ${lastCheck.toLocaleTimeString()}: up to date` : ''}`}>
+            <DownIcon /> Fetch
           </button>
         )}
         <button className={`ab-btn caret ${behind > 0 ? 'attention' : ''}`} onClick={() => setSyncMenu((o) => !o)} disabled={disabled || !hasRemote} aria-label="More sync options">
@@ -369,6 +366,8 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
           {ahead > 0 && <span className="ab-badge">{ahead}</span>}
         </button>
       )}
+
+      </div>
 
       {switching && (
         <SwitchBranchDialog

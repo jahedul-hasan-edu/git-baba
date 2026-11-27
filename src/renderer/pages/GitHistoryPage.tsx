@@ -1267,9 +1267,9 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               }}
             />
             {ws && wip ? (
-              <div className="right ws-pane" style={lift ? { marginTop: -toolbarH, position: 'relative', zIndex: 2 } : undefined}>{wipPane}</div>
+              <div className="right ws-pane rise" style={ws ? { marginTop: `calc(-1 * (var(--repo-bar-h, 0px) + ${lift ? toolbarH : 0}px))` } : undefined}>{wipPane}</div>
             ) : (
-              <div className="right" style={{ padding: 16, ...(lift ? { marginTop: -toolbarH, position: 'relative', zIndex: 2 } : {}) }}>
+              <div className={`right ${ws ? 'rise' : ''}`} style={{ padding: 16, ...(ws ? { marginTop: `calc(-1 * (var(--repo-bar-h, 0px) + ${lift ? toolbarH : 0}px))` } : {}) }}>
                 {pane}
               </div>
             )}

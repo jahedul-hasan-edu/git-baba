@@ -106,6 +106,19 @@ export function RepoView() {
 
   // The repository's name, branch, Fetch and Push live in the app header (next to the account).
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+  // The Changes panel rises through the repository bar to the top: publish the bar's height for it.
+  useLayoutEffect(() => {
+    const bar = document.querySelector<HTMLElement>('.app-header');
+    if (!bar) return;
+    const set = () => document.documentElement.style.setProperty('--repo-bar-h', `${bar.offsetHeight}px`);
+    const ro = new ResizeObserver(set);
+    ro.observe(bar);
+    set();
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.removeProperty('--repo-bar-h');
+    };
+  }, [headerSlot]);
   useLayoutEffect(() => setHeaderSlot(document.getElementById(HEADER_REPO_SLOT)), []);
 
   // A tab this repository's provider does not have (e.g. Pull Requests on a plain Git server) falls back to Changes.

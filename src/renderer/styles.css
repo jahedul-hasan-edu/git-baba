@@ -6798,3 +6798,41 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .rn-page > .content { flex: 1; min-height: 0; }
 .rn-changes { flex: none; min-width: 340px; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border); background: var(--bg); }
 .rn-changes > .content.ws-dock-wrap, .rn-changes > .ws-clean { flex: 1; min-height: 0; }
+
+/* ---------- Repository bar: branch · Fetch · Push in one bordered pill; no line under the tabs ---------- */
+.rt-strip { border-bottom: 0; }
+.ab-group { flex: none; display: flex; align-items: stretch; height: 42px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--bg-2); }
+.ab-group > * { display: flex; align-items: stretch; }
+.ab-group > * + * { border-left: 1px solid var(--border-2); }
+.ab-group .ab-cap { height: 100%; max-width: 340px; padding: 0 10px 0 6px; border-radius: 9px 0 0 9px; }
+.ab-group .ab-btn { height: auto; min-width: 0; padding: 0 14px; border: 0; border-radius: 0; background: transparent; box-shadow: none; transform: none; }
+.ab-group .ab-btn:hover:not(:disabled) { background: var(--bg-3); }
+.ab-group .ab-split > .ab-btn:first-child { padding-right: 6px; }
+.ab-group .ab-split > .ab-btn.caret { width: 26px; padding: 0; margin: 0 4px 0 0; }
+.ab-group > :last-child, .ab-group > :last-child.ab-btn { border-radius: 0 9px 9px 0; }
+.ab-group .ab-btn.push { padding: 0 16px; }
+.ab-group .ab-btn.push.primary { background: var(--violet); color: #fff; }
+.ab-group .ab-btn.push.primary:hover:not(:disabled) { background: var(--violet-hover); }
+
+/* Notification badge: the app's action colour (violet, like Push / Commit), smaller and lighter.
+   12px is the smallest step of the type scale, so the badge shrinks in size and weight instead. */
+.nb-count { background: var(--violet); color: #fff; min-width: 16px; height: 16px; padding: 0 4px; border-width: 1.5px; font-weight: var(--fw-medium); line-height: 1; }
+.rt-end .nb-count { top: -2px; right: -2px; }
+
+/* Grouped bar fix: buttons keep their contents centred, and every segment after the first keeps its divider. */
+.ab-group .ab-btn { align-items: center; justify-content: center; gap: 8px; }
+.ab-group > * + *, .ab-group > .ab-btn + .ab-btn, .ab-group > * + .ab-btn { border-left: 1px solid var(--border-2) !important; }
+.ab-group .ab-split > .ab-btn { border-left: 0 !important; }
+.ab-group .ab-btn:disabled { opacity: .5; }
+
+/* The Changes panel's surface continues up through the repository bar (no gap above it). */
+.app-header { position: relative; }
+.ah-pane-cap { position: absolute; top: 0; right: 0; bottom: -1px; z-index: 0; background: var(--bg); border-left: 1px solid var(--border); pointer-events: none; }
+.ah-deck > :not(.ah-pane-cap) { position: relative; z-index: 1; }
+
+/* ---------- The Changes panel runs from the tab strip to the bottom on every repository page ----------
+   It rises over the repository bar (whose height is --repo-bar-h); one line marks its top edge, one its left. */
+.ah-pane-cap { display: none !important; }
+.rn-layout, .rn-main, .rn-split, .rn-main > .content.flush, .ws-main, .ws-main > .content.flush { overflow: visible; }
+.rise, .rn-changes { position: relative; z-index: 31; background: var(--bg); border-top: 1px solid var(--border); }
+.rn-changes { margin-top: calc(-1 * var(--repo-bar-h, 0px)); }
