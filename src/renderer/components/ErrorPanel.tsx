@@ -1,5 +1,6 @@
 import type { ErrorAction, FriendlyError } from '../../shared/types';
 import { Modal, useEnclosingModalClose } from './Modal';
+import { setSettingsSection } from '../services/settingsNav';
 import { useState } from 'react';
 import { call } from '../services/api';
 import { useApp } from '../state/AppState';
@@ -107,7 +108,7 @@ export function GlobalErrorDialog() {
       }
       if (a === 'set-identity' || a === 'open-settings') {
         setView('repo');
-        setRepoTab('settings');
+        (setSettingsSection('general'), setRepoTab('settings'));
       }
     }
   };

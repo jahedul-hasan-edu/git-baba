@@ -7,7 +7,7 @@ import { requestNewBranch } from './CleanSlate';
 
 /** The Changes panel with nothing to commit: "All caught up" and what to do next. */
 export function EmptyChanges({ repoId, status }: { repoId: string; status: RepoStatus }) {
-  const { activeRepo, setPrDraft, setRepoTab } = useApp();
+  const { activeRepo, setPrDraft, setRepoTab, repoTab } = useApp();
   const [locals, setLocals] = useState<number | null>(null);
   const [base, setBase] = useState<string | null>(null);
   const branch = status.branch;
@@ -77,7 +77,10 @@ export function EmptyChanges({ repoId, status }: { repoId: string; status: RepoS
           title="Create new branch"
           sub={branch ? `From ${branch}` : 'From the current commit'}
           end={<kbd className="chg-kbd">Ctrl Shift N</kbd>}
-          onClick={() => requestNewBranch(branch ?? undefined)}
+          onClick={() => {
+            if (repoTab !== 'changes') setRepoTab('changes'); // the New Branch window lives on the History page
+            requestNewBranch(branch ?? undefined);
+          }}
         />
       </div>
     </div>

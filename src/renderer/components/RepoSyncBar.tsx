@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BranchInfo, RepoStatus, StashEntry } from '../../shared/types';
+import { setSettingsSection } from '../services/settingsNav';
 import { SwitchBranchDialog } from '../dialogs/BranchDialogs';
 import { call } from '../services/api';
 import { useApp } from '../state/AppState';
@@ -341,7 +342,7 @@ export function RepoSyncBar({ repoId, isGitHub, hasRemote, status: st, loading, 
 
       {/* Push: blue with the count when there is something to push; quiet otherwise */}
       {!hasRemote ? (
-        <button className="ab-btn" onClick={() => setRepoTab('settings')} disabled={disabled} title="Add a remote in Settings, then publish this branch to it">
+        <button className="ab-btn" onClick={() => (setSettingsSection('general'), setRepoTab('settings'))} disabled={disabled} title="Add a remote in Settings, then publish this branch to it">
           ＋ Add remote
         </button>
       ) : (

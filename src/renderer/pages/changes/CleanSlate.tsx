@@ -1,10 +1,24 @@
 import type { RepoStatus } from '../../../shared/types';
 import { useApp } from '../../state/AppState';
+import { setSettingsSection } from '../../services/settingsNav';
 import { isPublished } from '../../../shared/publish';
 
 const openDialog = (d: 'fetch' | 'pull' | 'push') => window.dispatchEvent(new CustomEvent('gb:repo-dialog', { detail: d }));
 /** Opens the New Branch window of the workspace rail. */
-export const requestNewBranch = (from?: string) => window.dispatchEvent(new CustomEvent('gb:new-branch', { detail: from ?? '' }));
+let pendingNewBranch: string | null = null;
+export const requestNewBranch = (from?: string) => {
+  pendingNewBranch = from ?? '';
+  window.dispatchEvent(new CustomEvent('gb:new-branch', { detail: from ?? '' }));
+};
+/** A request made before the History page (which owns the New Branch window) was mounted. */
+export const takePendingNewBranch = (): string | null => {
+  const v = pendingNewBranch;
+  pendingNewBranch = null;
+  return v;
+};
+export const clearPendingNewBranch = () => {
+  pendingNewBranch = null;
+};
 
 /** The Changes tab when there is nothing to commit: that it is clean, and where the branch stands with its remote. */
 export function CleanSlate({ status, compact }: { repoId: string; status: RepoStatus; compact?: boolean; onOpenCommit?: (hash: string) => void }) {
@@ -15,7 +29,7 @@ export function CleanSlate({ status, compact }: { repoId: string; status: RepoSt
     : !status.headOid
       ? { tone: 'info', icon: '✦', title: 'No commits yet', text: `${status.branch} is brand new. Add a file, then commit it to start the history.`, action: { label: '＋ Add a file', run: () => setRepoTab('code') } }
     : activeRepo && !activeRepo.remoteUrl
-      ? { tone: 'info', icon: '☁', title: 'No remote yet', text: `${status.branch} lives only on this computer. Add a remote (such as an empty GitHub repository) to back it up and share it.`, action: { label: '＋ Add a remote', run: () => setRepoTab('settings') } }
+      ? { tone: 'info', icon: '☁', title: 'No remote yet', text: `${status.branch} lives only on this computer. Add a remote (such as an empty GitHub repository) to back it up and share it.`, action: { label: '＋ Add a remote', run: () => (setSettingsSection('general'), setRepoTab('settings')) } }
     : !published
       ? {
           tone: 'info',

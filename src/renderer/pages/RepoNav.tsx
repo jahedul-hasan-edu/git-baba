@@ -4,6 +4,7 @@ import { useAsync } from '../hooks/useAsync';
 import { call } from '../services/api';
 import { requestCompare } from '../services/compareRequest';
 import { CLOSE_DOCK_EVENT, FILE_DIFF_EVENT } from '../services/dock';
+import { setSettingsSection, useSettingsSection, type SettingsSection } from '../services/settingsNav';
 import { requestQuickMerge } from '../services/quickMerge';
 import { FILTER_EVENT, requestClearFilter } from '../services/jump';
 import { useApp, type RepoTab } from '../state/AppState';
@@ -13,7 +14,7 @@ import { AddWorktreeDialog } from './workspace/WorktreePanel';
 const COLLAPSE_KEY = 'gb.repoNav.collapsed';
 const OPEN_KEY = 'gb.repoNav.open';
 
-type Section = 'history' | 'worktrees';
+type Section = 'history' | 'worktrees' | 'settings';
 
 interface Props {
   tab: RepoTab;
@@ -76,9 +77,23 @@ export function RepoNav({ tab, onPick, pullsLabel, pipelinesLabel, conflictCount
   const { activeRepo, revision, selectRepo, refreshRepos, bump, toast, showError } = useApp();
   const repoId = activeRepo!.id;
   const [collapsed, setCollapsed] = useState<boolean>(() => read(COLLAPSE_KEY, false));
-  const [open, setOpen] = useState<Record<Section, boolean>>(() => read(OPEN_KEY, { history: true, worktrees: false }));
+  const [open, setOpen] = useState<Record<Section, boolean>>(() => ({ history: true, worktrees: false, settings: false, ...read<Partial<Record<Section, boolean>>>(OPEN_KEY, {}) }));
   useEffect(() => write(COLLAPSE_KEY, collapsed), [collapsed]);
   useEffect(() => write(OPEN_KEY, open), [open]);
+  // Settings pages: Secrets is offered only to a repository admin on GitHub.
+  const settingsSection = useSettingsSection();
+  const { ghKey } = useApp();
+  const gh = useAsync(() => (activeRepo!.github ? call('gh:context', { repoId }).catch(() => null) : Promise.resolve(null)), [repoId, ghKey, activeRepo!.github]);
+  const showSecrets = !!activeRepo!.github && !!gh.data?.permissions.canAdmin;
+  const pickSetting = (s: SettingsSection) => {
+    if (locked) return;
+    setSettingsSection(s);
+    onPick('settings');
+  };
+  // Landing on Settings from anywhere shows where you are.
+  useEffect(() => {
+    if (tab === 'settings') setOpen((o) => (o.settings ? o : { ...o, settings: true }));
+  }, [tab]);
   const toggle = (s: Section) => setOpen((o) => ({ ...o, [s]: !o[s] }));
 
   const worktrees = useAsync(() => call('git:worktrees', { repoId }), [repoId, revision]);
@@ -268,7 +283,27 @@ export function RepoNav({ tab, onPick, pullsLabel, pipelinesLabel, conflictCount
         {navItem('code', 'Code explorer', I.code)}
         {pullsLabel && navItem('pulls', pullsLabel, I.pr, { chevron: true })}
         {pipelinesLabel && navItem('actions', pipelinesLabel, I.actions)}
-        {navItem('settings', 'Settings', I.settings, { chevron: true })}
+        {/* Settings */}
+        <button className={`rn-item rn-group ${tab === 'settings' ? 'here' : ''}`} onClick={() => toggle('settings')} aria-expanded={open.settings}>
+          <span className="rn-ico">
+            <Ico d={I.settings} />
+          </span>
+          <span className="rn-label">Settings</span>
+          <span className={`rn-caret ${open.settings ? 'open' : ''}`}>›</span>
+        </button>
+        {open.settings && (
+          <div className="rn-sub">
+            {([
+              ['general', 'General'],
+              ['access', 'Security & Access'],
+              ...(showSecrets ? ([['secrets', 'Secrets']] as [SettingsSection, string][]) : []),
+            ] as [SettingsSection, string][]).map(([id, label]) => (
+              <button key={id} className={`rn-subitem ${tab === 'settings' && settingsSection === id ? 'on' : ''}`} disabled={locked} onClick={() => pickSetting(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {extra && <div className="rn-extra">{extra}</div>}

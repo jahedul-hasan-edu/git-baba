@@ -6784,3 +6784,17 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 .hd-hunk { margin-bottom: 8px; }
 .ws-diff, .ws-diff-body { padding: 0 !important; margin: 0 !important; }
 .hd-map { display: none !important; }
+
+/* Settings is one page per sidebar item now: no inner nav, content uses the full width. */
+.repo-settings .settings-body { max-width: 920px; }
+.repo-settings .role-in-general { max-width: 360px; }
+.repo-settings .role-in-general .role-card { margin-top: 0; }
+.repo-settings .dz-card h3 { color: var(--danger); }
+.repo-settings .dz-card { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+
+/* ---------- Changes panel beside every page that is not History ---------- */
+.rn-split { flex: 1; min-height: 0; display: flex; }
+.rn-page { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.rn-page > .content { flex: 1; min-height: 0; }
+.rn-changes { flex: none; min-width: 340px; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border); background: var(--bg); }
+.rn-changes > .content.ws-dock-wrap, .rn-changes > .ws-clean { flex: 1; min-height: 0; }

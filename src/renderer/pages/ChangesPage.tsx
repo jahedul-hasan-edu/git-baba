@@ -1,4 +1,5 @@
 import { CLOSE_DOCK_EVENT, FILE_DIFF_EVENT } from '../services/dock';
+import { clearOpenFile, OPEN_FILE_EVENT, peekOpenFile } from '../services/openFile';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ChangeKind, FileChange, FileDiff, FriendlyError, RepoStatus } from '../../shared/types';
@@ -26,6 +27,8 @@ interface Props {
    * file's diff opens in `diffHost` (over the graph), and `clean` replaces the empty screen.
    */
   docked?: { diffHost: HTMLElement | null; clean: ReactNode };
+  /** Panel shown beside a page with no diff area: a picked file is handed over here (the app opens it in History). */
+  onOpenFile?: (f: FileChange) => void;
   /** Start with the folder tree (the pop-up window always opens as a tree). */
   tree?: boolean;
 }
@@ -48,7 +51,7 @@ const KIND: Record<ChangeKind, [string, string, string]> = {
   conflicted: ['!', 'del', 'Conflict'],
 };
 
-export function ChangesPage({ status, reload, error, docked, tree }: Props) {
+export function ChangesPage({ status, reload, error, docked, tree, onOpenFile }: Props) {
   const { activeRepo, showError, bump, toast, setRepoTab } = useApp();
   const repoId = activeRepo!.id;
   const [tab, setTab] = useState<TabId>('changes');
@@ -172,8 +175,34 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
     window.addEventListener(CLOSE_DOCK_EVENT, close);
     return () => window.removeEventListener(CLOSE_DOCK_EVENT, close);
   }, [docked]);
+  // No diff area here (another page): hand the picked file over instead of selecting it.
+  useEffect(() => {
+    if (selected && onOpenFile && docked && !docked.diffHost) {
+      onOpenFile(selected);
+      setSelected(null);
+      setDiff(null);
+    }
+  }, [selected, onOpenFile, docked]);
+  // A file handed over from another page: select it once the panel has its diff area and the status.
+  const host = docked?.diffHost ?? null;
+  useEffect(() => {
+    if (!host || !status) return;
+    const take = () => {
+      const req = peekOpenFile();
+      if (!req) return;
+      const all = [...status.conflicted, ...status.staged, ...status.unstaged, ...status.untracked];
+      const f = all.find((x) => x.path === req.path && x.area === req.area) ?? all.find((x) => x.path === req.path);
+      clearOpenFile();
+      if (!f) return;
+      setTab(f.area === 'staged' ? 'staged' : 'changes');
+      setSelected(f);
+    };
+    take();
+    window.addEventListener(OPEN_FILE_EVENT, take);
+    return () => window.removeEventListener(OPEN_FILE_EVENT, take);
+  }, [host, status]);
   // Docked: tell the sidebar whether a file diff covers the history (History is unselected while it does).
-  const fileOpen = !!docked && !!selected;
+  const fileOpen = !!docked?.diffHost && !!selected;
   useEffect(() => {
     window.dispatchEvent(new CustomEvent(FILE_DIFF_EVENT, { detail: fileOpen }));
   }, [fileOpen]);

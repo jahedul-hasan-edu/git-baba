@@ -9,6 +9,8 @@ import type { RepoAccess } from '../../shared/github';
 import { RepoSyncBar } from '../components/RepoSyncBar';
 import { RepoSwitcherSlot } from '../components/RepoSwitcher';
 import { RepoNav } from './RepoNav';
+import { ChangesPage } from './ChangesPage';
+import { requestOpenFile } from '../services/openFile';
 import { AddAccountDialog } from '../dialogs/AddAccountDialog';
 import { FetchDialog } from '../dialogs/FetchDialog';
 import { GitHubAppSetupDialog } from '../dialogs/GitHubAppSetupDialog';
@@ -29,6 +31,16 @@ const ActionsTab = lazy(() => import('./github/ActionsTab').then((m) => ({ defau
 const PullRequestsTab = lazy(() => import('./github/PullRequestsTab').then((m) => ({ default: m.PullRequestsTab })));
 const PullRequestPage = lazy(() => import('./PullRequestPage').then((m) => ({ default: m.PullRequestPage })));
 const RepoSettingsShell = lazy(() => import('./repoSettings/RepoSettingsShell').then((m) => ({ default: m.RepoSettingsShell })));
+
+/** Width (% of the page) of the Changes panel beside non-History pages: the same size as in History. */
+function changesPaneWidth(): number {
+  try {
+    const v = Number(localStorage.getItem('gb.ws.paneW')) || 36;
+    return Math.max(30, Math.min(42, v));
+  } catch {
+    return 36;
+  }
+}
 
 export function RepoView() {
   const { activeRepo, repoTab, setRepoTab, revision, bump, appSetupRepoId, requestAppSetup, activeAccount, accounts, setAccounts, refreshSession, refreshRepos, toast, setView, switchingAccount, ghKey } = useApp();
@@ -295,14 +307,33 @@ export function RepoView() {
           ) : (
           <>
           {repoTab === 'changes' && <WorkspacePage status={st} reload={status.reload} error={status.error} />}
-          {repoTab === 'code' && <CodePage key={repoId} />}
-          {repoTab === 'pr' && <PullRequestPage />}
-          {repoTab === 'pulls' && (other ? pullsLabel && <ProviderHub repo={activeRepo} status={st ?? null} kind="pulls" /> : <PullRequestsTab />)}
-          {repoTab === 'actions' && (other ? pipelinesLabel && <ProviderHub repo={activeRepo} status={st ?? null} kind="pipelines" /> : <ActionsTab />)}
-          {repoTab === 'conflicts' && <ConflictsPage status={st} switchSession={switchSession.data ?? null} />}
-          {repoTab === 'settings' && (
-            <div className="content">
-              <RepoSettingsShell />
+          {repoTab !== 'changes' && (
+            // Every other page keeps the Changes panel (stage, commit) on the right; a file picked there opens in History.
+            <div className="rn-split">
+              <div className="rn-page">
+              {repoTab === 'code' && <CodePage key={repoId} />}
+              {repoTab === 'pr' && <PullRequestPage />}
+              {repoTab === 'pulls' && (other ? pullsLabel && <ProviderHub repo={activeRepo} status={st ?? null} kind="pulls" /> : <PullRequestsTab />)}
+              {repoTab === 'actions' && (other ? pipelinesLabel && <ProviderHub repo={activeRepo} status={st ?? null} kind="pipelines" /> : <ActionsTab />)}
+              {repoTab === 'conflicts' && <ConflictsPage status={st} switchSession={switchSession.data ?? null} />}
+              {repoTab === 'settings' && (
+                <div className="content">
+                  <RepoSettingsShell />
+                </div>
+              )}
+              </div>
+              <aside className="rn-changes" style={{ width: `${changesPaneWidth()}%` }}>
+                <ChangesPage
+                  status={st ?? null}
+                  reload={status.reload}
+                  error={status.error}
+                  docked={{ diffHost: null, clean: null }}
+                  onOpenFile={(f) => {
+                    requestOpenFile({ path: f.path, area: f.area });
+                    setRepoTab('changes');
+                  }}
+                />
+              </aside>
             </div>
           )}
           </>

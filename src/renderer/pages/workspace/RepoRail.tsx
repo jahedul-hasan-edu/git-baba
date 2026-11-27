@@ -17,6 +17,7 @@ import { useApp } from '../../state/AppState';
 import type { GraphFocus } from '../GitHistoryPage';
 import { type AddRequest } from './WorktreePanel';
 import { WorktreeRail } from './WorktreeRail';
+import { clearPendingNewBranch, takePendingNewBranch } from '../changes/CleanSlate';
 
 
 function readPref<T>(key: string, fallback: T): T {
@@ -121,7 +122,13 @@ export function RepoRail({ repoId, status, onFocus, hidden, setHidden }: Props) 
   );
   // Other screens (the clean Changes screen, keyboard) open the New Branch window.
   useEffect(() => {
-    const on = (e: Event) => setNewBranch({ name: '', from: (e as CustomEvent<string>).detail || '', switchTo: true });
+    const on = (e: Event) => {
+      clearPendingNewBranch();
+      setNewBranch({ name: '', from: (e as CustomEvent<string>).detail || '', switchTo: true });
+    };
+    // Asked for from another page, before this one was mounted:
+    const waiting = takePendingNewBranch();
+    if (waiting !== null) setNewBranch({ name: '', from: waiting, switchTo: true });
     window.addEventListener('gb:new-branch', on);
     return () => window.removeEventListener('gb:new-branch', on);
   }, []);
