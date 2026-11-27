@@ -141,7 +141,7 @@ function CompareSlot({ slot, commit, active, onDropHash, onClear }: { slot: Slot
 }
 
 /** Branch refs as interactive chips: "main" + "origin/main" become one chip with a cloud, HEAD is filled. */
-function RefPills({ refs, laneColor, remotes, max = 2 }: { refs: string[]; laneColor: string; remotes: Set<string>; max?: number }) {
+function RefPills({ refs, laneColor, remotes, max = 2, hide }: { refs: string[]; laneColor: string; remotes: Set<string>; max?: number; /** A branch already named by the run header above. */ hide?: string | null }) {
   const [all, setAll] = useState(false);
   const groups = new Map<string, { local: boolean; remotes: string[]; head: boolean }>();
   for (const r of refs) {
@@ -157,6 +157,7 @@ function RefPills({ refs, laneColor, remotes, max = 2 }: { refs: string[]; laneC
     g.head ||= head;
     groups.set(key, g);
   }
+  if (hide) groups.delete(hide);
   const list = [...groups.entries()].sort((a, b) => Number(b[1].head) - Number(a[1].head));
   if (!list.length) return null;
   const shown = all ? list : list.slice(0, max);
@@ -1128,6 +1129,11 @@ export function GitHistoryPage({ workspace }: Props = {}) {
             const folded = !!runKey && foldedRuns.has(startHash);
             const lastInRun = i === run.start + run.len - 1;
             const lc = runKey ? branchColor(runKey) : color(rows[i].lane);
+            // The run header names the branch; a row repeats it only for other branches pointing here.
+            const runSlash = runKey.indexOf('/');
+            const runShort = runSlash > 0 && remoteNames.has(runKey.slice(0, runSlash)) ? runKey.slice(runSlash + 1) : runKey;
+            const runOnRemote =
+              runStart && !!runKey && (runShort !== runKey || commits.slice(run.start, run.start + run.len).some((x) => x.refs.some((r) => { const k = r.replace(/^HEAD -> /, ''); const sl = k.indexOf('/'); return sl > 0 && remoteNames.has(k.slice(0, sl)) && k.slice(sl + 1) === runShort; })));
             return (
             <Fragment key={c.hash}>
             {runStart && runKey && (
@@ -1139,7 +1145,12 @@ export function GitHistoryPage({ workspace }: Props = {}) {
                 title={`${folded ? 'Click to show' : 'Click to fold'} · double-click to check out ${runKey}`}
               >
                 <span className="run-caret">▾</span>
-                <BranchChip name={runKey} />
+                <BranchChip name={runShort} />
+                {runOnRemote && (
+                  <span className="run-cloud" title={`${runShort} is on the remote`} aria-label="On the remote">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden><path d="M4.5 13a3.5 3.5 0 0 1-.4-7A4.5 4.5 0 0 1 12.8 6.6 3.2 3.2 0 0 1 12 13z" /></svg>
+                  </span>
+                )}
                 {run.allMerged && mainRef && !onMain(c) && <MergedMark main={mainRef} />}
                 <span className="run-n">
                   {runLen} commit{runLen === 1 ? '' : 's'}
@@ -1193,7 +1204,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
                 {compareMode && (slots[0] === c.hash || slots[1] === c.hash) && <span className={`cmp-letter sm ${slots[0] === c.hash ? 'A' : 'B'}`}>{slots[0] === c.hash ? 'A' : 'B'}</span>}
                 {c.refs.length > 0 && (
                   <span className="ref-group">
-                    <RefPills refs={c.refs} laneColor={color(rows[i].lane)} remotes={remoteNames} />
+                    <RefPills refs={c.refs} laneColor={color(rows[i].lane)} remotes={remoteNames} hide={runKey ? runShort : null} />
                     <TagChips refs={c.refs} />
                   </span>
                 )}
