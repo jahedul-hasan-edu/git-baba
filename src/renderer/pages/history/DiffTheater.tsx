@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { fontToken, stepFont } from '../../services/typeScale';
 import { createPortal } from 'react-dom';
 import type { CommitStatFile, FileDiff } from '../../../shared/types';
 import { DiffViewer } from '../../components/DiffViewer';
@@ -171,8 +172,8 @@ export function DiffTheater({ files, diffs, start, context, highlight, onClose, 
       else if (e.key === '[' || (e.altKey && e.key === 'ArrowUp')) (e.preventDefault(), go(-1));
       else if (e.key === 'n') (e.preventDefault(), jumpHunk(1));
       else if (e.key === 'p') (e.preventDefault(), jumpHunk(-1));
-      else if (e.key === '+' || e.key === '=') setPrefs((x) => ({ ...x, size: Math.min(18, x.size + 1) }));
-      else if (e.key === '-') setPrefs((x) => ({ ...x, size: Math.max(10, x.size - 1) }));
+      else if (e.key === '+' || e.key === '=') setPrefs((x) => ({ ...x, size: stepFont(x.size, 1) }));
+      else if (e.key === '-') setPrefs((x) => ({ ...x, size: stepFont(x.size, -1) }));
       else if (e.key === 'w') setPrefs((x) => ({ ...x, wrap: !x.wrap }));
     };
     window.addEventListener('keydown', on, true);
@@ -187,7 +188,7 @@ export function DiffTheater({ files, diffs, start, context, highlight, onClose, 
       <button
         key={f.path}
         data-p={f.path}
-        className={`dt-file ${f.path === path ? 'on' : ''} ${inTree ? 'in-tree' : ''}`}
+        className={`dt-file ${depth ? 'tn' : ''} ${f.path === path ? 'on' : ''} ${inTree ? 'in-tree' : ''}`}
         style={inTree ? { paddingLeft: 8 + depth * 14 } : undefined}
         onClick={() => setPath(f.path)}
         title={f.oldPath ? `${f.path}\n← ${f.oldPath}` : f.path}
@@ -216,7 +217,7 @@ export function DiffTheater({ files, diffs, start, context, highlight, onClose, 
       out.push(
         <button
           key={`d:${c.path}`}
-          className={`dt-folder ${isOpen ? 'open' : ''} ${here ? 'here' : ''}`}
+          className={`dt-folder ${depth ? 'tn' : ''} ${isOpen ? 'open' : ''} ${here ? 'here' : ''}`}
           style={{ paddingLeft: 6 + depth * 14 }}
           onClick={() => toggle(c.path)}
           title={`${c.path} — ${c.count} file${c.count === 1 ? '' : 's'}`}
@@ -288,8 +289,8 @@ export function DiffTheater({ files, diffs, start, context, highlight, onClose, 
           </button>
         </div>
         <div className="dt-group" title="Text size ( - and + )">
-          <button onClick={() => setPrefs((x) => ({ ...x, size: Math.max(10, x.size - 1) }))}>A−</button>
-          <button onClick={() => setPrefs((x) => ({ ...x, size: Math.min(18, x.size + 1) }))}>A+</button>
+          <button onClick={() => setPrefs((x) => ({ ...x, size: stepFont(x.size, -1) }))}>A−</button>
+          <button onClick={() => setPrefs((x) => ({ ...x, size: stepFont(x.size, 1) }))}>A+</button>
         </div>
         <button className={`dt-toggle ${prefs.wrap ? 'on' : ''}`} onClick={() => setPrefs((x) => ({ ...x, wrap: !x.wrap }))} title="Wrap long lines ( w )">
           ↩ Wrap
@@ -335,7 +336,7 @@ export function DiffTheater({ files, diffs, start, context, highlight, onClose, 
             {prefs.tree ? renderFolder(tree, 0) : shown.map((f) => fileRow(f, 0, false))}
           </div>
         </aside>
-        <main className={`dt-main ${prefs.wrap ? '' : 'nowrap'}`} ref={main} style={{ ['--dt-fs' as string]: `${prefs.size}px` }}>
+        <main className={`dt-main ${prefs.wrap ? '' : 'nowrap'}`} ref={main} style={{ ['--dt-fs' as string]: fontToken(prefs.size) }}>
           {diff ? <DiffViewer key={path} diff={diff} highlight={highlight} /> : <div className="empty">No textual changes for this file.</div>}
         </main>
       </div>

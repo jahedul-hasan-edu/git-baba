@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { fontToken } from '../../services/typeScale';
 import type { CheckState, GhLabel, GhRepoContext } from '../../../shared/github';
 import type { AccountCredentialInput, FriendlyError } from '../../../shared/types';
 import { call, toFriendly } from '../../services/api';
@@ -204,7 +205,7 @@ export function Avatar({ login, size = 20 }: { login: string | null | undefined;
   let h = 0;
   for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
   return (
-    <span className="avatar" style={{ width: size, height: size, fontSize: size * 0.45, background: `hsl(${h} 45% 40%)` }} title={name}>
+    <span className="avatar" style={{ width: size, height: size, fontSize: fontToken(size * 0.45), background: `hsl(${h} 45% 40%)` }} title={name}>
       {name.slice(0, 2).toUpperCase()}
     </span>
   );

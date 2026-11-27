@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { fontToken } from '../services/typeScale';
 import type { AuthContext, CommitDetails, FriendlyError, RepoContributor, RepoSummary, TagInfo } from '../../shared/types';
 import { AuthMethodPicker, type AuthSelection } from '../components/AuthMethodPicker';
 import { ErrorPanel } from '../components/ErrorPanel';
@@ -24,7 +25,7 @@ export function hueOf(s: string): number {
 export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
   const hue = hueOf(name);
   return (
-    <span className="avatar" style={{ width: size, height: size, fontSize: size * 0.4, background: `hsl(${hue} 55% 32%)`, color: `hsl(${hue} 90% 88%)` }}>
+    <span className="avatar" style={{ width: size, height: size, fontSize: fontToken(size * 0.4), background: `hsl(${hue} 55% 32%)`, color: `hsl(${hue} 90% 88%)` }}>
       {initials(name)}
     </span>
   );

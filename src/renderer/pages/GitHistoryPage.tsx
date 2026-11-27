@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { layoutGraph } from '../../shared/graphLayout';
 import type { CommitDetails, CommitStatFile, CompareResult, FriendlyError, GraphCommit, HistoryQuery, HistoryScope, RepoStatus } from '../../shared/types';
 import { ChangesPage } from './ChangesPage';
@@ -746,6 +746,18 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     }
   };
   const showSide = placement === 'sidebar' && (sideOpen || pinned);
+  // Workspace: the toolbar spans the history column only, and the right panel rises into the space beside it.
+  const lift = !!ws && showSide && !diffOpen;
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarH, setToolbarH] = useState(0);
+  useLayoutEffect(() => {
+    const el = toolbarRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setToolbarH(el.offsetHeight));
+    ro.observe(el);
+    setToolbarH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [lift]);
   const panelOpen = placement === 'sidebar' ? sideOpen : modalOpen;
   const pane = (
     <>
@@ -943,7 +955,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
     <RefActionsContext.Provider value={refActions}>
     <div className="content flush" style={{ flexDirection: 'column' }}>
       {/* Search commits and Lanes / Explorer sit above the history; hidden while a changed file is open. */}
-      <div className={`history-toolbar ${ws ? 'ws-toolbar' : ''}`} hidden={diffOpen} style={diffOpen ? { display: 'none' } : showSide ? { paddingRight: `calc(${paneW}% + 12px)` } : undefined}>
+      <div className={`history-toolbar ${ws ? 'ws-toolbar' : ''}`} ref={toolbarRef} hidden={diffOpen} style={diffOpen ? { display: 'none' } : lift ? { width: `${100 - paneW}%`, boxSizing: 'border-box' } : undefined}>
         {ws?.railToggle}
         <HistoryQueryBar
           scope={scope}
@@ -1040,7 +1052,7 @@ export function GitHistoryPage({ workspace }: Props = {}) {
           )}
         </div>
       )}
-      <div className="split hist-split" ref={splitRef} style={{ gridTemplateColumns: showSide ? `minmax(360px, ${100 - paneW}%) 6px minmax(${ws ? 340 : 0}px, 1fr)` : '1fr' }}>
+      <div className="split hist-split" ref={splitRef} style={{ gridTemplateColumns: showSide ? `minmax(360px, ${100 - paneW}%) ${ws ? 0 : 6}px minmax(${ws ? 340 : 0}px, 1fr)` : '1fr' }}>
         <div className={ws ? 'ws-center' : 'left-wrap'}>
         <div className={`left ${graphView === 'explorer' ? 'bx-host' : ''}`} ref={listRef}>
           {error && (
@@ -1255,9 +1267,9 @@ export function GitHistoryPage({ workspace }: Props = {}) {
               }}
             />
             {ws && wip ? (
-              <div className="right ws-pane">{wipPane}</div>
+              <div className="right ws-pane" style={lift ? { marginTop: -toolbarH, position: 'relative', zIndex: 2 } : undefined}>{wipPane}</div>
             ) : (
-              <div className="right" style={{ padding: 16 }}>
+              <div className="right" style={{ padding: 16, ...(lift ? { marginTop: -toolbarH, position: 'relative', zIndex: 2 } : {}) }}>
                 {pane}
               </div>
             )}

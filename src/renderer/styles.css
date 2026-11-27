@@ -6759,3 +6759,28 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 
 /* Changed-file rows: regular weight for names and folders. */
 .chg-file, .chg-dir-name { font-weight: var(--fw-regular); }
+
+/* History | Changes divider: exactly one 1px line, top to bottom (including beside the search bar).
+   The right panel's left edge draws it; the history column and the resize handle add none. */
+.hist-split > .left { border-right: 0 !important; }
+.hist-split > .right { border-left: 1px solid var(--border) !important; }
+.hist-split > .hist-resizer::after { background: transparent !important; }
+.hist-split > .hist-resizer:hover::after { background: var(--violet) !important; }
+
+/* Workspace: the History | Changes edge matches the sidebar | History edge — content runs flush to one 1px line.
+   The resize handle takes no width; it overlays the line (6px wide) so it can still be dragged. */
+.ws .hist-split > .hist-resizer { position: relative; width: 6px; margin: 0 -3px; z-index: 3; }
+.ws .hist-split > .hist-resizer::after { left: 2px; width: 2px; }
+
+/* ---------- Tree hierarchy: a child is always smaller than its parent ----------
+   Top-level rows of every tree are 13px; anything nested under a parent (.tn) is 12px, the smallest step. */
+.chg-dir-row, .ct-row.dir, .ft-row.dir, .fx-folder, .cx-dir, .dt-folder, .bp-folder { font-size: var(--fs-sm); }
+.tn, .tn :where(span, strong, b, code, div) { font-size: var(--fs-xs) !important; }
+/* Repository sidebar: sections 13px, their items 12px. */
+.rn-subitem, .rn-wt-name, .rn-wt-n { font-size: var(--fs-xs); }
+
+/* Changes diff: tighter frame around the hunks. */
+.hd-body { padding: 6px 8px 16px 6px; }
+.hd-hunk { margin-bottom: 8px; }
+.ws-diff, .ws-diff-body { padding: 0 !important; margin: 0 !important; }
+.hd-map { display: none !important; }

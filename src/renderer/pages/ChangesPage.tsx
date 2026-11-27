@@ -357,7 +357,7 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
       <div
         key={k}
         data-key={k}
-        className={`chg-row ${isSel ? 'focus' : ''} ${picked.has(k) ? 'picked' : ''} ${flash.has(f.path) ? 'flash' : ''}`}
+        className={`chg-row ${depth ? 'tn' : ''} ${isSel ? 'focus' : ''} ${picked.has(k) ? 'picked' : ''} ${flash.has(f.path) ? 'flash' : ''}`}
         style={depth ? { paddingLeft: 10 + depth * 16 } : undefined}
         onClick={(e) => clickRow(f, e)}
         onDoubleClick={() => void toggleStage(f)}
@@ -440,7 +440,7 @@ export function ChangesPage({ status, reload, error, docked, tree }: Props) {
         const key = `${tab}:${d.path}`;
         const shut = foldedDirs.has(key);
         out.push(
-          <div key={`d:${key}`} className="chg-dir-row" style={{ paddingLeft: 10 + depth * 16 }} onClick={() => toggleDir(key)} title={d.path}>
+          <div key={`d:${key}`} className={`chg-dir-row ${depth ? 'tn' : ''}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => toggleDir(key)} title={d.path}>
             <span className={`chg-caret ${shut ? 'shut' : ''}`}>▾</span>
             <span className="chg-folder" aria-hidden>
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round">

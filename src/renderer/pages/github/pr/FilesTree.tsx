@@ -98,7 +98,7 @@ const FileRow = memo(function FileRow({ row, active, comments, onPick }: { row: 
   const [letter, cls, label] = STATUS[f.status] ?? ['?', '', f.status];
   return (
     <div
-      className={`ft-row file ${active ? 'active' : ''}`}
+      className={`ft-row file ${row.depth ? 'tn' : ''} ${active ? 'active' : ''}`}
       style={{ paddingLeft: 10 + row.depth * 14 }}
       data-path={f.path}
       role="treeitem"
@@ -125,7 +125,7 @@ const FileRow = memo(function FileRow({ row, active, comments, onPick }: { row: 
 const DirRow = memo(function DirRow({ row, onToggle }: { row: Extract<Row, { kind: 'dir' }>; onToggle: (p: string) => void }) {
   return (
     <div
-      className="ft-row dir"
+      className={`ft-row dir ${row.depth ? 'tn' : ''}`}
       style={{ paddingLeft: 6 + row.depth * 14 }}
       role="treeitem"
       aria-expanded={row.open}

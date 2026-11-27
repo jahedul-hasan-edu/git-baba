@@ -126,7 +126,7 @@ export function CodeTree({
         return (
           <div key={e.path} role="treeitem" aria-expanded={isDir ? isOpen : undefined}>
             <button
-              className={`ct-row ${activePath === e.path ? 'on' : ''} ${isDir ? 'dir' : 'file'}`}
+              className={`ct-row ${depth ? 'tn' : ''} ${activePath === e.path ? 'on' : ''} ${isDir ? 'dir' : 'file'}`}
               style={{ paddingLeft: 8 + depth * 14 }}
               title={e.path}
               onClick={() => {

@@ -641,7 +641,7 @@ function ChangesView({ files, diffs, left, right, leftIsTarget, hot, emptyText, 
                   const depth = d.split('/').length - 1;
                   const open = isOpen(d);
                   rows.push(
-                    <div key={`d:${d}`} className="cx-dir" style={{ paddingLeft: 8 + depth * 14 }} onClick={() => toggleDir(d)} title={d}>
+                    <div key={`d:${d}`} className={`cx-dir ${depth ? 'tn' : ''}`} style={{ paddingLeft: 8 + depth * 14 }} onClick={() => toggleDir(d)} title={d}>
                       <span className={`cx-chev ${open ? 'open' : ''}`}>▸</span>
                       <span className="cx-folder">{open ? '📂' : '📁'}</span>
                       <span className="ellipsis grow">{d.split('/').pop()}</span>
@@ -655,7 +655,7 @@ function ChangesView({ files, diffs, left, right, leftIsTarget, hot, emptyText, 
               const st = STATUS[f.status];
               const name = f.path.split('/').pop()!;
               rows.push(
-                <div key={f.path} className={`cx-file ${current?.path === f.path ? 'on' : ''}`} style={{ paddingLeft: 8 + dirs.length * 14 }} onClick={() => pick(f.path)} title={`${f.path}
+                <div key={f.path} className={`cx-file ${dirs.length ? 'tn' : ''} ${current?.path === f.path ? 'on' : ''}`} style={{ paddingLeft: 8 + dirs.length * 14 }} onClick={() => pick(f.path)} title={`${f.path}
 ${leftIsTarget ? st.t : f.status}`}>
                   <span className={`cx-st ${st.c}`}>{st.l}</span>
                   <span className="ellipsis mono grow">{name}</span>

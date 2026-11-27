@@ -363,7 +363,7 @@ export function BranchPickerPanel({
               data-row={i}
               role="treeitem"
               aria-expanded={r.open}
-              className={`bp-row bp-folder ${i === active ? 'active' : ''}`}
+              className={`bp-row bp-folder ${r.depth ? 'tn' : ''} ${i === active ? 'active' : ''}`}
               style={{ paddingLeft: 8 + r.depth * 14 }}
               onMouseEnter={() => setActive(i)}
               onMouseDown={(e) => e.preventDefault()}
@@ -391,7 +391,7 @@ export function BranchPickerPanel({
                   data-row={i}
                   role="option"
                   aria-selected={it.name === value}
-                  className={`bp-row ${i === active ? 'active' : ''} ${it.name === value ? 'sel' : ''} ${it.disabled ? 'disabled' : ''}`}
+                  className={`bp-row ${r.depth ? 'tn' : ''} ${i === active ? 'active' : ''} ${it.name === value ? 'sel' : ''} ${it.disabled ? 'disabled' : ''}`}
                   style={{ ['--bc' as string]: it.icon ? 'var(--accent)' : branchColor(it.name), ...(r.depth !== undefined ? { paddingLeft: 8 + r.depth * 14 + (r.depth ? 4 : 0) } : {}) }}
                   onMouseEnter={() => !it.disabled && setActive(i)}
                   onMouseDown={(e) => e.preventDefault()}

@@ -259,7 +259,7 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
     <div
       key={f.path}
       data-file={f.path}
-      className={`fx-file ${focus === f.path && !compact ? 'on' : ''} ${docked && focus === f.path ? 'docked' : ''}`}
+      className={`fx-file ${depth ? 'tn' : ''} ${focus === f.path && !compact ? 'on' : ''} ${docked && focus === f.path ? 'docked' : ''}`}
       style={{ paddingLeft: 8 + depth * 14 }}
       onClick={() => {
         setFocus(f.path);
@@ -302,7 +302,7 @@ export function CommitFilesExplorer({ repoId, files, diffs, atCommit, context, d
         out.push(
           <div
             key={`d:${c.path}`}
-            className="fx-folder"
+            className={`fx-folder ${depth ? 'tn' : ''}`}
             style={{ paddingLeft: 8 + depth * 14 }}
             onClick={() =>
               setCollapsed((s) => {

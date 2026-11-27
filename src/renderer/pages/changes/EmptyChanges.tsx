@@ -32,15 +32,6 @@ export function EmptyChanges({ repoId, status }: { repoId: string; status: RepoS
 
   return (
     <div className="chg chg-empty-panel">
-      <div className="chg-head">
-        <svg className="cb-ring" viewBox="0 0 36 36" width={32} height={32} aria-hidden>
-          <circle cx={18} cy={18} r={15} className="cb-ring-track" />
-        </svg>
-        <div className="grow">
-          <div className="chg-title">No changes</div>
-          <div className="chg-branch">⎇ {branch ?? 'detached HEAD'}</div>
-        </div>
-      </div>
 
       <div className="chg-tabs" role="tablist">
         <button role="tab" aria-selected className="on">

@@ -219,7 +219,7 @@ export function HunkDiff({ file, diff, busy, onApply, onWhole, onClose }: Props)
               );
             })}
           </div>
-          {diff.hunks.length > 1 && (
+          {false && diff.hunks.length > 1 && (
             <div className="hd-map" title="Changes in this file — click to jump">
               {diff.hunks.map((h, hi) => {
                 const before = diff.hunks.slice(0, hi).reduce((n, x) => n + x.lines.length, 0);
@@ -257,7 +257,6 @@ export function HunkDiff({ file, diff, busy, onApply, onWhole, onClose }: Props)
           )}
         </div>
       )}
-      {view === 'interactive' && splittable && count === 0 && diff.hunks.length > 0 && <div className="hd-hint small muted">Tip: click or drag over lines to pick them · Shift+click for a range · stage hunks from their header</div>}
     </div>
   );
 }
